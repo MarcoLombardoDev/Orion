@@ -155,11 +155,13 @@ def test_process_liveness_probe():
 
 
 def test_the_liveness_probe_never_signals_the_process():
-    """Regression guard: os.kill(pid, 0) *terminates* the process on Windows.
+    """Regression guard: ``os.kill(pid, 0)`` *terminates* the process on Windows.
 
-    The probe must not reach os.kill for a foreign pid on any platform, or a
-    second Orion would kill the first one — the instance whose unsaved work
-    this check exists to protect.
+    Only that is asserted here.  What the probe *answers* on the Windows path
+    depends on whether a real kernel32 is there to ask — it is, on Windows,
+    where a missing pid correctly comes back as not-alive; it is not, on this
+    machine, where the conservative fallback says alive.  The answer itself is
+    checked natively in :func:`test_process_liveness_probe`.
     """
     import orion.services.autosave as autosave
 
@@ -174,9 +176,9 @@ def test_the_liveness_probe_never_signals_the_process():
     try:
         monkeypatched.setattr(autosave.os, "kill", spy)
         monkeypatched.setattr(autosave.sys, "platform", "win32")
-        # On Windows the ctypes probe is used; loading kernel32 fails here, and
-        # the conservative fallback is "alive" — but os.kill is never reached.
-        assert autosave._process_alive(999_999_999) is True
+        result = autosave._process_alive(999_999_999)
     finally:
         monkeypatched.undo()
-    assert called == [], "the Windows path must not call os.kill"
+
+    assert isinstance(result, bool)
+    assert called == [], "the Windows path must never signal a foreign process"
