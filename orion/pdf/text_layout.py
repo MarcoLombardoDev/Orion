@@ -9,9 +9,9 @@ wrapping implementation.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Sequence
 
 import pymupdf
 
@@ -22,7 +22,7 @@ __all__ = ["TextSegment", "TextLine", "TextLayout", "layout_text", "measure", "f
 
 
 @lru_cache(maxsize=32)
-def _font(fontname: str) -> "pymupdf.Font":
+def _font(fontname: str) -> pymupdf.Font:
     try:
         return pymupdf.Font(fontname)
     except Exception:
@@ -77,7 +77,9 @@ class TextLayout:
     def is_empty(self) -> bool:
         return not self.lines
 
-    def underline_spans(self, thickness_ratio: float = 0.06) -> list[tuple[float, float, float, float]]:
+    def underline_spans(
+        self, thickness_ratio: float = 0.06
+    ) -> list[tuple[float, float, float, float]]:
         """``(x0, y, x1, thickness)`` for one underline per non-empty line."""
         offset = self.font_size * 0.12
         thickness = max(0.4, self.font_size * thickness_ratio)
@@ -170,7 +172,7 @@ def layout_text(
 
     paragraphs = text.split("\n")
     wrapped: list[tuple[list[str], bool]] = []
-    for index, paragraph in enumerate(paragraphs):
+    for paragraph in paragraphs:
         para_lines = _wrap_paragraph(paragraph, fontname, font_size, max_width)
         for line_index, words in enumerate(para_lines):
             is_last_of_paragraph = line_index == len(para_lines) - 1
@@ -212,7 +214,7 @@ def _justify(
     gap = (max_width - sum(widths)) / (len(stripped) - 1)
     segments: list[TextSegment] = []
     cursor = x0
-    for word, width in zip(stripped, widths):
+    for word, width in zip(stripped, widths, strict=True):
         segments.append(TextSegment(word, cursor, width))
         cursor += width + gap
     return segments

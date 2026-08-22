@@ -14,7 +14,7 @@ from orion.document.objects import (
     TextObject,
     create_object,
 )
-from orion.document.page import Page, PageSource
+from orion.document.page import Page
 from orion.document.serialization import (
     document_from_json,
     document_to_json,

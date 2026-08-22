@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
-from typing import Any, Iterable, Sequence
+from collections.abc import Iterable, Sequence
+from typing import Any
 
 from orion.commands.base import Command
 from orion.document.document import Document
@@ -330,7 +330,9 @@ class ReorderObjectCommand(_ObjectCommand):
 class RaiseObjectCommand(ReorderObjectCommand):
     """Convenience wrapper for Bring to Front / Send to Back."""
 
-    def __init__(self, document: Document, page_index: int, object_id: str, *, to_top: bool) -> None:
+    def __init__(
+        self, document: Document, page_index: int, object_id: str, *, to_top: bool
+    ) -> None:
         page = document.page_at(page_index)
         count = len(page.objects) if page else 0
         super().__init__(

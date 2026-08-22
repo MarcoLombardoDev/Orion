@@ -99,7 +99,9 @@ class AnnotationObject(PageObject):
             return f"{label} — {self.contents.splitlines()[0][:24]}"
         return label
 
-    def clone(self, *, new_id: bool = True, offset: tuple[float, float] = (0.0, 0.0)) -> "AnnotationObject":
+    def clone(
+        self, *, new_id: bool = True, offset: tuple[float, float] = (0.0, 0.0)
+    ) -> AnnotationObject:
         copy = super().clone(new_id=new_id, offset=offset)
         assert isinstance(copy, AnnotationObject)
         # Deep-copy the mutable geometry so the clone is truly independent.
@@ -133,7 +135,7 @@ class AnnotationObject(PageObject):
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "AnnotationObject":
+    def from_dict(cls, data: dict[str, Any]) -> AnnotationObject:
         return cls(
             **cls._base_kwargs(data),
             annotation=AnnotationKind(data.get("annotation", "highlight")),

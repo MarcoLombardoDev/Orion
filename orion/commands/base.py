@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Sequence
+from collections.abc import Sequence
+from contextlib import suppress
 
 __all__ = ["Command", "MacroCommand", "NullCommand"]
 
@@ -30,7 +31,7 @@ class Command(ABC):
         """Re-apply the change.  Defaults to :meth:`execute`."""
         self.execute()
 
-    def merge_with(self, other: "Command") -> bool:
+    def merge_with(self, other: Command) -> bool:
         """Absorb *other* if the two form one logical edit.
 
         Returning ``True`` means *other* has been folded into ``self`` and must
@@ -81,10 +82,8 @@ class MacroCommand(Command):
             # Roll back the part that succeeded so the model is never left
             # halfway through a compound edit.
             for command in reversed(done):
-                try:
+                with suppress(Exception):  # pragma: no cover - defensive
                     command.undo()
-                except Exception:  # pragma: no cover - defensive
-                    pass
             raise
 
     def undo(self) -> None:

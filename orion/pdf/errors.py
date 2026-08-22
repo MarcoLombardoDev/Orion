@@ -43,7 +43,9 @@ class PdfCorruptError(PdfReadError):
 class PdfPasswordRequired(PdfReadError):
     default_message = "This document is password protected."
 
-    def __init__(self, message: str | None = None, *, detail: str = "", wrong: bool = False) -> None:
+    def __init__(
+        self, message: str | None = None, *, detail: str = "", wrong: bool = False
+    ) -> None:
         if message is None and wrong:
             message = "The password is not correct."
         super().__init__(message, detail=detail)

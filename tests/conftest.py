@@ -66,3 +66,39 @@ def find_color_bbox(pixmap, predicate) -> tuple[int, int, int, int] | None:
 
 def is_red(px) -> bool:
     return px[0] > 180 and px[1] < 90 and px[2] < 90
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    """A single offscreen QApplication for the whole GUI test session."""
+    pytest.importorskip("PySide6")
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    app.setStyle("Fusion")
+    yield app
+
+
+@pytest.fixture
+def window(qapp, _isolated_home):
+    """A real MainWindow, closed cleanly after each test."""
+    from orion.services.settings import Settings
+    from orion.ui.main_window import MainWindow
+
+    settings = Settings(_isolated_home / "settings.json")
+    win = MainWindow(settings)
+    win.resize(1100, 760)
+    # Shown so Qt actually paints: page rasterisation is driven from paint().
+    win.show()
+    qapp.processEvents()
+    yield win
+    win._autosave_timer.stop()
+    win._detach_session()
+    win.deleteLater()
+    qapp.processEvents()
+
+
+def pump(qapp, times: int = 20) -> None:
+    """Let queued Qt events (including finished renders) run."""
+    for _ in range(times):
+        qapp.processEvents()

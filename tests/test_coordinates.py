@@ -16,7 +16,6 @@ from orion.document.page import Page, PageSource
 from orion.pdf import writer
 from orion.pdf.coordinates import content_angle, from_pdf_rect, pdf_morph_angle, to_pdf_rect
 from orion.utils.geometry import Point, Rect, Size, rotate_point, rotated_bounds
-
 from tests.conftest import find_color_bbox, is_red
 
 MARKER = Rect.from_xywh(10.0, 10.0, 100.0, 50.0)

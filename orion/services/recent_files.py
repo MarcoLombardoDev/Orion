@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from contextlib import suppress
 from pathlib import Path
-from typing import Sequence
 
 from orion.services.settings import Settings
 from orion.utils.events import Event
@@ -32,10 +33,8 @@ class RecentFiles:
 
     def add(self, path: str | Path) -> None:
         resolved = Path(path).expanduser()
-        try:
+        with suppress(OSError):  # pragma: no cover - unreachable network paths
             resolved = resolved.resolve()
-        except OSError:  # pragma: no cover - unreachable network paths
-            pass
         entries = [str(resolved)]
         entries += [str(p) for p in self.paths if p != resolved]
         self._settings.set("recent_files", entries[: self._limit])

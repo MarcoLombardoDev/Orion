@@ -6,7 +6,6 @@ import logging
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from orion.commands.history import History
 from orion.document.document import Document, DocumentSource
@@ -38,7 +37,7 @@ class DocumentSession:
     history: History
     renderer: PageRenderer
     autosave: AutosaveService
-    path: Optional[Path] = None
+    path: Path | None = None
     #: Sources copied aside because the user saved over them (see FileService).
     shadowed_sources: dict[str, Path] = field(default_factory=dict)
 

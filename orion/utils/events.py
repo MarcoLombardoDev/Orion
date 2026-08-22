@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import logging
 import weakref
-from typing import Any, Callable, Iterator, MutableSequence
+from collections.abc import Callable, Iterator, MutableSequence
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -106,7 +107,7 @@ class Blocker:
     def __bool__(self) -> bool:
         return self._depth > 0
 
-    def __enter__(self) -> "Blocker":
+    def __enter__(self) -> Blocker:
         self._depth += 1
         return self
 

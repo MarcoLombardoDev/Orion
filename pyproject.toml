@@ -64,3 +64,7 @@ ignore = ["B008", "SIM108"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501"]
+# Both files are declarative tables; one entry per line reads better than a
+# wrapped one, and neither contains logic.
+"orion/ui/actions.py" = ["E501"]
+"orion/ui/icons.py" = ["E501"]

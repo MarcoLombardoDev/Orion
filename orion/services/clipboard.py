@@ -8,7 +8,7 @@ as JSON under a private MIME type, so two Orion windows can exchange objects.
 from __future__ import annotations
 
 import logging
-from typing import Sequence
+from collections.abc import Sequence
 
 from orion.document.objects import PageObject
 from orion.document.serialization import CLIPBOARD_MIME, objects_from_json, objects_to_json

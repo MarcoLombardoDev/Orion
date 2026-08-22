@@ -16,7 +16,8 @@ file's own ``/Rotate`` already applied: origin top-left, y downwards, points.
 
 from __future__ import annotations
 
-from typing import Iterable, Sequence, TYPE_CHECKING
+from collections.abc import Iterable, Sequence
+from typing import TYPE_CHECKING
 
 from orion.utils.geometry import Point, Rect
 
@@ -36,14 +37,14 @@ __all__ = [
 ]
 
 
-def to_pdf_point(page: "pymupdf.Page", point: Point) -> "pymupdf.Point":
+def to_pdf_point(page: pymupdf.Page, point: Point) -> pymupdf.Point:
     """Base page space -> PDF content (unrotated mediabox) space."""
     import pymupdf
 
     return pymupdf.Point(point.x, point.y) * page.derotation_matrix
 
 
-def to_pdf_rect(page: "pymupdf.Page", rect: Rect) -> "pymupdf.Rect":
+def to_pdf_rect(page: pymupdf.Page, rect: Rect) -> pymupdf.Rect:
     """Base page space -> PDF content space, as an axis-aligned rectangle.
 
     For 90/270 page rotations this correctly transposes the rectangle: a
@@ -54,13 +55,13 @@ def to_pdf_rect(page: "pymupdf.Page", rect: Rect) -> "pymupdf.Rect":
     return (pymupdf.Rect(*rect.as_tuple()) * page.derotation_matrix).normalize()
 
 
-def from_pdf_point(page: "pymupdf.Page", point: "pymupdf.Point") -> Point:
+def from_pdf_point(page: pymupdf.Page, point: pymupdf.Point) -> Point:
     """PDF content space -> base page space (used for text search results)."""
     mapped = point * page.rotation_matrix
     return Point(mapped.x, mapped.y)
 
 
-def from_pdf_rect(page: "pymupdf.Page", rect: "pymupdf.Rect") -> Rect:
+def from_pdf_rect(page: pymupdf.Page, rect: pymupdf.Rect) -> Rect:
     """PDF content space -> base page space (used for text search results)."""
     mapped = (rect * page.rotation_matrix).normalize()
     return Rect(mapped.x0, mapped.y0, mapped.x1, mapped.y1)
@@ -98,12 +99,12 @@ def pdf_morph_angle(orion_angle: float) -> float:
     return -orion_angle
 
 
-def quad_points(page: "pymupdf.Page", rects: Iterable[Rect]) -> list["pymupdf.Quad"]:
+def quad_points(page: pymupdf.Page, rects: Iterable[Rect]) -> list[pymupdf.Quad]:
     """Convert base-space rectangles into content-space quads for markup annots."""
     return [to_pdf_rect(page, rect).quad for rect in rects]
 
 
-def polyline_to_pdf(page: "pymupdf.Page", points: Sequence[Point]) -> list[tuple[float, float]]:
+def polyline_to_pdf(page: pymupdf.Page, points: Sequence[Point]) -> list[tuple[float, float]]:
     """Convert an ink stroke from base space into content space.
 
     ``add_ink_annot`` insists on plain float pairs, not ``pymupdf.Point``.

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Iterator, Optional
+from typing import Any
 
 from orion.document.objects import PageObject, create_object
 from orion.utils.geometry import Point, Rect, Size, rotate_point
@@ -46,7 +47,7 @@ class Page:
     """
 
     base_size: Size = field(default_factory=lambda: Size(595.0, 842.0))
-    source: Optional[PageSource] = None
+    source: PageSource | None = None
     rotation: int = 0
     objects: list[PageObject] = field(default_factory=list)
     id: str = field(default_factory=lambda: uuid.uuid4().hex)
@@ -178,7 +179,7 @@ class Page:
         return None
 
     # -- copying ---------------------------------------------------------
-    def duplicate(self) -> "Page":
+    def duplicate(self) -> Page:
         """A deep copy that shares the same source page but has fresh ids."""
         return Page(
             base_size=self.base_size,
@@ -202,7 +203,7 @@ class Page:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Page":
+    def from_dict(cls, data: dict[str, Any]) -> Page:
         source = data.get("source")
         return cls(
             id=data.get("id") or uuid.uuid4().hex,

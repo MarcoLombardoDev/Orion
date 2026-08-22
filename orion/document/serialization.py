@@ -7,8 +7,9 @@ crash-recovery snapshots (§32), the object clipboard (§14) and the test-suite.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 from orion.document.document import Document
 from orion.document.objects import PageObject, create_object

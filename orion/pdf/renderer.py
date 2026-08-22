@@ -11,9 +11,8 @@ from __future__ import annotations
 import logging
 import threading
 from collections import OrderedDict
+from contextlib import suppress
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Callable, Optional
 
 import pymupdf
 
@@ -41,7 +40,7 @@ MIN_SCALE = 0.02
 @dataclass(frozen=True, slots=True)
 class RenderRequest:
     page_id: str
-    source_key: Optional[str]
+    source_key: str | None
     source_index: int
     rotation: int
     scale: float
@@ -309,7 +308,5 @@ class PageRenderer:
             return [from_pdf_rect(pdf_page, r) for r in lines.values()]
 
     def __del__(self) -> None:  # pragma: no cover - best-effort cleanup
-        try:
+        with suppress(Exception):
             self.close_all()
-        except Exception:
-            pass

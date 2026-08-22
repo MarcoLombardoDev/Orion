@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from orion.commands.base import Command, MacroCommand
 from orion.utils.events import Event
@@ -148,7 +147,7 @@ class History:
             self.clean_changed.emit(False)
 
     # -- undo / redo -----------------------------------------------------
-    def undo(self) -> Optional[Command]:
+    def undo(self) -> Command | None:
         if not self._undo:
             return None
         was_clean = self.is_clean
@@ -163,7 +162,7 @@ class History:
         self._emit_after_move(was_clean)
         return command
 
-    def redo(self) -> Optional[Command]:
+    def redo(self) -> Command | None:
         if not self._redo:
             return None
         was_clean = self.is_clean

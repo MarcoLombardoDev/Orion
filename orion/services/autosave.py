@@ -12,9 +12,9 @@ import json
 import logging
 import os
 import time
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from orion.document.document import Document
 from orion.document.serialization import load_document_snapshot, save_document_snapshot
@@ -30,7 +30,7 @@ SNAPSHOT_SUFFIX = ".orion-recovery.json"
 @dataclass(slots=True)
 class RecoverySnapshot:
     path: Path
-    document_path: Optional[Path]
+    document_path: Path | None
     saved_at: float
     page_count: int
     pid: int
@@ -69,7 +69,9 @@ class AutosaveService:
     serialising a model that is being mutated on another thread.
     """
 
-    def __init__(self, session_id: str, *, directory: Path | None = None, enabled: bool = True) -> None:
+    def __init__(
+        self, session_id: str, *, directory: Path | None = None, enabled: bool = True
+    ) -> None:
         self._session_id = session_id
         self._directory = directory or recovery_dir()
         self._enabled = enabled
@@ -142,10 +144,8 @@ def list_recoverable(
             continue
         meta_path = _meta_path(path)
         info: dict = {}
-        try:
+        with suppress(OSError, ValueError):
             info = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            pass
         pid = int(info.get("pid", 0) or 0)
         if pid and _process_alive(pid):
             continue  # another Orion instance is using it right now

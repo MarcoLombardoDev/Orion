@@ -11,11 +11,10 @@ from PIL import Image
 from orion.document.annotations import AnnotationKind, AnnotationObject
 from orion.document.objects import Align, ImageObject, ShapeKind, ShapeObject, TextObject
 from orion.pdf.errors import PdfWriteError
-from orion.pdf.writer import build_pdf_bytes, save_document
+from orion.pdf.writer import build_pdf_bytes
 from orion.services.export_service import ExportService
 from orion.services.file_service import FileService
 from orion.utils.geometry import Point, Rect, Size
-
 from tests.conftest import find_color_bbox, is_red
 
 

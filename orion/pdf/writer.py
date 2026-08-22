@@ -9,10 +9,10 @@ an atomic ``os.replace``.
 from __future__ import annotations
 
 import logging
-from contextlib import contextmanager
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, Optional
 
 import pymupdf
 
@@ -39,7 +39,7 @@ from orion.pdf.coordinates import (
 from orion.pdf.errors import PdfWriteError
 from orion.pdf.text_layout import layout_text
 from orion.utils.fileio import atomic_write_bytes
-from orion.utils.geometry import Point, Rect, rotate_point, rotated_bounds
+from orion.utils.geometry import Point, rotated_bounds
 from orion.utils.image_utils import rotate_image
 
 log = logging.getLogger(__name__)
@@ -94,10 +94,8 @@ class _SourcePool:
 
     def close(self) -> None:
         for doc in self._open.values():
-            try:
+            with suppress(Exception):  # pragma: no cover - best effort
                 doc.close()
-            except Exception:  # pragma: no cover - best effort
-                pass
         self._open.clear()
 
 
@@ -116,7 +114,7 @@ def _source_pool(document: Document) -> Iterator[_SourcePool]:
 def _assemble(document: Document, pool: _SourcePool) -> pymupdf.Document:
     """Copy source page runs and create blank pages, in document order."""
     out = pymupdf.open()
-    run_key: Optional[str] = None
+    run_key: str | None = None
     run_start = run_end = -1
 
     def flush() -> None:
@@ -309,7 +307,11 @@ def _draw_shape(pdf_page: pymupdf.Page, obj: ShapeObject) -> None:
         pdf_page.draw_line(p1, p2, **line_args)
         if obj.shape is ShapeKind.ARROW:
             for wing in _arrow_head(start, end, max(obj.arrow_size, width * 2.5)):
-                pdf_page.draw_line(to_pdf_point(pdf_page, end), to_pdf_point(pdf_page, wing), **line_args)
+                pdf_page.draw_line(
+                    to_pdf_point(pdf_page, end),
+                    to_pdf_point(pdf_page, wing),
+                    **line_args,
+                )
 
 
 def _arrow_head(start: Point, end: Point, size: float) -> tuple[Point, Point]:
@@ -364,10 +366,8 @@ def _add_annotation(pdf_page: pymupdf.Page, obj: AnnotationObject, base_rotation
         annot.set_info(content=obj.contents, title=obj.author or "Orion")
     elif obj.author:
         annot.set_info(title=obj.author)
-    try:
+    with suppress(Exception):  # not every annotation type supports opacity
         annot.set_opacity(obj.opacity)
-    except Exception:  # not every annotation type supports opacity
-        pass
     annot.update()
 
 
@@ -387,7 +387,7 @@ def build_pdf_bytes(document: Document, *, garbage: int = 3, deflate: bool = Tru
                     pdf_page.set_rotation(total)
             if document.metadata:
                 try:
-                    out.set_metadata({k: v for k, v in document.metadata.items()})
+                    out.set_metadata(dict(document.metadata))
                 except Exception:
                     log.debug("Could not write metadata", exc_info=True)
             return out.tobytes(garbage=garbage, deflate=deflate)

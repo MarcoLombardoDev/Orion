@@ -12,9 +12,9 @@ from __future__ import annotations
 import io
 import logging
 import re
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
 
 from pypdf import PdfReader, PdfWriter
 from pypdf.errors import PdfReadError as _PyPdfReadError

@@ -11,8 +11,8 @@ conversion lives in :mod:`orion.pdf.coordinates` and nowhere else.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Iterable, Sequence
 
 __all__ = [
     "Point",
@@ -50,25 +50,25 @@ class Point:
         object.__setattr__(self, "x", float(self.x))
         object.__setattr__(self, "y", float(self.y))
 
-    def __add__(self, other: "Point") -> "Point":
+    def __add__(self, other: Point) -> Point:
         return Point(self.x + other.x, self.y + other.y)
 
-    def __sub__(self, other: "Point") -> "Point":
+    def __sub__(self, other: Point) -> Point:
         return Point(self.x - other.x, self.y - other.y)
 
-    def __mul__(self, factor: float) -> "Point":
+    def __mul__(self, factor: float) -> Point:
         return Point(self.x * factor, self.y * factor)
 
     __rmul__ = __mul__
 
-    def distance_to(self, other: "Point") -> float:
+    def distance_to(self, other: Point) -> float:
         return math.hypot(self.x - other.x, self.y - other.y)
 
     def as_tuple(self) -> tuple[float, float]:
         return (self.x, self.y)
 
     @classmethod
-    def from_tuple(cls, values: Sequence[float]) -> "Point":
+    def from_tuple(cls, values: Sequence[float]) -> Point:
         return cls(float(values[0]), float(values[1]))
 
 
@@ -89,17 +89,17 @@ class Size:
     def aspect(self) -> float:
         return self.width / self.height if self.height > EPSILON else 1.0
 
-    def swapped(self) -> "Size":
+    def swapped(self) -> Size:
         return Size(self.height, self.width)
 
-    def scaled(self, factor: float) -> "Size":
+    def scaled(self, factor: float) -> Size:
         return Size(self.width * factor, self.height * factor)
 
     def as_tuple(self) -> tuple[float, float]:
         return (self.width, self.height)
 
     @classmethod
-    def from_tuple(cls, values: Sequence[float]) -> "Size":
+    def from_tuple(cls, values: Sequence[float]) -> Size:
         return cls(float(values[0]), float(values[1]))
 
 
@@ -120,11 +120,11 @@ class Rect:
 
     # -- construction ----------------------------------------------------
     @classmethod
-    def from_xywh(cls, x: float, y: float, width: float, height: float) -> "Rect":
+    def from_xywh(cls, x: float, y: float, width: float, height: float) -> Rect:
         return cls(x, y, x + width, y + height)
 
     @classmethod
-    def from_center(cls, center: Point, size: Size) -> "Rect":
+    def from_center(cls, center: Point, size: Size) -> Rect:
         return cls(
             center.x - size.width / 2.0,
             center.y - size.height / 2.0,
@@ -133,7 +133,7 @@ class Rect:
         )
 
     @classmethod
-    def from_points(cls, points: Iterable[Point]) -> "Rect":
+    def from_points(cls, points: Iterable[Point]) -> Rect:
         pts = list(points)
         if not pts:
             return cls()
@@ -142,7 +142,7 @@ class Rect:
         return cls(min(xs), min(ys), max(xs), max(ys))
 
     @classmethod
-    def from_tuple(cls, values: Sequence[float]) -> "Rect":
+    def from_tuple(cls, values: Sequence[float]) -> Rect:
         return cls(float(values[0]), float(values[1]), float(values[2]), float(values[3]))
 
     # -- accessors -------------------------------------------------------
@@ -187,28 +187,28 @@ class Rect:
         return (self.x0, self.y0, self.x1, self.y1)
 
     # -- derivations -----------------------------------------------------
-    def normalized(self) -> "Rect":
+    def normalized(self) -> Rect:
         """Return an equivalent rectangle with ``x0 <= x1`` and ``y0 <= y1``."""
         x0, x1 = (self.x0, self.x1) if self.x0 <= self.x1 else (self.x1, self.x0)
         y0, y1 = (self.y0, self.y1) if self.y0 <= self.y1 else (self.y1, self.y0)
         return Rect(x0, y0, x1, y1)
 
-    def translated(self, dx: float, dy: float) -> "Rect":
+    def translated(self, dx: float, dy: float) -> Rect:
         return Rect(self.x0 + dx, self.y0 + dy, self.x1 + dx, self.y1 + dy)
 
-    def moved_to(self, top_left: Point) -> "Rect":
+    def moved_to(self, top_left: Point) -> Rect:
         return Rect.from_xywh(top_left.x, top_left.y, self.width, self.height)
 
-    def resized(self, size: Size) -> "Rect":
+    def resized(self, size: Size) -> Rect:
         return Rect.from_xywh(self.x0, self.y0, size.width, size.height)
 
-    def scaled(self, factor: float) -> "Rect":
+    def scaled(self, factor: float) -> Rect:
         return Rect(self.x0 * factor, self.y0 * factor, self.x1 * factor, self.y1 * factor)
 
-    def expanded(self, margin: float) -> "Rect":
+    def expanded(self, margin: float) -> Rect:
         return Rect(self.x0 - margin, self.y0 - margin, self.x1 + margin, self.y1 + margin)
 
-    def united(self, other: "Rect") -> "Rect":
+    def united(self, other: Rect) -> Rect:
         return Rect(
             min(self.x0, other.x0),
             min(self.y0, other.y0),
@@ -216,7 +216,7 @@ class Rect:
             max(self.y1, other.y1),
         )
 
-    def intersects(self, other: "Rect") -> bool:
+    def intersects(self, other: Rect) -> bool:
         return not (
             self.x1 <= other.x0
             or other.x1 <= self.x0
@@ -227,7 +227,7 @@ class Rect:
     def contains_point(self, point: Point) -> bool:
         return self.x0 <= point.x <= self.x1 and self.y0 <= point.y <= self.y1
 
-    def contains_rect(self, other: "Rect") -> bool:
+    def contains_rect(self, other: Rect) -> bool:
         return (
             self.x0 <= other.x0
             and self.y0 <= other.y0
@@ -235,7 +235,7 @@ class Rect:
             and self.y1 >= other.y1
         )
 
-    def clamped_to(self, bounds: "Rect") -> "Rect":
+    def clamped_to(self, bounds: Rect) -> Rect:
         """Translate (never resize) so the rectangle stays inside *bounds*."""
         dx = dy = 0.0
         if self.x0 < bounds.x0:
@@ -248,7 +248,7 @@ class Rect:
             dy = bounds.y1 - self.y1
         return self.translated(dx, dy)
 
-    def with_min_size(self, minimum: float) -> "Rect":
+    def with_min_size(self, minimum: float) -> Rect:
         w = max(self.width, minimum)
         h = max(self.height, minimum)
         return Rect.from_xywh(self.x0, self.y0, w, h)

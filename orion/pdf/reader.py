@@ -6,7 +6,6 @@ import logging
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 import pymupdf
 
@@ -29,8 +28,8 @@ class OpenedPdf:
     rendering).
     """
 
-    path: Optional[Path]
-    doc: "pymupdf.Document"
+    path: Path | None
+    doc: pymupdf.Document
     lock: threading.RLock
 
     @property

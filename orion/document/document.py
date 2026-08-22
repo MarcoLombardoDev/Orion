@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from dataclasses import dataclass, field
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Optional
+from typing import Any
 
-from orion.document.page import Page, PageSource
+from orion.document.page import Page
 from orion.utils.events import Event
 from orion.utils.geometry import Size
 
@@ -24,8 +25,8 @@ class DocumentSource:
     """
 
     key: str
-    path: Optional[Path] = None
-    data: Optional[bytes] = None
+    path: Path | None = None
+    data: bytes | None = None
     label: str = ""
 
     @property
@@ -37,7 +38,7 @@ class DocumentSource:
         return self.key[:8]
 
     @classmethod
-    def for_path(cls, path: str | Path) -> "DocumentSource":
+    def for_path(cls, path: str | Path) -> DocumentSource:
         path = Path(path)
         key = hashlib.sha1(str(path.resolve()).encode("utf-8")).hexdigest()[:16]
         return cls(key=key, path=path, label=path.name)
@@ -48,7 +49,7 @@ class DocumentSource:
         return {"key": self.key, "path": str(self.path) if self.path else None, "label": self.label}
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "DocumentSource":
+    def from_dict(cls, data: dict[str, Any]) -> DocumentSource:
         path = data.get("path")
         return cls(key=data["key"], path=Path(path) if path else None, label=data.get("label", ""))
 
@@ -73,7 +74,7 @@ class Document:
         self.id: str = uuid.uuid4().hex
         self._pages: list[Page] = list(pages or [])
         self._sources: dict[str, DocumentSource] = {s.key: s for s in (sources or [])}
-        self.path: Optional[Path] = Path(path) if path else None
+        self.path: Path | None = Path(path) if path else None
         self.title: str = title
         self.metadata: dict[str, str] = {}
         self._modified: bool = False
@@ -225,7 +226,7 @@ class Document:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Document":
+    def from_dict(cls, data: dict[str, Any]) -> Document:
         document = cls(
             pages=[Page.from_dict(p) for p in data.get("pages", [])],
             sources=[DocumentSource.from_dict(s) for s in data.get("sources", [])],
@@ -237,8 +238,11 @@ class Document:
         return document
 
     @classmethod
-    def blank(cls, size: Size | None = None, page_count: int = 1) -> "Document":
+    def blank(cls, size: Size | None = None, page_count: int = 1) -> Document:
         return cls(pages=[Page(base_size=size or Size(595.0, 842.0)) for _ in range(page_count)])
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
-        return f"<Document {self.display_name!r} pages={len(self._pages)} modified={self._modified}>"
+        return (
+            f"<Document {self.display_name!r} "
+            f"pages={len(self._pages)} modified={self._modified}>"
+        )

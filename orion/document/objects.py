@@ -13,9 +13,10 @@ from __future__ import annotations
 
 import base64
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import Any, Callable, ClassVar
+from typing import Any, ClassVar
 
 from orion.utils.geometry import Point, Rect, Size, rotated_bounds
 
@@ -103,15 +104,15 @@ class PageObject:
         """Axis-aligned bounds including this object's own rotation."""
         return rotated_bounds(self.rect, self.rotation)
 
-    def moved_by(self, dx: float, dy: float) -> "PageObject":
+    def moved_by(self, dx: float, dy: float) -> PageObject:
         return self.with_changes(rect=self.rect.translated(dx, dy))
 
-    def with_changes(self, **changes: Any) -> "PageObject":
+    def with_changes(self, **changes: Any) -> PageObject:
         """Return a copy with *changes* applied (dataclasses.replace)."""
         return replace(self, **changes)
 
     # -- identity --------------------------------------------------------
-    def clone(self, *, new_id: bool = True, offset: tuple[float, float] = (0.0, 0.0)) -> "PageObject":
+    def clone(self, *, new_id: bool = True, offset: tuple[float, float] = (0.0, 0.0)) -> PageObject:
         copy = replace(self, id=new_object_id() if new_id else self.id)
         if offset != (0.0, 0.0):
             copy.rect = copy.rect.translated(*offset)
@@ -148,7 +149,7 @@ class PageObject:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "PageObject":
+    def from_dict(cls, data: dict[str, Any]) -> PageObject:
         return cls(**cls._base_kwargs(data))
 
 
@@ -217,7 +218,7 @@ class TextObject(PageObject):
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "TextObject":
+    def from_dict(cls, data: dict[str, Any]) -> TextObject:
         return cls(
             **cls._base_kwargs(data),
             text=data.get("text", ""),
@@ -276,7 +277,7 @@ class ImageObject(PageObject):
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ImageObject":
+    def from_dict(cls, data: dict[str, Any]) -> ImageObject:
         raw = data.get("data", "")
         return cls(
             **cls._base_kwargs(data),
@@ -333,7 +334,7 @@ class ShapeObject(PageObject):
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ShapeObject":
+    def from_dict(cls, data: dict[str, Any]) -> ShapeObject:
         stroke = data.get("stroke_color", list(BLACK))
         fill = data.get("fill_color")
         return cls(

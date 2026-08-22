@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable, Sequence
+from collections.abc import Iterable, Sequence
 
 from orion.commands.base import Command
 from orion.document.document import Document, DocumentSource
@@ -55,7 +55,9 @@ class InsertPageCommand(Command):
 class DeletePagesCommand(Command):
     """Delete one or more pages, restoring their exact positions on undo."""
 
-    def __init__(self, document: Document, indices: Iterable[int], *, text: str | None = None) -> None:
+    def __init__(
+        self, document: Document, indices: Iterable[int], *, text: str | None = None
+    ) -> None:
         self._document = document
         self._indices = sorted(set(indices))
         self._removed: list[tuple[int, Page]] = []
