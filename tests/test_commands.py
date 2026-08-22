@@ -236,3 +236,35 @@ def test_history_limit_invalidates_a_lost_clean_marker(document):
     while history.can_undo:
         history.undo()
     assert not history.is_clean
+
+
+def test_separate_drags_stay_separate_undo_steps(document, history):
+    """A completed gesture is one undo step; the next gesture is another."""
+    shape = _shape()
+    document[0].add_object(shape)
+    history.push(
+        MoveObjectsCommand(document, 0, [shape.id], 5.0, 0.0, allow_merge=False)
+    )
+    history.push(
+        MoveObjectsCommand(document, 0, [shape.id], 7.0, 0.0, allow_merge=False)
+    )
+    assert history.depth == 2
+    history.undo()
+    assert shape.rect.x0 == pytest.approx(15.0)
+    history.undo()
+    assert shape.rect.x0 == pytest.approx(10.0)
+
+
+def test_separate_transform_gestures_stay_separate(document, history):
+    shape = _shape()
+    document[0].add_object(shape)
+    first = {shape.id: (shape.rect, 0.0)}
+    second = {shape.id: (shape.rect, 30.0)}
+    third = {shape.id: (shape.rect, 60.0)}
+    history.push(
+        TransformObjectsCommand(document, 0, first, second, text="Rotate", allow_merge=False)
+    )
+    history.push(
+        TransformObjectsCommand(document, 0, second, third, text="Rotate", allow_merge=False)
+    )
+    assert history.depth == 2

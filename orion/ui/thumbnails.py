@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from orion.document.document import Document
-from orion.pdf.renderer import PageRenderer, RenderedPage, RenderRequest
+from orion.pdf.renderer import RenderedPage, RenderRequest
 from orion.ui.render_bridge import RenderService, to_qimage
 from orion.ui.theme import LIGHT, Theme
 
@@ -127,13 +127,12 @@ class ThumbnailPanel(QListWidget):
         self._document = session.document
         if self._render_service is not None:
             self._render_service.shutdown()
-        # A dedicated renderer keeps thumbnail rasters out of the canvas cache.
-        thumb_renderer = PageRenderer(cache_bytes=24 * 1024 * 1024)
-        for source in session.document.sources.values():
-            handle = session.renderer.source_handle(source.key)
-            if handle is not None:
-                thumb_renderer.register_source(source, handle)
-        self._render_service = RenderService(thumb_renderer, self)
+        # The session's renderer is shared rather than duplicated: it owns the
+        # open file handles, so it is the only thing that may close them, and
+        # saving over the source can release *every* handle in one place.  A
+        # thumbnail is a different scale, so it is a different cache entry and
+        # cannot evict the canvas page it belongs to.
+        self._render_service = RenderService(session.renderer, self)
         self._render_service.rendered.connect(self._on_rendered)
         self.reload()
 

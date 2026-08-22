@@ -174,6 +174,7 @@ class MainWindow(QMainWindow):
 
         self._status = OrionStatusBar(self)
         self.setStatusBar(self._status)
+        self._actions.bind_canvas_shortcuts(self._canvas)
         self.resizeDocks(
             [self._thumbnail_dock, self._properties_dock], [190, 300], Qt.Orientation.Horizontal
         )
@@ -518,14 +519,7 @@ class MainWindow(QMainWindow):
             return
         count = self._clipboard.copy(objects)
         if cut:
-            self._session.history.push(
-                DeleteObjectsCommand(
-                    self._session.document,
-                    self._canvas.current_page,
-                    [obj.id for obj in objects],
-                    text="Cut",
-                )
-            )
+            self._delete_grouped_selection("Cut")
         self._status.flash(f"{'Cut' if cut else 'Copied'} {count} object(s).")
         self._update_ui_state()
 
@@ -550,46 +544,75 @@ class MainWindow(QMainWindow):
         self._status.flash(f"Pasted {len(objects)} object(s).")
 
     def duplicate_selection(self) -> None:
-        objects = self._canvas.selected_objects()
-        if not objects or self._session is None:
+        session = self._session
+        if session is None or not self._canvas.selected_objects():
             return
-        copies = [obj.clone(new_id=True, offset=(12.0, 12.0)) for obj in objects]
-        self._session.history.push(
-            PasteObjectsCommand(
-                self._session.document, self._canvas.current_page, copies, text="Duplicate"
-            )
-        )
-        self._canvas.select_objects(obj.id for obj in copies)
+        created: list[str] = []
+        session.history.begin_macro("Duplicate")
+        try:
+            for page_index, ids in self._canvas.selection_by_page().items():
+                page = session.document.page_at(page_index)
+                if page is None:
+                    continue
+                copies = [
+                    obj.clone(new_id=True, offset=(12.0, 12.0))
+                    for object_id in ids
+                    if (obj := page.find_object(object_id)) is not None
+                ]
+                created.extend(obj.id for obj in copies)
+                session.history.push(
+                    PasteObjectsCommand(
+                        session.document, page_index, copies, text="Duplicate"
+                    )
+                )
+        finally:
+            session.history.end_macro()
+        self._canvas.select_objects(created)
 
     def delete_selection(self) -> None:
-        objects = self._canvas.selected_objects()
-        if not objects or self._session is None:
+        count = len(self._canvas.selected_objects())
+        if not count:
             return
-        self._session.history.push(
-            DeleteObjectsCommand(
-                self._session.document,
-                self._canvas.current_page,
-                [obj.id for obj in objects],
-                text="Delete Object" if len(objects) == 1 else f"Delete {len(objects)} Objects",
-            )
+        self._delete_grouped_selection(
+            "Delete Object" if count == 1 else f"Delete {count} Objects"
         )
 
+    def _delete_grouped_selection(self, text: str) -> None:
+        """Delete the selection, which may span more than one page."""
+        session = self._session
+        if session is None:
+            return
+        grouped = self._canvas.selection_by_page()
+        if not grouped:
+            return
+        if len(grouped) == 1:
+            page_index, ids = next(iter(grouped.items()))
+            session.history.push(
+                DeleteObjectsCommand(session.document, page_index, ids, text=text)
+            )
+            return
+        session.history.begin_macro(text)
+        try:
+            for page_index, ids in grouped.items():
+                session.history.push(
+                    DeleteObjectsCommand(session.document, page_index, ids, text=text)
+                )
+        finally:
+            session.history.end_macro()
+
     def _arrange_selection(self, to_front: bool) -> None:
-        objects = self._canvas.selected_objects()
-        if not objects or self._session is None:
+        if self._session is None or not self._canvas.selected_objects():
             return
         history = self._session.history
         history.begin_macro("Bring to Front" if to_front else "Send to Back")
         try:
-            for obj in objects:
-                history.push(
-                    RaiseObjectCommand(
-                        self._session.document,
-                        self._canvas.current_page,
-                        obj.id,
-                        to_top=to_front,
+            for page_index, ids in self._canvas.selection_by_page().items():
+                for object_id in ids:
+                    history.push(
+                        RaiseObjectCommand(
+                            self._session.document, page_index, object_id, to_top=to_front
+                        )
                     )
-                )
         finally:
             history.end_macro()
 

@@ -68,9 +68,14 @@ class RenderedPage:
 
 
 def quantize_scale(scale: float) -> float:
-    """Snap *scale* to the cache grid and clamp it to a sane range."""
+    """Snap *scale* to the cache grid and clamp it to a sane range.
+
+    The clamp is applied *after* snapping as well: a scale below half a
+    quantum would otherwise round down to zero and render a 1x1 raster.
+    """
     scale = max(MIN_SCALE, min(MAX_SCALE, scale))
-    return round(round(scale / SCALE_QUANTUM) * SCALE_QUANTUM, 4)
+    snapped = round(round(scale / SCALE_QUANTUM) * SCALE_QUANTUM, 4)
+    return max(MIN_SCALE, min(MAX_SCALE, snapped))
 
 
 class PageRenderer:
@@ -91,7 +96,11 @@ class PageRenderer:
 
     # -- source management -----------------------------------------------
     def register_source(self, source: DocumentSource, opened: OpenedPdf | None = None) -> None:
-        """Attach an already-open handle, or remember a path to open lazily."""
+        """Attach an already-open handle, or open the source's path lazily.
+
+        A renderer owns every handle it holds and closes them all in
+        :meth:`close_all`, so a handle must be given to exactly one renderer.
+        """
         with self._sources_lock:
             if opened is not None:
                 previous = self._sources.get(source.key)
@@ -226,7 +235,11 @@ class PageRenderer:
                 page = opened.doc.load_page(request.source_index)
                 if request.rotation:
                     # Orion's rotation is applied on top of the source /Rotate.
-                    matrix = matrix * pymupdf.Matrix(-request.rotation)
+                    # A positive angle here turns the *rendered page* clockwise,
+                    # which is the opposite of the sign PyMuPDF's ``morph=``
+                    # takes; both directions are pinned by the test-suite
+                    # (tests/test_renderer.py and tests/test_coordinates.py).
+                    matrix = matrix * pymupdf.Matrix(request.rotation)
                 pixmap = page.get_pixmap(matrix=matrix, alpha=False, colorspace=pymupdf.csRGB)
             except MemoryError:
                 raise

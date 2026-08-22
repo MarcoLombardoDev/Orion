@@ -207,6 +207,7 @@ class PdfCanvas(QGraphicsView):
     def rebuild(self) -> None:
         """Recreate every page item.  Used on open and after page reordering."""
         selected = {item.object.id for item in self.selected_items()}
+        anchor = self._reading_anchor()
         self._cancel_draft()
         self._scene.clear()
         self._page_items.clear()
@@ -226,6 +227,33 @@ class PdfCanvas(QGraphicsView):
             item = self._item_index.get(object_id)
             if item is not None:
                 item.setSelected(True)
+        self._restore_reading_anchor(anchor)
+
+    def _reading_anchor(self) -> tuple[str, float] | None:
+        """Where the user is reading: ``(page id, fraction down that page)``.
+
+        Rebuilding the scene otherwise throws the reader back to the top, which
+        is jarring after something as small as rotating a page.
+        """
+        if not self._page_items:
+            return None
+        centre_y = self.mapToScene(self.viewport().rect().center()).y()
+        item = self._page_item(self._current_page) or self._page_items[0]
+        rect = item.sceneBoundingRect()
+        height = rect.height() or 1.0
+        return (item.page.id, (centre_y - rect.top()) / height)
+
+    def _restore_reading_anchor(self, anchor: tuple[str, float] | None) -> None:
+        if anchor is None or not self._page_items:
+            return
+        page_id, fraction = anchor
+        for item in self._page_items:
+            if item.page.id == page_id:
+                rect = item.sceneBoundingRect()
+                self.centerOn(rect.center().x(), rect.top() + rect.height() * fraction)
+                self._current_page = item.index
+                self.current_page_changed.emit(item.index)
+                return
 
     def relayout(self) -> None:
         """Stack the pages vertically and centre them."""
@@ -449,6 +477,17 @@ class PdfCanvas(QGraphicsView):
 
     def selected_objects(self) -> list[PageObject]:
         return [item.object for item in self.selected_items()]
+
+    def selection_by_page(self) -> dict[int, list[str]]:
+        """Selected object ids grouped by page.
+
+        A rubber band can cross a page boundary in the continuous view, so any
+        command built from the selection has to be built per page.
+        """
+        grouped: dict[int, list[str]] = {}
+        for item in self.selected_items():
+            grouped.setdefault(item.page_index, []).append(item.object.id)
+        return grouped
 
     def select_objects(self, object_ids: Iterable[str]) -> None:
         self._scene.clearSelection()

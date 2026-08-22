@@ -354,3 +354,59 @@ def _drag(window, tool: Tool, start: tuple[float, float], end: tuple[float, floa
             Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
         )
     )
+
+
+# -- shortcut scoping ----------------------------------------------------
+def test_canvas_only_shortcuts_do_not_fire_in_text_fields(window, qapp, sample_pdf):
+    """Delete must not delete an object while the user is typing in Find."""
+    from PySide6.QtCore import Qt
+
+    window.open_path(sample_pdf)
+    pump(qapp)
+    for key in ("edit.delete", "edit.select_all", "edit.deselect"):
+        action = window._actions[key]
+        assert action.shortcutContext() == Qt.ShortcutContext.WidgetWithChildrenShortcut
+        assert action in window._canvas.actions()
+    # The menu still owns them, so they remain reachable and enabled normally.
+    assert window._actions["edit.select_all"].isEnabled()
+
+
+def test_cross_page_selection_deletes_from_both_pages(window, qapp, sample_pdf):
+    """A rubber band can span pages; the delete must not silently miss one."""
+    window.open_path(sample_pdf)
+    pump(qapp)
+    document = window.session.document
+    first, second = _shape(10.0), _shape(20.0)
+    document[0].add_object(first)
+    document[1].add_object(second)
+    document.notify_content_changed(0)
+    document.notify_content_changed(1)
+    pump(qapp)
+
+    window._canvas.select_objects([first.id, second.id])
+    pump(qapp)
+    assert set(window._canvas.selection_by_page()) == {0, 1}
+
+    window.delete_selection()
+    pump(qapp)
+    assert len(document[0].objects) == 0
+    assert len(document[1].objects) == 0
+
+    window.undo()
+    pump(qapp)
+    assert len(document[0].objects) == 1
+    assert len(document[1].objects) == 1
+
+
+def test_rebuilding_the_scene_keeps_the_reading_position(window, qapp, sample_pdf):
+    window.open_path(sample_pdf)
+    pump(qapp)
+    window._canvas.set_zoom(1.5)
+    window._canvas.go_to_page(2)
+    pump(qapp)
+    assert window._canvas.current_page == 2
+
+    # Rotating a page rebuilds the scene; the reader must stay where they were.
+    window.rotate_pages(90, [2])
+    pump(qapp)
+    assert window._canvas.current_page == 2

@@ -138,8 +138,10 @@ class DeleteObjectsCommand(_ObjectCommand):
 class MoveObjectsCommand(_ObjectCommand):
     """Translate one or more objects.
 
-    Consecutive moves of the same selection merge, so dragging with the mouse
-    produces exactly one undo entry.
+    Consecutive moves of the same selection merge, so holding an arrow key
+    produces one undo entry rather than fifty.  A mouse drag is already
+    condensed into a single command by the canvas and passes
+    ``allow_merge=False``, so two separate drags stay two separate undo steps.
     """
 
     text = "Move"
@@ -151,11 +153,14 @@ class MoveObjectsCommand(_ObjectCommand):
         object_ids: Sequence[str],
         dx: float,
         dy: float,
+        *,
+        allow_merge: bool = True,
     ) -> None:
         super().__init__(document, page_index)
         self._ids = list(object_ids)
         self._dx = dx
         self._dy = dy
+        self._allow_merge = allow_merge
 
     def _shift(self, dx: float, dy: float) -> None:
         page = self._page
@@ -182,7 +187,9 @@ class MoveObjectsCommand(_ObjectCommand):
 
     def merge_with(self, other: Command) -> bool:
         if (
-            isinstance(other, MoveObjectsCommand)
+            self._allow_merge
+            and isinstance(other, MoveObjectsCommand)
+            and other._allow_merge
             and other._page_index == self._page_index
             and other._ids == self._ids
         ):
@@ -197,6 +204,7 @@ class TransformObjectsCommand(_ObjectCommand):
 
     Used for resize and rotate, where the intermediate states are already
     reflected on screen and only the before/after values need recording.
+    ``allow_merge=False`` keeps two separate gestures as two undo steps.
     """
 
     def __init__(
@@ -207,10 +215,12 @@ class TransformObjectsCommand(_ObjectCommand):
         after: dict[str, tuple[Rect, float]],
         *,
         text: str = "Transform",
+        allow_merge: bool = True,
     ) -> None:
         super().__init__(document, page_index)
         self._before = dict(before)
         self._after = dict(after)
+        self._allow_merge = allow_merge
         self.text = text
 
     def _apply(self, state: dict[str, tuple[Rect, float]]) -> None:
@@ -231,7 +241,9 @@ class TransformObjectsCommand(_ObjectCommand):
 
     def merge_with(self, other: Command) -> bool:
         if (
-            isinstance(other, TransformObjectsCommand)
+            self._allow_merge
+            and isinstance(other, TransformObjectsCommand)
+            and other._allow_merge
             and other._page_index == self._page_index
             and other._before.keys() == self._after.keys()
             and other.text == self.text

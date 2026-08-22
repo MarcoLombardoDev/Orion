@@ -371,11 +371,21 @@ class ObjectItem(QGraphicsItem):
             dx = after[first][0].x0 - before[first][0].x0
             dy = after[first][0].y0 - before[first][0].y0
             command = MoveObjectsCommand(
-                self._canvas.document, self.page_index, list(after), dx, dy
+                self._canvas.document,
+                self.page_index,
+                list(after),
+                dx,
+                dy,
+                allow_merge=False,
             )
         else:
             command = TransformObjectsCommand(
-                self._canvas.document, self.page_index, before, after, text=kind
+                self._canvas.document,
+                self.page_index,
+                before,
+                after,
+                text=kind,
+                allow_merge=False,
             )
         # The change is already applied on screen and in the model, so the
         # command is recorded without re-executing it.

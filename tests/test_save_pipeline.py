@@ -323,3 +323,87 @@ def test_build_pdf_bytes_is_a_valid_pdf(service, sample_pdf):
     assert data.startswith(b"%PDF")
     with pymupdf.open("pdf", data) as doc:
         assert doc.page_count == 3
+
+
+# -- what you see is what you save ---------------------------------------
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_rotating_a_page_saves_what_the_canvas_showed(service, tmp_path, rotation):
+    """The renderer and the writer must agree about which way is up.
+
+    The page carries a red corner marker; after rotating it in Orion and
+    saving, the marker must sit in the same place in the written file as the
+    on-screen renderer put it.
+    """
+    source = tmp_path / f"marker{rotation}.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page(width=400, height=600)
+    page.draw_rect(pymupdf.Rect(0, 0, 80, 40), color=(1, 0, 0), fill=(1, 0, 0))
+    doc.save(source)
+    doc.close()
+
+    session = service.open(source)
+    try:
+        session.document[0].rotation = rotation
+        rendered = session.renderer.render(
+            session.renderer.request_for(session.document[0], 1.0)
+        )
+        out = tmp_path / f"rotated{rotation}.pdf"
+        service.save_as(session, out)
+    finally:
+        session.close()
+
+    def marker_centre_of_buffer(buffer, width, height, stride):
+        xs, ys = [], []
+        for y in range(0, height, 3):
+            for x in range(0, width, 3):
+                offset = y * stride + x * 3
+                pixel = buffer[offset : offset + 3]
+                if pixel[0] > 180 and pixel[1] < 90:
+                    xs.append(x)
+                    ys.append(y)
+        assert xs, "the marker was not found"
+        return (sum(xs) / len(xs), sum(ys) / len(ys))
+
+    on_screen = marker_centre_of_buffer(
+        rendered.samples, rendered.width, rendered.height, rendered.stride
+    )
+    with pymupdf.open(out) as result:
+        pixmap = result.load_page(0).get_pixmap(dpi=72, alpha=False)
+        assert (pixmap.width, pixmap.height) == (rendered.width, rendered.height)
+        in_file = marker_centre_of_buffer(
+            pixmap.samples, pixmap.width, pixmap.height, pixmap.stride
+        )
+
+    assert in_file[0] == pytest.approx(on_screen[0], abs=4)
+    assert in_file[1] == pytest.approx(on_screen[1], abs=4)
+
+
+def test_rotating_a_page_carries_its_objects_with_it(service, sample_pdf, tmp_path):
+    """An annotation must stay glued to the content it marks."""
+    session = service.open(sample_pdf)
+    try:
+        page = session.document[0]
+        page.add_object(
+            ShapeObject(
+                rect=Rect.from_xywh(20, 30, 60, 20),
+                shape=ShapeKind.RECTANGLE,
+                stroke_color=(1.0, 0.0, 0.0),
+                fill_color=(1.0, 0.0, 0.0),
+            )
+        )
+        page.rotation = 90
+        out = tmp_path / "rotated-with-object.pdf"
+        service.save_as(session, out)
+    finally:
+        session.close()
+
+    with pymupdf.open(out) as doc:
+        result = doc.load_page(0)
+        assert result.rotation == 90
+        pixmap = result.get_pixmap(dpi=72)
+        bbox = find_color_bbox(pixmap, is_red)
+    assert bbox is not None
+    # Base-space (20,30)-(80,50) on a 400x600 page, turned 90° clockwise for
+    # display, lands near the top-right of the 600x400 result.
+    assert bbox[0] > 500
+    assert bbox[1] < 120

@@ -29,6 +29,10 @@ class ActionSpec:
     checkable: bool = False
     #: Shown in the menu but greyed out until a document is open.
     needs_document: bool = True
+    #: Scope the shortcut to the canvas.  Without this, Delete would delete an
+    #: object while the user is editing text in the find bar, and Ctrl+A would
+    #: select objects instead of the text in whatever field has focus.
+    canvas_scoped: bool = False
 
 
 def _standard(name: str) -> str:
@@ -55,9 +59,9 @@ ACTIONS: tuple[ActionSpec, ...] = (
     ActionSpec("edit.copy", "&Copy", "copy", "Ctrl+C", "Copy the selected objects"),
     ActionSpec("edit.paste", "&Paste", "paste", "Ctrl+V", "Paste objects onto the current page"),
     ActionSpec("edit.duplicate", "&Duplicate", "duplicate", "Ctrl+D", "Duplicate the selected objects"),
-    ActionSpec("edit.delete", "Delete", "delete", "Del", "Delete the selected objects"),
-    ActionSpec("edit.select_all", "Select &All on Page", "", "Ctrl+A", "Select every object on this page"),
-    ActionSpec("edit.deselect", "Deselect", "", "Esc", "Clear the selection"),
+    ActionSpec("edit.delete", "Delete", "delete", "Del", "Delete the selected objects", canvas_scoped=True),
+    ActionSpec("edit.select_all", "Select &All on Page", "", "Ctrl+A", "Select every object on this page", canvas_scoped=True),
+    ActionSpec("edit.deselect", "Deselect", "", "Esc", "Clear the selection", canvas_scoped=True),
     ActionSpec("edit.bring_front", "Bring to &Front", "bring_front", "Ctrl+Shift+]", "Move the object above the others"),
     ActionSpec("edit.send_back", "Send to &Back", "send_back", "Ctrl+Shift+[", "Move the object below the others"),
     # -- View ------------------------------------------------------------
@@ -162,6 +166,21 @@ class ActionRegistry:
 
     def tool_action(self, tool: Tool) -> QAction:
         return self._actions[f"tool.{tool.value}"]
+
+    def bind_canvas_shortcuts(self, canvas: QWidget) -> None:
+        """Re-scope the canvas-only shortcuts so other widgets keep their keys.
+
+        The actions stay on the window (so the menus still show and trigger
+        them), but their *shortcuts* only fire when the canvas has focus.
+        """
+        from PySide6.QtCore import Qt
+
+        for key, spec in self._specs.items():
+            if not spec.canvas_scoped:
+                continue
+            action = self._actions[key]
+            action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            canvas.addAction(action)
 
     def refresh_icons(self) -> None:
         """Re-tint every icon after a theme change."""
