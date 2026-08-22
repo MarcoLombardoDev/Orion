@@ -69,7 +69,14 @@ machine, and your original file is never touched until you press Save.
 - Crash recovery: unsaved work is snapshotted separately from your PDF
 - Light and dark themes
 
-## Installation
+## Download
+
+Standalone builds for Windows, macOS and Linux are attached to each
+[release](https://github.com/MarcoLombardoDev/Orion/releases) — unpack and run,
+no installation and no Python needed. They are unsigned, so Windows SmartScreen
+and macOS Gatekeeper will warn on first launch.
+
+## Installation from source
 
 Orion needs **Python 3.10 or newer**.
 
