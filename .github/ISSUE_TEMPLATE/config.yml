@@ -1,0 +1,20 @@
+# Routes non-bug traffic away from public Issues.
+#
+# Commercial terms, pricing and Corporate CLAs are negotiated privately, so the
+# new-issue chooser offers them as an email link rather than letting them land
+# in a public thread.
+blank_issues_enabled: true
+contact_links:
+  - name: 💼 Commercial or Redistribution licence enquiry
+    url: mailto:marco.lombardo@gmail.com?subject=Orion%20commercial%20licence%20enquiry
+    about: >-
+      Buying a licence, pricing, redistribution/OEM or hosted-service rights.
+      Handled by email, not in public Issues — see COMMERCIAL-LICENSE.md for tiers.
+  - name: 📄 Contributor License Agreement (CLA) questions
+    url: mailto:marco.lombardo@gmail.com?subject=Orion%20CLA
+    about: Individual or Corporate CLA questions, including employer sign-off.
+  - name: 🔐 Security vulnerability
+    url: mailto:marco.lombardo@gmail.com?subject=Orion%20security%20report
+    about: >-
+      Report privately. Orion opens files a user may not have written — please do not open a public
+      issue for a security problem.

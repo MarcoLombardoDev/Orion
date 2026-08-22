@@ -1,7 +1,7 @@
 # Contributing to Orion
 
-Thanks for wanting to help. This file describes how the project works so a
-patch has a good chance of being merged quickly.
+Thanks for wanting to help. This file describes how the project works so a patch has a
+good chance of being merged quickly.
 
 ## Ground rules
 
@@ -10,8 +10,20 @@ access, accounts, telemetry, analytics, cloud storage or a licensing system
 will not be merged, regardless of how well they are written. If a feature needs
 one of those, open an issue and let's discuss it before writing code.
 
-By contributing you agree that your contribution is licensed under the
-**AGPL-3.0-or-later**, the same as the rest of the project.
+## The Contributor License Agreement
+
+Orion is dual-licensed: AGPL-3.0 for everyone, and commercial terms for those who cannot
+accept the AGPL's obligations. That is only possible if one party can license the whole
+work both ways, so **every contributor must agree to the
+[Contributor License Agreement](CLA.md)** before a pull request can be merged.
+
+> **To agree:** include
+> `I have read and agree to the Contributor License Agreement (CLA.md).`
+> in your pull request description. Your first pull request constitutes your agreement.
+
+You keep the copyright in your work, and you receive a perpetual, royalty-free commercial
+licence to Orion for your own use — see
+[COMMERCIAL-LICENSE.md §12](COMMERCIAL-LICENSE.md#12-contributors).
 
 ## Getting set up
 
@@ -46,7 +58,7 @@ saves. In particular:
 5. **Look for the component that already does this.** Most additions are a new
    entry in an existing table, not a new module.
 
-## Adding things
+### Adding things
 
 **A new tool** — add a member to `Tool` and an entry to `TOOL_INFO` in
 `orion/ui/tools.py`, and an icon to `ICONS` in `orion/ui/icons.py`. The action,
@@ -90,9 +102,8 @@ excuse to skip it.
 
 - One logical change per commit; a message that says what changed and why.
 - Describe the user-visible effect in the pull request, and say how you tested it.
-- If you changed anything architectural, update `docs/ARCHITECTURE.md` in the
-  same pull request.
 - Add an entry to `CHANGELOG.md` under *Unreleased*.
+- If you changed anything documented in the README, update it in the same pull request.
 
 ## Reporting bugs
 

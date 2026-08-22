@@ -1,25 +1,104 @@
-name: Release binaries
+name: Release
 
-# Builds a standalone Orion for each platform and attaches it to a release.
+# One workflow, three real platforms.
 #
-# Publishing a release triggers this automatically.  Run it by hand — passing
-# the tag — to attach binaries to a release that already exists.
+# PyInstaller does not cross-compile: the only way to produce a genuine
+# Windows executable, a macOS bundle and a Linux binary is to build each one
+# on its own machine. GitHub hands out all three on demand, so the matrix
+# below does exactly that — nothing here is a cross-build, and nothing is
+# claimed for a platform that was not actually built.
+#
+# Three ways in, all converging on the same result:
+#
+#   * push a "v*" tag       — creates the release, then attaches the binaries
+#   * publish a release     — attaches the binaries to it
+#   * run it by hand        — pass the tag; attaches to that release
+#
+# Release assets are public, need no login, and never expire; workflow
+# artifacts are none of those three. That is why the binaries are uploaded to
+# the release rather than left attached to the run.
+
 on:
+  push:
+    tags: ["v*"]
   release:
     types: [published]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag of the release to attach the binaries to (e.g. v1.0.0)"
+        description: "Tag to build and attach the binaries to (e.g. v1.0.0)"
         required: true
         type: string
 
 permissions:
   contents: write
 
+# Two runs racing on the same tag would upload over each other's assets.
+concurrency:
+  group: release-${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  APP_NAME: Orion
+  # Whether the build produces one self-contained file or a collect directory.
+  # The packaging step needs to know; nothing else does.
+  ONEFILE: "false"
+  PYTHON_VERSION: "3.12"
+
 jobs:
+  # The release object is created — or corrected — before anything is built,
+  # so the three matrix jobs always have somewhere to upload to, whichever
+  # trigger started the run. It also means the description is written once,
+  # from a file in the repository, instead of three times from three runners.
+  release:
+    name: Prepare the release
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - name: Work out which tag to build
+        id: tag
+        run: |
+          tag="${{ inputs.tag || github.event.release.tag_name || github.ref_name }}"
+          case "$tag" in
+            v[0-9]*) ;;
+            *)
+              echo "::error::'$tag' is not a version tag. Expected something like v1.2.3."
+              exit 1
+              ;;
+          esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      # The notes live in .github/release-body.md, next to this file, so the
+      # text a downloader reads can be edited without touching a workflow.
+      # GitHub's own --generate-notes is deliberately not used: it emits the
+      # commit log, which is engineering shorthand, not a description of what
+      # is being downloaded.
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          notes="$(sed "s/{{VERSION}}/$VERSION/g; s/{{TAG}}/$TAG/g" .github/release-body.md)"
+          title="$APP_NAME $TAG"
+          # `gh release create` fails outright when a release already exists
+          # for the tag — which is the normal case for the "release published"
+          # trigger, and for anything drafted through GitHub's own UI. The
+          # fallback converges on the same state: same title, same notes, and
+          # published rather than left as an invisible draft.
+          gh release create "$TAG" --title "$title" --notes "$notes" \
+            || gh release edit "$TAG" --title "$title" --notes "$notes" --draft=false
+
   build:
     name: ${{ matrix.label }}
+    needs: release
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -36,37 +115,26 @@ jobs:
             asset: linux-x64
 
     steps:
-      - name: Work out which tag to build
-        id: tag
-        shell: bash
-        run: |
-          tag="${{ github.event.inputs.tag || github.event.release.tag_name }}"
-          if [ -z "$tag" ]; then
-            echo "::error::No tag to build; pass one when dispatching this workflow."
-            exit 1
-          fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
-
       - uses: actions/checkout@v4
         with:
-          ref: ${{ steps.tag.outputs.tag }}
+          ref: ${{ needs.release.outputs.tag }}
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
 
-      - name: Install Qt's system libraries
+      - name: Install the platform's system libraries
         if: runner.os == 'Linux'
         run: |
+          # PySide6 needs a handful of shared libraries that the runner image omits.
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libegl1 libgl1 libxkbcommon-x11-0 libdbus-1-3 libfontconfig1 \
             libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 \
             libxcb-xinerama0 libxkbcommon0
 
-      - name: Install Orion and PyInstaller
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install . pyinstaller
@@ -74,64 +142,82 @@ jobs:
       - name: Build
         run: pyinstaller --noconfirm --clean orion.spec
 
-      # On macOS the spec produces both a .app bundle and the plain collect
-      # directory.  Which one ships is decided once, here, so the smoke test
-      # and the packaging step cannot end up disagreeing.
-      - name: Locate the macOS bundle
-        id: macos_bundle
-        if: runner.os == 'macOS'
+      # Where the build put its output, and which file inside it is the
+      # program. Decided once, here, so the smoke test and the packaging step
+      # cannot end up disagreeing about what ships.
+      - name: Locate what was built
+        id: built
+        shell: bash
         run: |
-          if [ -d "dist/Orion.app" ]; then
-            echo "path=dist/Orion.app" >> "$GITHUB_OUTPUT"
-            echo "exe=dist/Orion.app/Contents/MacOS/Orion" >> "$GITHUB_OUTPUT"
+          suffix=""
+          [ "$RUNNER_OS" = "Windows" ] && suffix=".exe"
+
+          if [ "$ONEFILE" = "true" ]; then
+            payload="dist/$APP_NAME$suffix"
+            bin="$payload"
+          elif [ "$RUNNER_OS" = "macOS" ] && [ -d "dist/$APP_NAME.app" ]; then
+            payload="dist/$APP_NAME.app"
+            bin="dist/$APP_NAME.app/Contents/MacOS/$APP_NAME"
           else
-            echo "path=dist/Orion" >> "$GITHUB_OUTPUT"
-            echo "exe=dist/Orion/Orion" >> "$GITHUB_OUTPUT"
+            payload="dist/$APP_NAME"
+            bin="dist/$APP_NAME/$APP_NAME$suffix"
           fi
 
-      # A bundle that cannot start is worse than no bundle, so it is run before
-      # it is offered for download.
-      - name: Smoke-test the bundle (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: '& "dist/Orion/Orion.exe" --version'
+          if [ ! -e "$payload" ]; then
+            echo "::error::the build produced nothing at $payload"
+            ls -la dist || true
+            exit 1
+          fi
+          echo "payload=$payload" >> "$GITHUB_OUTPUT"
+          echo "bin=$bin" >> "$GITHUB_OUTPUT"
 
-      - name: Smoke-test the bundle (macOS)
-        if: runner.os == 'macOS'
-        run: ${{ steps.macos_bundle.outputs.exe }} --version
-
-      - name: Smoke-test the bundle (Linux)
-        if: runner.os == 'Linux'
+      # A bundle that cannot start is worse than no bundle, so it is run
+      # before it is offered for download. --version is enough: it exercises
+      # the frozen interpreter, the bundled standard library and the app's own
+      # entry point, and it returns without needing a display.
+      - name: Smoke-test the bundle
+        shell: bash
         env:
-          QT_QPA_PLATFORM: offscreen
-        run: ./dist/Orion/Orion --version
-
-      - name: Package (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
+          BIN: ${{ steps.built.outputs.bin }}
         run: |
-          $name = "Orion-${{ steps.tag.outputs.version }}-${{ matrix.asset }}.zip"
-          Compress-Archive -Path dist/Orion/* -DestinationPath $name
-          "ASSET=$name" | Out-File -FilePath $env:GITHUB_ENV -Append
+          chmod +x "$BIN" 2>/dev/null || true
+          "$BIN" --version
 
-      - name: Package (macOS)
-        if: runner.os == 'macOS'
+      - name: Package
+        id: package
+        shell: bash
+        env:
+          PAYLOAD: ${{ steps.built.outputs.payload }}
+          VERSION: ${{ needs.release.outputs.version }}
         run: |
-          name="Orion-${{ steps.tag.outputs.version }}-${{ matrix.asset }}.zip"
-          # ditto keeps the symlinks and permissions inside a .app bundle; zip
-          # does not, and a flattened bundle will not launch.
-          ditto -c -k --keepParent "${{ steps.macos_bundle.outputs.path }}" "$name"
-          echo "ASSET=$name" >> "$GITHUB_ENV"
-
-      - name: Package (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          name="Orion-${{ steps.tag.outputs.version }}-${{ matrix.asset }}.tar.gz"
-          tar -czf "$name" -C dist Orion
-          echo "ASSET=$name" >> "$GITHUB_ENV"
+          base="$APP_NAME-$VERSION-${{ matrix.asset }}"
+          case "$RUNNER_OS" in
+            Windows)
+              name="$base.zip"
+              # 7z ships on the Windows runner image and, unlike
+              # Compress-Archive, keeps the top-level folder for a directory
+              # payload — so every platform's archive unpacks the same way.
+              7z a -tzip "$name" "$PAYLOAD" > /dev/null
+              ;;
+            macOS)
+              name="$base.zip"
+              # ditto keeps the symlinks and permission bits inside a .app
+              # bundle; zip flattens them and a flattened bundle will not
+              # launch.
+              ditto -c -k --keepParent "$PAYLOAD" "$name"
+              ;;
+            *)
+              name="$base.tar.gz"
+              tar -czf "$name" -C "$(dirname "$PAYLOAD")" "$(basename "$PAYLOAD")"
+              ;;
+          esac
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          ls -la "$name"
 
       - name: Upload to the release
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: gh release upload "${{ steps.tag.outputs.tag }}" "$ASSET" --clobber
+          TAG: ${{ needs.release.outputs.tag }}
+          ASSET: ${{ steps.package.outputs.name }}
+        run: gh release upload "$TAG" "$ASSET" --clobber
