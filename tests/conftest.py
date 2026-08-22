@@ -68,15 +68,24 @@ def is_red(px) -> bool:
     return px[0] > 180 and px[1] < 90 and px[2] < 90
 
 
+#: Held for the lifetime of the process.  A QApplication that is destroyed
+#: while Python is tearing down takes the interpreter with it, so this one is
+#: deliberately never released — exactly as a real Qt program leaves it alive
+#: until the process exits.
+_QAPP = None
+
+
 @pytest.fixture(scope="session")
 def qapp():
     """A single offscreen QApplication for the whole GUI test session."""
     pytest.importorskip("PySide6")
     from PySide6.QtWidgets import QApplication
 
-    app = QApplication.instance() or QApplication([])
-    app.setStyle("Fusion")
-    yield app
+    global _QAPP
+    if _QAPP is None:
+        _QAPP = QApplication.instance() or QApplication([])
+        _QAPP.setStyle("Fusion")
+    return _QAPP
 
 
 @pytest.fixture
@@ -94,7 +103,15 @@ def window(qapp, _isolated_home):
     yield win
     win._autosave_timer.stop()
     win._detach_session()
-    win.deleteLater()
+    win.close()  # closeEvent releases the system clipboard, as on a real quit
+    qapp.processEvents()
+    # Free the C++ object now.  deleteLater only queues a DeferredDelete event,
+    # which processEvents does not reliably deliver; a widget that survives to
+    # interpreter shutdown is destroyed after Qt has gone, which segfaults.
+    import shiboken6
+
+    if shiboken6.isValid(win):
+        shiboken6.delete(win)
     qapp.processEvents()
 
 

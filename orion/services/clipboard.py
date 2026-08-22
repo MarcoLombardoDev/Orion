@@ -16,7 +16,7 @@ from orion.utils.events import Event
 
 log = logging.getLogger(__name__)
 
-__all__ = ["ObjectClipboard", "PASTE_OFFSET"]
+__all__ = ["ObjectClipboard", "release_system_clipboard", "PASTE_OFFSET"]
 
 #: Offset applied to a pasted copy so it does not hide the original.
 PASTE_OFFSET = (12.0, 12.0)
@@ -121,6 +121,37 @@ class ObjectClipboard:
             return QMimeData
         except Exception:
             return None
+
+
+def release_system_clipboard() -> None:
+    """Hand the system clipboard back to Qt before the application exits.
+
+    A ``QMimeData`` created in Python and given to ``QClipboard.setMimeData``
+    is still referenced by the clipboard when the ``QApplication`` is
+    destroyed, and freeing it then segfaults the process (reproduced on
+    PySide6 6.11 with a twelve-line script, no Orion code involved).  So on
+    shutdown Orion's payload is replaced by a plain-text copy, which Qt
+    allocates and owns: the object that crashes is gone, and other
+    applications can still paste the text that was copied.
+
+    Anything *not* put there by Orion is left untouched.
+    """
+    try:
+        from PySide6.QtGui import QGuiApplication
+
+        if QGuiApplication.instance() is None:
+            return
+        clipboard = QGuiApplication.clipboard()
+        data = clipboard.mimeData()
+        if data is None or not data.hasFormat(CLIPBOARD_MIME):
+            return
+        text = data.text()
+        if text:
+            clipboard.setText(text)
+        else:
+            clipboard.clear()
+    except Exception:  # shutdown must never raise
+        log.debug("Could not release the system clipboard", exc_info=True)
 
 
 def _plain_text_preview(objects: Sequence[PageObject]) -> str:

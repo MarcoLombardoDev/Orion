@@ -464,3 +464,56 @@ def test_a_wrong_password_does_not_loop_forever(window, qapp, tmp_path, monkeypa
     assert window.open_path(path) is False
     assert len(attempts) == 2, "the user should be asked again once, then told no"
     assert window.session is None
+
+
+# -- system clipboard shutdown -------------------------------------------
+def test_releasing_the_clipboard_removes_orions_payload_but_keeps_the_text(
+    window, qapp, sample_pdf
+):
+    """Regression guard for a crash on exit.
+
+    A QMimeData handed to QClipboard.setMimeData is still referenced by the
+    clipboard when the QApplication is destroyed, and freeing it then
+    segfaults the process — reproduced on PySide6 6.11 on both the offscreen
+    platform and a real X11 display, with no Orion code involved.  Orion
+    therefore replaces its payload with a plain-text copy on shutdown.
+    """
+    from PySide6.QtGui import QGuiApplication
+
+    from orion.document.serialization import CLIPBOARD_MIME
+    from orion.services.clipboard import release_system_clipboard
+
+    window.open_path(sample_pdf)
+    pump(qapp)
+    document = window.session.document
+    shape = _shape()
+    document[0].add_object(shape)
+    document.notify_content_changed(0)
+    pump(qapp)
+
+    window._canvas.select_objects([shape.id])
+    window._copy_selection(cut=False)
+    pump(qapp)
+
+    clipboard = QGuiApplication.clipboard()
+    if clipboard.mimeData() is None or not clipboard.mimeData().hasFormat(CLIPBOARD_MIME):
+        pytest.skip("this platform has no usable system clipboard")
+
+    release_system_clipboard()
+    pump(qapp)
+
+    data = clipboard.mimeData()
+    assert data is None or not data.hasFormat(CLIPBOARD_MIME)
+    # Something a normal application can still paste must survive.
+    assert clipboard.text()
+
+
+def test_releasing_the_clipboard_leaves_other_applications_data_alone(window, qapp):
+    from PySide6.QtGui import QGuiApplication
+
+    from orion.services.clipboard import release_system_clipboard
+
+    clipboard = QGuiApplication.clipboard()
+    clipboard.setText("something another application copied")
+    release_system_clipboard()
+    assert clipboard.text() == "something another application copied"

@@ -46,7 +46,7 @@ from orion.document.document import Document
 from orion.document.objects import ImageObject, TextObject
 from orion.pdf.errors import OrionPdfError, PdfPasswordRequired, describe_exception
 from orion.services.autosave import list_recoverable
-from orion.services.clipboard import ObjectClipboard
+from orion.services.clipboard import ObjectClipboard, release_system_clipboard
 from orion.services.export_service import ExportService
 from orion.services.file_service import DocumentSession, FileService
 from orion.services.recent_files import RecentFiles
@@ -1212,6 +1212,7 @@ class MainWindow(QMainWindow):
         self._autosave_timer.stop()
         self._store_window_state()
         self._detach_session()
+        release_system_clipboard()
         event.accept()
 
     # -- drag and drop on the window itself --------------------------------

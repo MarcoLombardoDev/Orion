@@ -90,7 +90,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     app.setStyle("Fusion")  # the one style that looks the same on every platform
     _set_application_icon(app)
 
+    from orion.services.clipboard import release_system_clipboard
     from orion.ui.main_window import MainWindow
+
+    app.aboutToQuit.connect(release_system_clipboard)
 
     window = MainWindow()
     _install_exception_hook(window)
@@ -100,7 +103,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         if window.open_path(Path(path)):
             break
 
-    return app.exec()
+    try:
+        return app.exec()
+    finally:
+        # Belt and braces: aboutToQuit normally fires first, but this also
+        # covers an exec() that returns without it.  The call is idempotent.
+        release_system_clipboard()
 
 
 if __name__ == "__main__":  # pragma: no cover - thin wrapper
