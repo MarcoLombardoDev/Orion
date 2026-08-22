@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>Orion</title>
+  <rect width="256" height="256" rx="52" fill="#1e2128"/>
+  <!-- A page, with the three belt stars of the Orion constellation on it. -->
+  <path d="M78 46h64l40 40v124a8 8 0 0 1-8 8H78a8 8 0 0 1-8-8V54a8 8 0 0 1 8-8z"
+        fill="#f4f5f7"/>
+  <path d="M142 46l40 40h-40z" fill="#c9ced8"/>
+  <circle cx="96" cy="168" r="9" fill="#2f6feb"/>
+  <circle cx="126" cy="152" r="9" fill="#2f6feb"/>
+  <circle cx="156" cy="136" r="9" fill="#2f6feb"/>
+  <path d="M96 168 126 152 156 136" stroke="#2f6feb" stroke-width="4"
+        stroke-linecap="round" fill="none" opacity="0.6"/>
+  <rect x="96" y="88" width="84" height="8" rx="4" fill="#d3d7de"/>
+  <rect x="96" y="108" width="60" height="8" rx="4" fill="#d3d7de"/>
+</svg>

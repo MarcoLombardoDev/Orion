@@ -13,6 +13,7 @@ from pathlib import Path
 from orion import APP_NAME
 
 __all__ = [
+    "resources_dir",
     "config_dir",
     "data_dir",
     "cache_dir",
@@ -79,3 +80,17 @@ def recovery_dir() -> Path:
 
 def settings_file() -> Path:
     return config_dir() / "settings.json"
+
+
+def resources_dir() -> Path:
+    """Locate the bundled ``resources`` folder.
+
+    Works both from a source checkout and from a PyInstaller bundle, where the
+    data files are unpacked next to the executable (``sys._MEIPASS``).
+    """
+    bundled = getattr(sys, "_MEIPASS", None)
+    if bundled:
+        candidate = Path(bundled) / "resources"
+        if candidate.is_dir():
+            return candidate
+    return Path(__file__).resolve().parent.parent.parent / "resources"

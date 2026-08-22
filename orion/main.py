@@ -37,6 +37,20 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(list(argv) if argv is not None else None)
 
 
+def _set_application_icon(app) -> None:
+    """Use the bundled application icon, if it is where we expect it."""
+    from PySide6.QtGui import QIcon
+
+    from orion.utils.paths import resources_dir
+
+    for name in ("orion.png", "orion.svg"):
+        candidate = resources_dir() / "icons" / name
+        if candidate.exists():
+            app.setWindowIcon(QIcon(str(candidate)))
+            return
+    log.debug("No application icon found; using the platform default")
+
+
 def _install_exception_hook(window) -> None:
     """Turn an unexpected exception into a log entry and a readable message."""
     from PySide6.QtWidgets import QMessageBox
@@ -74,6 +88,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     app = QApplication(sys.argv[:1] + [])
     app.setStyle("Fusion")  # the one style that looks the same on every platform
+    _set_application_icon(app)
 
     from orion.ui.main_window import MainWindow
 
