@@ -410,3 +410,59 @@ def test_rebuilding_the_scene_keeps_the_reading_position(window, qapp, sample_pd
     window.rotate_pages(90, [2])
     pump(qapp)
     assert window._canvas.current_page == 2
+
+
+# -- password protected documents ----------------------------------------
+def _encrypted_pdf(path, password: str = "letmein"):
+    import pymupdf
+
+    doc = pymupdf.open()
+    doc.new_page(width=300, height=400).insert_text((40, 60), "SECRET", fontsize=18)
+    doc.save(path, encryption=pymupdf.PDF_ENCRYPT_AES_256, user_pw=password)
+    doc.close()
+    return path
+
+
+def test_opening_a_protected_file_asks_for_the_password(window, qapp, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    path = _encrypted_pdf(tmp_path / "locked.pdf")
+    asked: list[str] = []
+
+    def fake_get_text(parent, title, label, echo=None, *args, **kwargs):
+        asked.append(label)
+        return ("letmein", True)
+
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(fake_get_text))
+    assert window.open_path(path) is True
+    assert asked and "password" in asked[0].lower()
+    assert window.session is not None
+    assert window.session.document.page_count == 1
+
+
+def test_cancelling_the_password_prompt_opens_nothing(window, qapp, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    path = _encrypted_pdf(tmp_path / "locked.pdf")
+    monkeypatch.setattr(
+        QInputDialog, "getText", staticmethod(lambda *a, **k: ("", False))
+    )
+    assert window.open_path(path) is False
+    assert window.session is None
+
+
+def test_a_wrong_password_does_not_loop_forever(window, qapp, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog, QMessageBox
+
+    path = _encrypted_pdf(tmp_path / "locked.pdf")
+    attempts: list[int] = []
+
+    def fake_get_text(*_args, **_kwargs):
+        attempts.append(1)
+        return ("wrong", True)
+
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(fake_get_text))
+    monkeypatch.setattr(QMessageBox, "exec", lambda self: QMessageBox.StandardButton.Ok)
+    assert window.open_path(path) is False
+    assert len(attempts) == 2, "the user should be asked again once, then told no"
+    assert window.session is None

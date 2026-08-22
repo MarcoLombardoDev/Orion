@@ -407,3 +407,47 @@ def test_rotating_a_page_carries_its_objects_with_it(service, sample_pdf, tmp_pa
     # display, lands near the top-right of the 600x400 result.
     assert bbox[0] > 500
     assert bbox[1] < 120
+
+
+def test_merge_can_include_the_open_document(service, sample_pdf, tmp_path):
+    """"Add Current Document" must merge unsaved edits, not the file on disk."""
+    from orion.ui.dialogs.merge_dialog import CURRENT_DOCUMENT
+
+    other = tmp_path / "other.pdf"
+    doc = pymupdf.open()
+    doc.new_page(width=200, height=200).insert_text((20, 40), "OTHER", fontsize=16)
+    doc.save(other)
+    doc.close()
+
+    session = service.open(sample_pdf)
+    export = ExportService()
+    try:
+        session.document[0].add_object(
+            TextObject(rect=Rect.from_xywh(40, 250, 300, 40), text="NOT YET SAVED", font_size=18)
+        )
+        merged = export.merge(
+            [other, CURRENT_DOCUMENT],
+            tmp_path / "merged.pdf",
+            document=session.document,
+            current_marker=CURRENT_DOCUMENT,
+        )
+    finally:
+        session.close()
+
+    with pymupdf.open(merged) as result:
+        assert result.page_count == 4
+        assert "OTHER" in result.load_page(0).get_text()
+        assert "NOT YET SAVED" in result.load_page(1).get_text()
+
+
+def test_merge_without_a_document_reports_it(service, tmp_path):
+    from orion.ui.dialogs.merge_dialog import CURRENT_DOCUMENT
+
+    export = ExportService()
+    with pytest.raises(PdfWriteError):
+        export.merge(
+            [CURRENT_DOCUMENT, CURRENT_DOCUMENT],
+            tmp_path / "nope.pdf",
+            document=None,
+            current_marker=CURRENT_DOCUMENT,
+        )

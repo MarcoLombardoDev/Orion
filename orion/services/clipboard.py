@@ -33,7 +33,13 @@ class ObjectClipboard:
     # -- state -----------------------------------------------------------
     @property
     def is_empty(self) -> bool:
-        return not self._objects and not self._read_system()
+        """Cheap check: does *not* deserialise the payload.
+
+        This is polled every time the UI state refreshes, so parsing an
+        embedded image out of the clipboard here would make every selection
+        change slow.
+        """
+        return not self._objects and not self._system_has_objects()
 
     def clear(self) -> None:
         self._objects = []
@@ -72,6 +78,20 @@ class ObjectClipboard:
             QGuiApplication.clipboard().setMimeData(data)
         except Exception:  # a headless or restricted session must still work
             log.debug("System clipboard unavailable", exc_info=True)
+
+    def _system_has_objects(self) -> bool:
+        """Whether the system clipboard carries an Orion payload."""
+        if not self._use_system:
+            return False
+        try:
+            from PySide6.QtGui import QGuiApplication
+
+            if QGuiApplication.instance() is None:
+                return False
+            data = QGuiApplication.clipboard().mimeData()
+            return data is not None and data.hasFormat(CLIPBOARD_MIME)
+        except Exception:
+            return False
 
     def _read_system(self) -> list[PageObject]:
         if not self._use_system:

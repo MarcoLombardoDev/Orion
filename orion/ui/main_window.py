@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QInputDialog,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QVBoxLayout,
@@ -297,13 +298,11 @@ class MainWindow(QMainWindow):
     def _apply_theme(self, mode: ThemeMode) -> None:
         self._theme_mode = mode
         theme = resolve_theme(mode)
-        application = QGuiApplication.instance()
-        if application is not None:
-            from PySide6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication
 
-            app = QApplication.instance()
-            if app is not None:
-                apply_theme(app, theme)
+        app = QApplication.instance()
+        if app is not None:
+            apply_theme(app, theme)
         set_icon_theme(theme)
         self._actions.refresh_icons()
         self._canvas.apply_theme(theme)
@@ -386,13 +385,17 @@ class MainWindow(QMainWindow):
         try:
             session = self._files.open(path, password)
         except PdfPasswordRequired as exc:
-            entered, ok = QInputDialog.getText(
+            entered, accepted = QInputDialog.getText(
                 self,
                 "Password Required",
                 exc.message,
-                echo=QInputDialog.EchoMode.Password if hasattr(QInputDialog, "EchoMode") else None,
+                QLineEdit.EchoMode.Password,
             )
-            if not ok or not entered:
+            if not accepted or not entered:
+                return False
+            if password is not None and entered == password:
+                # The same wrong password twice: stop rather than loop.
+                self._report(exc, title="Cannot Open Document")
                 return False
             return self.open_path(path, password=entered)
         except OrionPdfError as exc:

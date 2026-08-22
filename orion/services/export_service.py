@@ -24,8 +24,8 @@ __all__ = ["ExportService"]
 
 
 class ExportService:
-    def __init__(self) -> None:
-        self._cache: tuple[int, bytes] | None = None
+    """Stateless: every operation renders the model afresh, so a document
+    edited between two exports can never produce a stale result."""
 
     # -- helpers ---------------------------------------------------------
     def _bytes_of(self, document: Document) -> bytes:
