@@ -74,6 +74,21 @@ jobs:
       - name: Build
         run: pyinstaller --noconfirm --clean orion.spec
 
+      # On macOS the spec produces both a .app bundle and the plain collect
+      # directory.  Which one ships is decided once, here, so the smoke test
+      # and the packaging step cannot end up disagreeing.
+      - name: Locate the macOS bundle
+        id: macos_bundle
+        if: runner.os == 'macOS'
+        run: |
+          if [ -d "dist/Orion.app" ]; then
+            echo "path=dist/Orion.app" >> "$GITHUB_OUTPUT"
+            echo "exe=dist/Orion.app/Contents/MacOS/Orion" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=dist/Orion" >> "$GITHUB_OUTPUT"
+            echo "exe=dist/Orion/Orion" >> "$GITHUB_OUTPUT"
+          fi
+
       # A bundle that cannot start is worse than no bundle, so it is run before
       # it is offered for download.
       - name: Smoke-test the bundle (Windows)
@@ -83,7 +98,7 @@ jobs:
 
       - name: Smoke-test the bundle (macOS)
         if: runner.os == 'macOS'
-        run: ./dist/Orion/Orion --version
+        run: ${{ steps.macos_bundle.outputs.exe }} --version
 
       - name: Smoke-test the bundle (Linux)
         if: runner.os == 'Linux'
@@ -105,11 +120,7 @@ jobs:
           name="Orion-${{ steps.tag.outputs.version }}-${{ matrix.asset }}.zip"
           # ditto keeps the symlinks and permissions inside a .app bundle; zip
           # does not, and a flattened bundle will not launch.
-          if [ -d "dist/Orion.app" ]; then
-            ditto -c -k --keepParent "dist/Orion.app" "$name"
-          else
-            ditto -c -k --keepParent "dist/Orion" "$name"
-          fi
+          ditto -c -k --keepParent "${{ steps.macos_bundle.outputs.path }}" "$name"
           echo "ASSET=$name" >> "$GITHUB_ENV"
 
       - name: Package (Linux)
