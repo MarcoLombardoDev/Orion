@@ -12,6 +12,7 @@ from orion.document.objects import ShapeObject, TextObject
 from orion.services.autosave import (
     SNAPSHOT_SUFFIX,
     AutosaveService,
+    _process_alive,
     discard_all,
     list_recoverable,
 )
@@ -142,3 +143,40 @@ def test_a_corrupt_snapshot_is_reported_but_still_listed(recovery_dir):
     assert len(snapshots) == 1
     with pytest.raises(ValueError):
         snapshots[0].load()
+
+
+# -- process liveness ----------------------------------------------------
+def test_process_liveness_probe():
+    """This decides whether a snapshot belongs to a running instance."""
+    assert _process_alive(os.getpid()) is True
+    assert _process_alive(999_999_999) is False
+    assert _process_alive(0) is False
+    assert _process_alive(-1) is False
+
+
+def test_the_liveness_probe_never_signals_the_process():
+    """Regression guard: os.kill(pid, 0) *terminates* the process on Windows.
+
+    The probe must not reach os.kill for a foreign pid on any platform, or a
+    second Orion would kill the first one — the instance whose unsaved work
+    this check exists to protect.
+    """
+    import orion.services.autosave as autosave
+
+    called: list[tuple[int, int]] = []
+    original = os.kill
+
+    def spy(pid, signal_number):
+        called.append((pid, signal_number))
+        return original(pid, signal_number)
+
+    monkeypatched = pytest.MonkeyPatch()
+    try:
+        monkeypatched.setattr(autosave.os, "kill", spy)
+        monkeypatched.setattr(autosave.sys, "platform", "win32")
+        # On Windows the ctypes probe is used; loading kernel32 fails here, and
+        # the conservative fallback is "alive" — but os.kill is never reached.
+        assert autosave._process_alive(999_999_999) is True
+    finally:
+        monkeypatched.undo()
+    assert called == [], "the Windows path must not call os.kill"

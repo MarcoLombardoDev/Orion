@@ -20,7 +20,7 @@ from orion.ui.page_item import base_to_display_transform  # noqa: E402
 from orion.ui.theme import DARK, LIGHT, ThemeMode  # noqa: E402
 from orion.ui.tools import Tool  # noqa: E402
 from orion.utils.geometry import Point, Rect  # noqa: E402
-from tests.conftest import pump
+from tests.conftest import pump, wait_until
 
 
 def _shape(x: float = 40.0, y: float = 60.0) -> ShapeObject:
@@ -62,11 +62,9 @@ def test_actions_are_disabled_without_a_document(window):
 def test_pages_actually_rasterise(window, qapp, sample_pdf):
     window.open_path(sample_pdf)
     page_item = window._canvas._page_items[0]
-    for _ in range(80):
-        qapp.processEvents()
-        if page_item._image is not None:
-            break
-    assert page_item._image is not None
+    assert wait_until(qapp, lambda: page_item._image is not None), (
+        "the page was never rasterised"
+    )
     assert page_item._image.width() > 100
 
 

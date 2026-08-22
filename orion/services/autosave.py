@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import time
 from contextlib import suppress
 from dataclasses import dataclass
@@ -169,14 +170,58 @@ def discard_all(directory: Path | None = None) -> None:
 
 
 def _process_alive(pid: int) -> bool:
-    if pid <= 0 or pid == os.getpid():
-        return pid == os.getpid()
+    """Is the process that wrote a snapshot still running?
+
+    A snapshot belonging to a live instance is in use, not recoverable.  When
+    the answer is uncertain the conservative choice is "alive": that only means
+    Orion does not offer to recover it, whereas a wrong "dead" could hand the
+    same document to two instances at once.
+    """
+    if pid <= 0:
+        return False
+    if pid == os.getpid():
+        return True
+    if sys.platform == "win32":
+        return _windows_process_alive(pid)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
-        return True
+        return True  # it exists, it just belongs to another user
     except OSError:
         return False
     return True
+
+
+def _windows_process_alive(pid: int) -> bool:
+    """Windows liveness probe that does **not** use ``os.kill``.
+
+    On Windows ``os.kill(pid, 0)`` does not probe anything: any signal other
+    than CTRL_C_EVENT/CTRL_BREAK_EVENT goes straight to ``TerminateProcess``.
+    Using it here would kill the very Orion instance whose unsaved work this
+    check exists to protect, so the probe opens a query-only handle instead.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    ERROR_ACCESS_DENIED = 5
+    STILL_ACTIVE = 259
+
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            # Access denied means the process exists but is not ours to query.
+            return ctypes.get_last_error() == ERROR_ACCESS_DENIED
+        try:
+            code = wintypes.DWORD()
+            if kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return code.value == STILL_ACTIVE
+            return True
+        finally:
+            kernel32.CloseHandle(handle)
+    except Exception:  # pragma: no cover - exercised only on Windows
+        log.debug("Could not probe process %d", pid, exc_info=True)
+        return True

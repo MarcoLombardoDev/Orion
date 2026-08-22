@@ -102,3 +102,22 @@ def pump(qapp, times: int = 20) -> None:
     """Let queued Qt events (including finished renders) run."""
     for _ in range(times):
         qapp.processEvents()
+
+
+def wait_until(qapp, predicate, timeout: float = 10.0) -> bool:
+    """Pump Qt events until *predicate* holds, or *timeout* seconds pass.
+
+    Counting processEvents iterations is not a wait: they return immediately,
+    so a fixed count can elapse in microseconds while a worker thread has not
+    even started.  On a slow CI runner that reads as a failure.  This waits on
+    the clock instead.
+    """
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        qapp.processEvents()
+        time.sleep(0.01)
+    return predicate()
