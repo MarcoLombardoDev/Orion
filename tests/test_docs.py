@@ -346,3 +346,73 @@ def test_the_shared_document_set_is_present(document):
 @pytest.mark.parametrize("document", ["COMMERCIAL-LICENSE.md", "CLA.md", "LICENSE"])
 def test_licensing_documents_are_reachable_from_the_readme(document):
     assert document in read("README.md"), f"{document} is not linked from the README"
+
+
+class TestThirdPartySection:
+    """§11 is what a buyer reads before signing, so it has to be true.
+
+    It described six components for a product whose downloadable builds contain
+    519 native binaries from about a hundred projects, and marked most of the
+    six ✅ in a column headed "Commercial redistribution" — which reads as
+    permission, in the one section whose whole job is to say that no permission
+    is granted here.
+    """
+
+    @pytest.fixture(scope="class")
+    def section(self) -> str:
+        terms = read("COMMERCIAL-LICENSE.md")
+        return terms[
+            terms.index("## 11. Third-party components"):terms.index("## 12. Contributors")
+        ]
+
+    def test_it_distinguishes_the_source_dependencies_from_the_shipped_bundle(
+        self, section: str
+    ) -> None:
+        """A redistributor ships the bundle, not requirements.txt."""
+        assert "source" in section.lower()
+        assert "THIRD-PARTY-LICENSES.md" in section, (
+            "§11 does not point at the full inventory, so it remains a summary "
+            "of six components presented as the whole picture"
+        )
+
+    def test_the_mupdf_position_is_stated_and_not_softened(self, section: str) -> None:
+        """The commercially decisive fact, in the document people pay against.
+
+        Orion cannot sublicense Artifex's code. A buyer of a Redistribution
+        licence still receives AGPL MuPDF and still carries its obligations. A
+        buyer who learns this after paying has bought the wrong thing.
+        """
+        lowered = section.lower()
+        assert "sublicense" in lowered or "sublicence" in lowered
+        assert "artifex" in lowered
+        assert "agpl" in lowered
+        assert "network" in lowered, (
+            "the AGPL's network clause is the obligation a redistributor is "
+            "most likely to be caught by"
+        )
+
+    def test_no_component_is_marked_simply_permitted(self, section: str) -> None:
+        """The old table's ✅ column invited exactly the wrong conclusion."""
+        assert "✅" not in section, (
+            "a tick in §11 reads as permission granted; this section grants none"
+        )
+
+    @pytest.mark.parametrize(
+        "obligation",
+        [
+            # Each of these was missing from the six-row table and is carried
+            # by something the archives actually contain.
+            "GCC Runtime Library Exception",
+            "Microsoft",
+            "LGPL-2.1",
+            "Bootloader Exception",
+        ],
+    )
+    def test_obligations_carried_by_the_bundle_are_named(
+        self, section: str, obligation: str
+    ) -> None:
+        assert obligation in section
+
+    def test_it_still_disclaims_being_a_legal_opinion(self, section: str) -> None:
+        """More detail is not more authority."""
+        assert "not a legal opinion" in section.lower()

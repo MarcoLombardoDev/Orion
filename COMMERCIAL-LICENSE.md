@@ -363,25 +363,86 @@ Stated plainly, so nobody discovers it after paying:
 
 ## 11. Third-party components
 
-A commercial licence covers Orion's own code. Its dependencies are separately licensed and
-a commercial licence cannot and does not relicense them.
+A commercial licence covers Orion's own code. Everything Orion is built on is
+separately licensed by its own authors, and this licence cannot and does not
+relicense any of it. §10 applies: no rights to third-party components are granted
+here.
 
-| Component | Licence | Commercial redistribution |
+### What Orion depends on
+
+The four packages Orion requires, plus the interpreter it runs on and the tool that
+freezes it, with the licence each declares in its own metadata at the versions pinned
+in `requirements.txt`:
+
+| Component | Licence | What it asks of you |
 |---|---|---|
-| Python, standard library | PSF License | ✅ Permissive |
-| PySide6 / shiboken6 | LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only | ⚠️ Copyleft family — the LGPL option permits commercial use, subject to its own terms |
-| PyMuPDF | AGPL-3.0 **or** Artifex Commercial License | ⚠️ Dual-licensed by a third party, on its own terms |
-| pypdf | BSD-3-Clause | ✅ Permissive |
-| Pillow | MIT-CMU (HPND) | ✅ Permissive |
-| PyInstaller | GPL-2.0 **with bootloader exception** | ✅ The exception exists to allow proprietary frozen applications |
+| Python, standard library | PSF-2.0 | Attribution. Nothing further. |
+| pypdf | BSD-3-Clause | Reproduce the copyright notice in binary distributions. |
+| Pillow | MIT-CMU (HPND) | Reproduce the copyright notice in binary distributions. |
+| PyInstaller | GPL-2.0-or-later **with the Bootloader Exception** | Nothing. The exception grants unlimited permission to embed the bootloader in a combined program and distribute it without restriction — which is exactly what a frozen application does. |
+| PySide6 / shiboken6 | LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only | Under the LGPL option: ship the licence text, state that Qt is used, keep Qt replaceable by the recipient, and impose no further restriction on Qt itself. |
+| PyMuPDF | AGPL-3.0-only **or** an Artifex Commercial License | See below. This is the one that decides whether redistribution is possible at all. |
 
-The licences above are the ones the packages declare in their own metadata, at
-the versions pinned in `requirements.txt`. Two of them are not permissive, and a
-commercial licence to Orion does not change that: §10 applies, and the terms of
-each component remain between you and its own licensor.
+The PyPI wheels for PySide6 *are* the open-source build of Qt; their metadata offers no
+commercial option. A Qt commercial licence is bought from The Qt Company and is not
+something this licence, or a wheel, can grant.
 
-Verify these against the versions you actually ship. They are listed in good faith, current
-as at the version of this document, and are not a legal opinion.
+### What a downloadable build actually contains
+
+The table above is Orion's **source** dependency list. It is not what a redistributor
+ships. A standalone build is a frozen bundle, and the bundle contains the transitive
+closure of everything those packages link — Qt's own libraries and plugins, the
+libraries Pillow vendors, and whatever the build machine's linker resolved.
+
+The published v1.0.0 archives contain **519 native binaries** across the three
+platforms, drawn from roughly a hundred distinct projects. Every one of them is
+inventoried, with the source of each licence determination, in
+**[THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md)**. Grouped by what they require:
+
+| Class | Binaries in v1.0.0 | What it asks of you |
+|---|--:|---|
+| Permissive — MIT, BSD, ISC, Apache-2.0, Zlib, Unicode | 153 | Reproduce the notices. |
+| Python and its extension modules — PSF-2.0 | 118 | Attribution. |
+| Qt — LGPL-3.0 | 171 | Licence text, notice, and the recipient's ability to relink. |
+| Other LGPL-2.1 / LGPL-2.0 libraries | 13 | The same, in their earlier form. |
+| GCC runtime — GPL-3.0-or-later **with GCC Runtime Library Exception 3.1** | 2 | Nothing. The exception is what makes it distributable; without it a GPL-3 library would sit inside every build. |
+| Microsoft Visual C++ and Universal CRT runtime (Windows) | 45 | Microsoft's own redistributable terms — **not an open-source licence**, and a different legal basis from every other row here. |
+| MuPDF, via PyMuPDF — AGPL-3.0 or Artifex commercial | 17 | See below. |
+
+Counts describe v1.0.0 and change with the build. The inventory is regenerated from the
+archives at each release rather than maintained by hand.
+
+### MuPDF, and what it means for a Redistribution licence
+
+**Read this before buying a Redistribution licence.**
+
+Orion renders and writes PDFs with MuPDF, through PyMuPDF. Artifex licenses MuPDF under
+the AGPL-3.0 **or** a commercial licence of its own. Orion holds no right to sublicense
+Artifex's code, so:
+
+- A commercial or redistribution licence to Orion covers **Orion's code only**. The
+  MuPDF inside the build you receive is still the AGPL-licensed MuPDF.
+- The AGPL's obligations therefore attach to **you**, directly, on your own
+  distribution or network deployment — including its source-availability requirement
+  for users interacting with it over a network.
+- Resolving that is between you and Artifex. The usual route is an Artifex commercial
+  or OEM licence, bought separately.
+
+This is a property of the dependency, not a limitation chosen here, and no payment to
+the Project Owner removes it. It is stated plainly rather than buried because a buyer
+who discovers it after purchase has bought the wrong thing.
+
+Work is under way to determine whether MuPDF can be replaced with a permissively
+licensed engine. Until that ships, the paragraph above is the position, and any
+Redistribution quotation will restate it.
+
+### Verify against what you ship
+
+The determinations above and in THIRD-PARTY-LICENSES.md were made from package metadata
+and from the build machine's own copyright records, and each entry names its source so
+it can be re-checked. They are given in good faith, are current as at the version of
+this document, and are **not a legal opinion**. Verify them against the versions you
+actually ship.
 
 ---
 
