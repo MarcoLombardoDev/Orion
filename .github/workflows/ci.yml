@@ -81,7 +81,11 @@ jobs:
       - name: Install without PySide6
         run: |
           python -m pip install --upgrade pip
-          pip install PyMuPDF pypdf Pillow
+          # Everything requirements.txt asks for except PySide6, so the list
+          # cannot drift away from the real dependency set the way a
+          # hand-written one does — this job went red on a dependency that had
+          # been replaced days earlier.
+          grep -ivE '^\s*(#|PySide6)' requirements.txt | pip install -r /dev/stdin
       - name: Import the framework-neutral layers
         run: |
           python - <<'PY'
