@@ -39,7 +39,11 @@ DOCUMENT = os.path.join(REPO, "THIRD-PARTY-LICENSES.md")
 
 sys.path.insert(0, os.path.join(REPO, "tools"))
 
-from collect_licences import SUPPLIED_TEXTS, collect  # noqa: E402
+from collect_licences import (  # noqa: E402
+    RUNTIME_DISTRIBUTIONS,
+    SUPPLIED_TEXTS,
+    collect,
+)
 from licence_inventory import classify, is_native  # noqa: E402
 
 
@@ -235,10 +239,42 @@ class TestLicenceCollection:
     def test_the_pyinstaller_bootloader_exception_travels_with_the_binary(
         self, tree: str
     ) -> None:
-        """The bootloader is compiled into the executable, so its terms ship."""
+        """The bootloader is compiled into the executable, so its terms ship.
+
+        Skipped where PyInstaller is not installed. CI installs the test
+        dependencies and not the packaging ones, so demanding the file exist
+        here asserted a property of my machine rather than of the collector —
+        and the collector was right to omit terms for software that is not
+        present. What matters in that case is covered by the test below.
+        """
+        from importlib.metadata import PackageNotFoundError, distribution
+
+        try:
+            distribution("pyinstaller")
+        except PackageNotFoundError:
+            pytest.skip("PyInstaller is not installed in this environment")
         path = os.path.join(tree, "python", "pyinstaller", "COPYING.txt")
         with open(path, encoding="utf-8") as f:
             assert "Bootloader Exception" in f.read()
+
+    def test_a_missing_licence_is_recorded_rather_than_passed_over(
+        self, tree: str
+    ) -> None:
+        """Silence is the dangerous failure mode for a licence collector.
+
+        If a distribution ships no licence file and none is supplied for it,
+        the tree simply has no directory for it — which looks identical to a
+        distribution that is not used at all. The index has to say so, so that
+        a gap is visible in the archive instead of being indistinguishable
+        from completeness.
+        """
+        with open(os.path.join(tree, "README.md"), encoding="utf-8") as f:
+            index = f.read()
+        for name in RUNTIME_DISTRIBUTIONS:
+            assert name in index, (
+                f"{name} appears nowhere in the shipped index, so its absence "
+                "from the tree carries no explanation"
+            )
 
     def test_build_tools_that_are_not_shipped_are_not_documented(self, tree: str) -> None:
         """Terms for software that is not in the archive are noise in it."""
