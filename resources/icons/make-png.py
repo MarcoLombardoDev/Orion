@@ -1,3 +1,11 @@
+# Orion — PDF Editor for Desktop
+# Copyright (C) 2026 Marco Lombardo
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Distributed WITHOUT ANY WARRANTY; see LICENSE for the full terms.
+# A commercial licence, without the AGPL's obligations, is available for use
+# in proprietary or closed-source products — see COMMERCIAL-LICENSE.md.
+
 """Render ``orion.svg`` to ``orion.png`` for packaging.
 
 Kept as a script rather than a build step so the PNG stays a reviewable,
