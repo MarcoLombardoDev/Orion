@@ -1,6 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
 """Guards against the documentation drifting away from the product — and away
 from the other three products it is deliberately kept in step with.
 
