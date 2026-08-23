@@ -267,6 +267,15 @@ users currently download. Three defects were found in them. All three are
 fixed in `orion.spec`, and none of the fixes is in a published archive yet —
 they land in the next release, and this document gets regenerated against it.
 
+One thing worth knowing about the texts themselves: **Pillow's Windows wheel
+carries a different notice from its Linux and macOS ones.** The Linux and macOS
+LICENSE files are byte-identical at 70,282 bytes and cover every library the
+wheel vendors, from AOM to zstd. The Windows file is 77,991 bytes, uses prose
+headings instead of uppercase section names, and has no zstd or AOM section —
+because the Windows wheel vendors neither. Whichever wheel a build used is the
+notice that ships with it, which is the correct outcome and not one to
+normalise away.
+
 **1. The archives contain no licence texts at all — fixed, not yet released.**
 A recursive search of all three published v1.0.0 archives for `LICENSE`,
 `COPYING` or `NOTICE` files returns zero results. This is a genuine compliance

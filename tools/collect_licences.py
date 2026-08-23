@@ -94,7 +94,16 @@ LICENCE_FILE = re.compile(r"(?i)^(licen[cs]e|copying|notice|authors)")
 
 
 def _distribution_licence_files(name: str) -> list[tuple[str, str]]:
-    """Return ``(filename, text)`` for every licence file a wheel ships."""
+    """Return ``(relative path, text)`` for every licence file a wheel ships.
+
+    The path is kept relative to the dist-info directory rather than reduced
+    to a bare file name. Wheels put licence files in both places — ``LICENSE``
+    beside METADATA and ``licenses/LICENSE`` below it — and pip's own wheel
+    ships twenty of them, one per vendored package, all named LICENSE. Writing
+    by base name would have each overwrite the last and leave a tree that
+    looks complete and is not, which is the one failure this script exists to
+    prevent.
+    """
     try:
         from importlib.metadata import distribution
     except ImportError:  # pragma: no cover - Python < 3.8 is not supported
@@ -106,15 +115,38 @@ def _distribution_licence_files(name: str) -> list[tuple[str, str]]:
     found = []
     for file in dist.files or ():
         parts = str(file).split("/")
-        if not any(part.endswith((".dist-info", ".egg-info")) for part in parts):
+        info = next(
+            (i for i, part in enumerate(parts)
+             if part.endswith((".dist-info", ".egg-info"))),
+            None,
+        )
+        if info is None:
             continue
         if not LICENCE_FILE.match(parts[-1]):
             continue
         try:
-            found.append((parts[-1], file.read_text()))
+            found.append(("/".join(parts[info + 1:]), file.read_text(encoding="utf-8")))
         except Exception:
             continue
-    return found
+    return _flatten(found)
+
+
+def _flatten(files: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Drop the leading ``licenses/`` most wheels wrap their texts in.
+
+    It is a packaging convention, not information, and keeping it produces
+    licenses/python/pillow/licenses/LICENSE. Dropped only where it does not
+    collide with a file already sitting at the top of dist-info — a wheel that
+    ships both LICENSE and licenses/LICENSE keeps them apart.
+    """
+    names = {path for path, _ in files}
+    flattened = []
+    for path, text in files:
+        head, _, rest = path.partition("/")
+        if head == "licenses" and rest and rest not in names:
+            path = rest
+        flattened.append((path, text))
+    return flattened
 
 
 def _system_packages(binaries) -> list[str]:
@@ -184,7 +216,9 @@ def collect(repo: str, staging: str, binaries=()) -> str:
         os.makedirs(target, exist_ok=True)
         written = []
         for filename, text in files:
-            with open(os.path.join(target, filename), "w", encoding="utf-8") as out:
+            destination = os.path.join(target, *filename.split("/"))
+            os.makedirs(os.path.dirname(destination), exist_ok=True)
+            with open(destination, "w", encoding="utf-8") as out:
                 out.write(text)
             written.append(filename)
         for canonical in supplied:

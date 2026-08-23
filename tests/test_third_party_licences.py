@@ -42,6 +42,7 @@ sys.path.insert(0, os.path.join(REPO, "tools"))
 from collect_licences import (  # noqa: E402
     RUNTIME_DISTRIBUTIONS,
     SUPPLIED_TEXTS,
+    _flatten,
     collect,
 )
 from licence_inventory import classify, is_native  # noqa: E402
@@ -230,10 +231,22 @@ class TestLicenceCollection:
             assert "GNU AFFERO GENERAL PUBLIC LICENSE" in f.read()
 
     def test_pillows_licence_covers_its_vendored_libraries(self, tree: str) -> None:
-        """Pillow's LICENSE is the notice for a dozen native libraries."""
+        """Pillow's LICENSE is the notice for a dozen native libraries.
+
+        Matched case-insensitively, and against libraries every wheel vendors.
+        The first version of this test looked for the uppercase section
+        headings the Linux wheel uses — LIBJPEG, LIBTIFF — and failed on
+        Windows, whose wheel carries the same libraries under prose headings
+        ("libjpeg-turbo Licenses"). It was checking the formatting of one
+        platform's file, not the coverage of the notice.
+
+        The two wheels do differ in substance as well: the Windows notice has
+        no zstd or AOM section, because the Windows wheel vendors neither.
+        Those are deliberately not asserted here.
+        """
         with open(os.path.join(tree, "python", "pillow", "LICENSE"), encoding="utf-8") as f:
-            text = f.read()
-        for library in ("LIBJPEG", "LIBTIFF", "ZLIB", "OPENJPEG", "HARFBUZZ"):
+            text = f.read().lower()
+        for library in ("freetype", "libjpeg", "libpng", "zlib", "libtiff", "libwebp"):
             assert library in text, f"Pillow's notice no longer covers {library}"
 
     def test_the_pyinstaller_bootloader_exception_travels_with_the_binary(
@@ -281,3 +294,33 @@ class TestLicenceCollection:
         packaged = os.listdir(os.path.join(tree, "python"))
         for tool in ("pytest", "ruff", "setuptools"):
             assert tool not in packaged
+
+
+class TestLicencePathHandling:
+    """Two licence files with the same name must not become one.
+
+    Wheels put licence texts both beside METADATA and under a ``licenses/``
+    directory, and some ship many at once — pip's wheel carries twenty, one
+    per vendored package, every one of them called LICENSE. Writing them by
+    base name leaves a tree that looks complete and has silently kept only the
+    last, which is the single failure this collector exists to prevent.
+    """
+
+    def test_the_conventional_licenses_prefix_is_dropped(self) -> None:
+        """It is packaging convention, not information."""
+        assert _flatten([("licenses/LICENSE", "x")]) == [("LICENSE", "x")]
+
+    def test_but_not_when_that_would_collide(self) -> None:
+        """A wheel shipping both keeps both, under distinct names."""
+        flattened = dict(_flatten([("LICENSE", "outer"), ("licenses/LICENSE", "inner")]))
+        assert flattened == {"LICENSE": "outer", "licenses/LICENSE": "inner"}
+
+    def test_deeper_paths_are_preserved(self) -> None:
+        """pip vendors twenty LICENSE files; only the path tells them apart."""
+        vendored = [
+            ("licenses/src/pip/_vendor/requests/LICENSE", "requests"),
+            ("licenses/src/pip/_vendor/urllib3/LICENSE.txt", "urllib3"),
+        ]
+        flattened = dict(_flatten(vendored))
+        assert len(flattened) == 2
+        assert flattened["src/pip/_vendor/requests/LICENSE"] == "requests"
