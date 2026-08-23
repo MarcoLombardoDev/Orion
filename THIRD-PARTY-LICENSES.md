@@ -269,15 +269,27 @@ recurring false alarm.
 
 ## Known gaps
 
-The three defects this document opened with are closed: the archives carry
-their licence texts, `libcom_err` is no longer shipped, and Qt PDF is gone. One
-thing remains worth saying plainly:
+The three defects this document opened with are closed, and the published
+archives now carry the fixes rather than merely the repository.
 
-**The published v1.0.0 archives predate all of it.** They still contain MuPDF,
-no licence texts, and the components listed under "What was deliberately
-removed". Everything described above lands in the next release. Until then, the
-files on the releases page are the old ones, and this document describes what
-the repository builds rather than what is currently downloadable.
+Verified against the file on the releases page rather than against the build
+that produced it: the Windows archive was downloaded, its SHA-256 checked
+against the release metadata, and its 288 entries listed. It contains no
+MuPDF, PyMuPDF or fitz; it contains pdfium, pypdf and reportlab; it carries 55
+files under `licenses/`; and Virtual Keyboard, Qt Quick, Qt Qml, EglFS, Qt PDF
+and Qt Network are all absent.
+
+One thing is worth stating precisely, because it is the difference between
+"checked" and "checked the way that matters":
+
+**The published archives were built before the smoke test learned to save.**
+Their startup was exercised on each platform's own runner — Qt comes up on
+`windows`, `cocoa` and `xcb` respectively, and the release fails otherwise —
+but writing a PDF was not, because that check landed after the build. So the
+save path is proven on Linux, where it was run against the frozen bundle
+directly, and on Windows and macOS it is supported by inspection of the
+archive rather than by execution. Rebuilding the release closes that, and
+every release after this one is covered automatically.
 
 ## Reproducing this
 

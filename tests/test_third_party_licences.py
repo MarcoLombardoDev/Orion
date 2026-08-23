@@ -125,19 +125,27 @@ def test_licence_of_each_dependency_is_stated(
     )
 
 
-def test_the_document_says_the_published_archives_are_older(document: str) -> None:
-    """The one caveat that outlives the fixes.
+def test_the_document_separates_what_was_run_from_what_was_inspected(
+    document: str,
+) -> None:
+    """A licence document has to say how strongly each claim was checked.
 
-    Three defects this document opened with are closed in the repository —
-    licence texts ship, libcom_err is gone, Qt PDF is gone — and the PDF engine
-    has been replaced outright. None of that is in a file anyone can download
-    yet. A licence document that describes the repository while readers hold
-    an older archive is the kind of accurate-but-misleading that gets someone
-    into trouble, so it has to say which one it is describing.
+    Everything here was verified, but not all of it the same way. The published
+    archive was downloaded and its contents listed; the save path was executed
+    against a frozen bundle on one platform and inferred from the archive's
+    contents on the other two. Presenting those as one uniform "verified" is
+    the kind of accurate-but-misleading that gets somebody into trouble, so the
+    section that reports the state has to distinguish them.
     """
     assert "## Known gaps" in document
-    assert "predate" in document, (
-        "nothing tells the reader the published archives are older than this"
+    section = document[document.index("## Known gaps"):]
+    assert "inspection" in section, (
+        "the document does not say which claims rest on inspection rather than "
+        "on having been run"
+    )
+    assert "SHA-256" in section, (
+        "nothing records that the published archive itself was checked, as "
+        "opposed to the build that produced it"
     )
 
 
