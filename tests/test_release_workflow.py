@@ -85,7 +85,17 @@ def test_the_workflow_can_be_triggered_by_hand_and_by_a_tag():
     on = triggers(load_workflow())
     assert "workflow_dispatch" in on
     assert on["push"]["tags"] == ["v*"]
-    assert on["release"]["types"] == ["published"]
+
+
+def test_publishing_a_release_does_not_start_a_second_racing_run():
+    """Regression, seen live on Proteus v1.3.0: with a "release: published"
+    trigger alongside the tag's push trigger, publishing a release from
+    GitHub's UI fires both — the UI creates the tag, which is itself a push.
+    Two runs then built the same three archives at once and uploaded them over
+    each other with --clobber. The tag's push event covers both routes, so it
+    is the only one kept.
+    """
+    assert "release" not in triggers(load_workflow())
 
 
 def test_the_workflow_can_write_repository_contents():

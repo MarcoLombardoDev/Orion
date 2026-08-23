@@ -8,11 +8,18 @@ name: Release
 # below does exactly that — nothing here is a cross-build, and nothing is
 # claimed for a platform that was not actually built.
 #
-# Three ways in, all converging on the same result:
+# Two ways in, converging on the same result:
 #
-#   * push a "v*" tag       — creates the release, then attaches the binaries
-#   * publish a release     — attaches the binaries to it
+#   * a "v*" tag appears    — creates the release, then attaches the binaries.
+#                             Pushing the tag with git does this, and so does
+#                             publishing a release through GitHub's own UI,
+#                             which creates the tag and fires the same push
+#                             event.
 #   * run it by hand        — pass the tag; attaches to that release
+#
+# Deliberately NOT also triggered by "release: published". That event and the
+# tag's push event both fire when a release is published from the UI, and two
+# runs then race to upload the same three asset names. One trigger, one run.
 #
 # Release assets are public, need no login, and never expire; workflow
 # artifacts are none of those three. That is why the binaries are uploaded to
@@ -21,8 +28,6 @@ name: Release
 on:
   push:
     tags: ["v*"]
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -35,7 +40,7 @@ permissions:
 
 # Two runs racing on the same tag would upload over each other's assets.
 concurrency:
-  group: release-${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 env:
@@ -60,7 +65,7 @@ jobs:
       - name: Work out which tag to build
         id: tag
         run: |
-          tag="${{ inputs.tag || github.event.release.tag_name || github.ref_name }}"
+          tag="${{ inputs.tag || github.ref_name }}"
           case "$tag" in
             v[0-9]*) ;;
             *)
@@ -89,10 +94,11 @@ jobs:
           notes="$(sed "s/{{VERSION}}/$VERSION/g; s/{{TAG}}/$TAG/g" .github/release-body.md)"
           title="$APP_NAME $TAG"
           # `gh release create` fails outright when a release already exists
-          # for the tag — which is the normal case for the "release published"
-          # trigger, and for anything drafted through GitHub's own UI. The
-          # fallback converges on the same state: same title, same notes, and
-          # published rather than left as an invisible draft.
+          # for the tag — the normal case when the tag was created by
+          # publishing a release through GitHub's own UI, and when a moved tag
+          # lands on a release that is already there. The fallback converges on
+          # the same state: same title, same notes, and published rather than
+          # left as an invisible draft.
           gh release create "$TAG" --title "$title" --notes "$notes" \
             || gh release edit "$TAG" --title "$title" --notes "$notes" --draft=false
 
