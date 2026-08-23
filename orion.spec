@@ -75,6 +75,30 @@ UNUSED_QT_COMPONENTS = (
     "qtqml",
     "eglfs",                    # embedded/kiosk backends; Orion is a desktop app
     "egldeviceintegrations",
+    "qgtk3",                    # GTK platform theme; see GTK_STACK below
+)
+
+# Dropping the GTK platform theme leaves its dependency chain with nothing to
+# load it.  Orion already forces the Fusion style, so that plugin only ever
+# supplied GNOME's native file dialogs; Qt's own dialogs take over.
+#
+# Every name below was checked with ``ldd`` over the built bundle: the only
+# things linking them are other members of this list.  Notably absent, because
+# the same check showed Qt itself links them, are libglib/libgobject/libgio,
+# libfreetype, libharfbuzz, libgcrypt and libsystemd — those are not GTK's, and
+# removing them would break Qt.
+GTK_STACK = (
+    "libgtk-3",
+    "libgdk-3",
+    "libgdk_pixbuf",
+    "libatk-1.0",
+    "libatk-bridge",
+    "libatspi",
+    "libcairo",          # also matches libcairo-gobject
+    "libpango",          # also matches libpangocairo, libpangoft2
+    "libepoxy",
+    "libthai",
+    "libdatrie",
 )
 
 
@@ -83,7 +107,7 @@ def _drop_unused(entries):
     kept = []
     for entry in entries:
         destination = str(entry[0]).replace("\\", "/").lower()
-        if any(name in destination for name in UNUSED_QT_COMPONENTS):
+        if any(name in destination for name in UNUSED_QT_COMPONENTS + GTK_STACK):
             continue
         kept.append(entry)
     return kept

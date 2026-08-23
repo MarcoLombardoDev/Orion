@@ -62,6 +62,29 @@ def test_unused_components_are_excluded(spec_source, component):
     assert component in _filter_list(spec_source)
 
 
+def test_qt_own_libraries_are_not_caught_by_the_gtk_filter(spec_source):
+    """The GTK filter must not take libraries Qt links itself.
+
+    ``ldd`` over the built bundle shows libglib, libgobject, libgio, libfreetype,
+    libharfbuzz, libgcrypt and libsystemd are linked by libQt6Gui, libQt6Widgets,
+    libQt6DBus and most Qt plugins. They look like part of the GTK stack and are
+    not; removing them breaks Qt rather than saving space.
+    """
+    stack = _gtk_stack(spec_source)
+    for library in ("libglib", "libgobject", "libgio", "libfreetype",
+                    "libharfbuzz", "libgcrypt", "libsystemd"):
+        assert library not in stack, (
+            f"{library} is linked by Qt itself, not only by GTK"
+        )
+
+
+def test_the_gtk_platform_theme_plugin_is_excluded(spec_source):
+    """Leaving the plugin in while removing its libraries would ship a plugin
+    that fails to load, which is worse than either shipping or dropping both."""
+    assert "qgtk3" in _filter_list(spec_source)
+    assert "libgtk-3" in _gtk_stack(spec_source)
+
+
 def test_wayland_is_not_excluded(spec_source):
     """Wayland is the default session on current Linux desktops.
 
@@ -69,12 +92,19 @@ def test_wayland_is_not_excluded(spec_source):
     it would be a functional regression rather than a cleanup.
     """
     assert "wayland" not in _filter_list(spec_source)
+    assert "wayland" not in _gtk_stack(spec_source)
 
 
 def test_the_filter_matches_case_insensitively(spec_source):
     """File names differ per platform: libQt6VirtualKeyboard.so, Qt6VirtualKeyboard.dll,
     QtVirtualKeyboard.framework. Matching has to be lower-cased to catch all three."""
     assert ".lower()" in spec_source
+
+
+def _gtk_stack(spec_source: str) -> str:
+    start = spec_source.index("GTK_STACK = (")
+    end = spec_source.index(")", start)
+    return spec_source[start:end].lower()
 
 
 def _filter_list(spec_source: str) -> str:
