@@ -85,8 +85,79 @@ def _install_exception_hook(window) -> None:
     sys.excepthook = hook
 
 
+def _round_trip() -> str:
+    """Write a small document and read it back. Returns a one-line report.
+
+    The release smoke test used to stop at "Qt started", which leaves the
+    entire PDF engine untested in the artefact that actually ships. That is the
+    wrong half to skip: a frozen bundle breaks by *missing a file* — a data
+    directory PyInstaller did not collect, a shared library it did not find —
+    and every one of those failures happens the first time a user saves, not at
+    startup. The test suite cannot see them either, because it runs against an
+    installed package where nothing is missing.
+
+    So this does the smallest thing that touches all four libraries: build a
+    page with text, a shape and an annotation, save it, and open the result.
+    Writing exercises reportlab's font metrics and pypdf's assembly; reading
+    back exercises pdfium; and finding the text again proves the glyphs were
+    written as text rather than as a picture of text.
+    """
+    import tempfile
+    from pathlib import Path
+
+    from orion.document.annotations import AnnotationKind, AnnotationObject
+    from orion.document.document import Document
+    from orion.document.objects import ShapeKind, ShapeObject, TextObject
+    from orion.document.page import Page
+    from orion.pdf import reader, writer
+    from orion.utils.geometry import Rect, Size
+
+    needle = "ORION SELF CHECK"
+    page = Page(base_size=Size(400.0, 600.0))
+    page.add_object(
+        TextObject(rect=Rect.from_xywh(40.0, 60.0, 320.0, 60.0), text=needle, font_size=16.0)
+    )
+    page.add_object(
+        ShapeObject(
+            rect=Rect.from_xywh(40.0, 160.0, 120.0, 80.0),
+            shape=ShapeKind.RECTANGLE,
+            stroke_color=(1.0, 0.0, 0.0),
+        )
+    )
+    page.add_object(
+        AnnotationObject(
+            rect=Rect.from_xywh(40.0, 60.0, 320.0, 20.0),
+            annotation=AnnotationKind.HIGHLIGHT,
+            quads=[Rect.from_xywh(40.0, 60.0, 320.0, 20.0)],
+        )
+    )
+
+    with tempfile.TemporaryDirectory(prefix="orion-self-check-") as directory:
+        target = Path(directory) / "self-check.pdf"
+        result = writer.save_document(Document(pages=[page]), target)
+        opened = reader.open_pdf(target)
+        try:
+            from orion.pdf.renderer import PageRenderer
+
+            renderer = PageRenderer(cache_bytes=4 * 1024 * 1024)
+            document = reader.build_document(opened)
+            renderer.register_source(next(iter(document.sources.values())), opened)
+            found = needle in renderer.page_text(document[0])
+            rendered = renderer.render(renderer.request_for(document[0], 1.0))
+        finally:
+            opened.close()
+
+    if not found:
+        raise RuntimeError("the text written to the page could not be read back")
+    return (
+        f"round trip: wrote {result.bytes_written} bytes, "
+        f"read back {result.page_count} page, "
+        f"rendered {rendered.width}x{rendered.height}, text found"
+    )
+
+
 def _self_check(app) -> int:
-    """Report that Qt came up, and on which platform plugin.
+    """Report that Qt came up, on which platform plugin, and that saving works.
 
     This exists for the release smoke test. ``--version`` is not a smoke test:
     argparse prints and exits before PySide6 is ever imported, so a bundle
@@ -104,6 +175,13 @@ def _self_check(app) -> int:
     print(f"styles: {', '.join(QStyleFactory.keys())}")
     if not platform:
         log.error("Qt started without a platform plugin")
+        return 1
+
+    try:
+        print(_round_trip())
+    except Exception as exc:
+        log.exception("The PDF round trip failed")
+        print(f"round trip: FAILED — {exc}")
         return 1
     return 0
 

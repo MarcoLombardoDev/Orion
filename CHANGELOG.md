@@ -33,8 +33,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   Linux build. The PySide6 wheels declare LGPL-3.0 and ship no licence file, so
   that text is supplied from `licenses/` in this repository, together with the
   GPL-3.0 it builds on.
-- `orion --self-check`, which starts Qt and reports the platform plugin in use
-  without opening a window.
+- `orion --self-check`, which starts Qt, reports the platform plugin in use,
+  and writes a small document and reads it back — all without opening a window.
+  The release workflow runs it on each platform's own bundle, so a build that
+  cannot save is caught before it is published rather than by the first user
+  who presses Save. Starting Qt alone would not catch it: a frozen application
+  breaks by missing a file, and that surfaces at save time, not at startup.
 - **`COMMERCIAL-LICENSE.md` and `CLA.md`.** Orion is now dual-licensed on the
   same terms as its three sibling products: AGPL-3.0 for everyone, and a
   commercial licence for closed-source and redistribution use. The document

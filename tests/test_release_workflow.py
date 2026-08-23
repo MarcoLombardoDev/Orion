@@ -285,3 +285,48 @@ class TestSelfCheck:
                 return ""
 
         assert _self_check(NoPlatform()) == 1
+
+
+class TestRoundTrip:
+    """The half of the smoke test that exercises the PDF engine.
+
+    Starting Qt proves the bundle can open a window. It says nothing about
+    whether the bundle can *save*, and that is where a frozen application
+    breaks: a data directory PyInstaller did not collect, a shared library it
+    did not find. Those failures happen the first time a user presses Save, and
+    the test suite cannot see them either — it runs against an installed
+    package, where nothing is missing.
+    """
+
+    def test_it_writes_a_file_and_reads_the_text_back(self):
+        from orion.main import _round_trip
+
+        report = _round_trip()
+        assert "text found" in report, report
+        assert "wrote" in report and "read back 1 page" in report
+
+    def test_it_leaves_nothing_behind(self, tmp_path, monkeypatch):
+        """A smoke test that litters the user's disk is its own bug report."""
+        import tempfile
+
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+        from orion.main import _round_trip
+
+        _round_trip()
+        assert list(tmp_path.iterdir()) == []
+
+    def test_it_fails_loudly_when_the_engine_is_broken(self, monkeypatch, capsys):
+        """The point of the check is that a broken bundle does not ship."""
+        from orion import main as main_module
+
+        def explode() -> str:
+            raise RuntimeError("libpdfium.so: cannot open shared object file")
+
+        monkeypatch.setattr(main_module, "_round_trip", explode)
+
+        class FakeApp:
+            def platformName(self):
+                return "xcb"
+
+        assert main_module._self_check(FakeApp()) == 1
+        assert "FAILED" in capsys.readouterr().out
