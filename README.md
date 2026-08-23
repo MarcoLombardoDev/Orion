@@ -365,7 +365,10 @@ review: **[COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)**.
 > licence. A commercial licence to Orion covers Orion's own code and cannot
 > relicense either of them: their terms stay between you and their own licensors.
 > The full table is in
-> [§11](COMMERCIAL-LICENSE.md#11-third-party-components).
+> [§11](COMMERCIAL-LICENSE.md#11-third-party-components), and every component
+> in the downloadable builds — 519 native binaries across the three archives —
+> is inventoried in
+> [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).
 
 ### How to get in touch
 
