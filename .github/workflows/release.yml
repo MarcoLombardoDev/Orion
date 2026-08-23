@@ -96,6 +96,31 @@ jobs:
           gh release create "$TAG" --title "$title" --notes "$notes" \
             || gh release edit "$TAG" --title "$title" --notes "$notes" --draft=false
 
+      # A release the tag was moved onto still carries the assets of whatever
+      # was published there before. They are not overwritten by name — the
+      # archives below are named after the platform and the version, and an
+      # older scheme's file simply sits alongside them, offering a download
+      # that no longer matches the notes above it.
+      - name: Remove assets left by a previous build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          keep=""
+          for asset in "windows-x64.zip" "macos-arm64.zip" "linux-x64.tar.gz"; do
+            keep="$keep $APP_NAME-$VERSION-$asset"
+          done
+          for name in $(gh release view "$TAG" --json assets --jq '.assets[].name'); do
+            case " $keep " in
+              *" $name "*) ;;
+              *)
+                echo "removing stale asset: $name"
+                gh release delete-asset "$TAG" "$name" --yes
+                ;;
+            esac
+          done
+
   build:
     name: ${{ matrix.label }}
     needs: release

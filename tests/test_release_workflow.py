@@ -139,6 +139,23 @@ def test_the_release_gets_a_title_on_both_paths():
     assert run.count("--title") == 2 and run.count("--notes") == 2
 
 
+def test_assets_from_a_previous_build_are_removed_first():
+    """Moving a tag onto a new commit leaves the old release's assets in place.
+    They are not overwritten by name — the archives are named after the
+    platform and the version — so an abandoned file would sit under notes that
+    no longer describe it, offering a download nobody built.
+    """
+    steps = load_workflow()["jobs"]["release"]["steps"]
+    step = step_named(steps, "Remove assets left by a previous build")
+    assert step is not None, "no stale-asset cleanup step in the release job"
+    assert "gh release delete-asset" in step["run"]
+
+    names = [s.get("name") for s in steps]
+    assert names.index("Create or update the release") < names.index(
+        "Remove assets left by a previous build"
+    ), "the release has to exist before its assets can be listed"
+
+
 def test_only_version_tags_are_accepted():
     step = step_named(load_workflow()["jobs"]["release"]["steps"], "Work out which tag to build")
     assert "v[0-9]*" in step["run"], "a non-version tag must not publish a release"
