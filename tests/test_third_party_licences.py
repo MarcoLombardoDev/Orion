@@ -39,6 +39,7 @@ DOCUMENT = os.path.join(REPO, "THIRD-PARTY-LICENSES.md")
 
 sys.path.insert(0, os.path.join(REPO, "tools"))
 
+from collect_licences import SUPPLIED_TEXTS, collect  # noqa: E402
 from licence_inventory import classify, is_native  # noqa: E402
 
 
@@ -176,3 +177,71 @@ class TestBundleClassifier:
     def test_the_frozen_executable_is_not_a_library(self) -> None:
         assert not is_native("Orion")
         assert not is_native("base_library.zip")
+
+
+class TestLicenceCollection:
+    """The tree that orion.spec puts inside the archive as licenses/."""
+
+    @pytest.fixture(scope="class")
+    def tree(self, tmp_path_factory) -> str:
+        return collect(REPO, str(tmp_path_factory.mktemp("licences") / "out"))
+
+    def test_orions_own_licence_is_there(self, tree: str) -> None:
+        with open(os.path.join(tree, "Orion-LICENSE.txt"), encoding="utf-8") as f:
+            assert "GNU AFFERO GENERAL PUBLIC LICENSE" in f.read()
+
+    def test_qt_gets_a_licence_text_the_wheel_never_shipped(self, tree: str) -> None:
+        """PySide6's wheels declare LGPL-3.0 and include no licence file.
+
+        Nothing can be copied forward from a wheel that ships nothing, so the
+        text has to be supplied — which is the whole reason licenses/ exists in
+        the repository rather than being generated from dist-info alone.
+        """
+        supplied = os.path.join(tree, "python", "PySide6")
+        assert os.path.isdir(supplied), "PySide6 got no licence directory"
+        assert os.path.exists(os.path.join(supplied, "LGPL-3.0.txt"))
+
+    def test_lgpl3_never_travels_without_gpl3(self, tree: str) -> None:
+        """LGPL-3.0 is a set of additional permissions on top of GPL-3.0.
+
+        Its text is seven kilobytes and defines almost nothing on its own:
+        shipping it alone ships half a licence. Every distribution that gets
+        LGPL-3.0 gets GPL-3.0 with it.
+        """
+        for name, texts in SUPPLIED_TEXTS.items():
+            if "LGPL-3.0.txt" not in texts:
+                continue
+            assert "GPL-3.0.txt" in texts, (
+                f"{name} is given LGPL-3.0 without the GPL-3.0 it builds on"
+            )
+            directory = os.path.join(tree, "python", name)
+            assert os.path.exists(os.path.join(directory, "GPL-3.0.txt"))
+
+    def test_mupdfs_one_line_copying_is_backed_by_the_agpl_text(self, tree: str) -> None:
+        """PyMuPDF's COPYING is a single line naming the dual licence."""
+        directory = os.path.join(tree, "python", "PyMuPDF")
+        with open(os.path.join(directory, "COPYING"), encoding="utf-8") as f:
+            assert len(f.read().strip().splitlines()) == 1
+        with open(os.path.join(directory, "AGPL-3.0.txt"), encoding="utf-8") as f:
+            assert "GNU AFFERO GENERAL PUBLIC LICENSE" in f.read()
+
+    def test_pillows_licence_covers_its_vendored_libraries(self, tree: str) -> None:
+        """Pillow's LICENSE is the notice for a dozen native libraries."""
+        with open(os.path.join(tree, "python", "pillow", "LICENSE"), encoding="utf-8") as f:
+            text = f.read()
+        for library in ("LIBJPEG", "LIBTIFF", "ZLIB", "OPENJPEG", "HARFBUZZ"):
+            assert library in text, f"Pillow's notice no longer covers {library}"
+
+    def test_the_pyinstaller_bootloader_exception_travels_with_the_binary(
+        self, tree: str
+    ) -> None:
+        """The bootloader is compiled into the executable, so its terms ship."""
+        path = os.path.join(tree, "python", "pyinstaller", "COPYING.txt")
+        with open(path, encoding="utf-8") as f:
+            assert "Bootloader Exception" in f.read()
+
+    def test_build_tools_that_are_not_shipped_are_not_documented(self, tree: str) -> None:
+        """Terms for software that is not in the archive are noise in it."""
+        packaged = os.listdir(os.path.join(tree, "python"))
+        for tool in ("pytest", "ruff", "setuptools"):
+            assert tool not in packaged

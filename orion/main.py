@@ -37,6 +37,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("files", nargs="*", type=Path, help="PDF files to open")
     parser.add_argument("--version", action="version", version=f"{APP_NAME} {__version__}")
     parser.add_argument(
+        "--self-check",
+        action="store_true",
+        help="start Qt, report the platform plugin in use, and exit without a window",
+    )
+    parser.add_argument(
         "--log-level",
         default=None,
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -80,6 +85,29 @@ def _install_exception_hook(window) -> None:
     sys.excepthook = hook
 
 
+def _self_check(app) -> int:
+    """Report that Qt came up, and on which platform plugin.
+
+    This exists for the release smoke test. ``--version`` is not a smoke test:
+    argparse prints and exits before PySide6 is ever imported, so a bundle
+    whose Qt platform plugin is missing or unloadable passes it and then fails
+    on the user's desktop. Constructing QApplication is the cheapest thing that
+    actually proves the plugin loaded — Qt aborts the process if it cannot find
+    one — and naming the plugin makes the difference between a real backend and
+    a headless fallback visible in the build log rather than assumed.
+    """
+    from PySide6.QtWidgets import QStyleFactory
+
+    platform = app.platformName()
+    print(f"{APP_NAME} {__version__}")
+    print(f"platform plugin: {platform}")
+    print(f"styles: {', '.join(QStyleFactory.keys())}")
+    if not platform:
+        log.error("Qt started without a platform plugin")
+        return 1
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     setup_logging(args.log_level)
@@ -97,6 +125,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     app = QApplication(sys.argv[:1] + [])
     app.setStyle("Fusion")  # the one style that looks the same on every platform
     _set_application_icon(app)
+
+    if args.self_check:
+        return _self_check(app)
 
     from orion.services.clipboard import release_system_clipboard
     from orion.ui.main_window import MainWindow

@@ -262,49 +262,65 @@ recurring false alarm.
 
 ## Known gaps
 
-These are real and open. They are listed rather than quietly fixed because
-each needs a decision, not just a commit.
+The tables above describe the **published v1.0.0 archives**, which is what
+users currently download. Three defects were found in them. All three are
+fixed in `orion.spec`, and none of the fixes is in a published archive yet —
+they land in the next release, and this document gets regenerated against it.
 
-**1. The release archives contain no licence texts at all.** Verified: a
-recursive search of all three published v1.0.0 archives for `LICENSE`,
+**1. The archives contain no licence texts at all — fixed, not yet released.**
+A recursive search of all three published v1.0.0 archives for `LICENSE`,
 `COPYING` or `NOTICE` files returns zero results. This is a genuine compliance
-defect, not a formality. LGPL-3.0 §4 requires that a copy of the licence
-accompany the object code; the BSD and MIT libraries require their copyright
-notices be reproduced in binary distributions; the AGPL requires the same for
-MuPDF. The PySide6 wheels do not help — they ship no licence file in their
-metadata either, so there is nothing to copy forward automatically. The fix is
-to collect the texts and add them to the bundle as a `licenses/` tree in
-`orion.spec`. **This document does not fix it** — a file in the repository is
-not a file in the archive a user downloads.
+defect: LGPL-3.0 §4 requires a copy of the licence to accompany the object
+code, the BSD and MIT libraries require their copyright notices be reproduced
+in binary distributions, and MuPDF's AGPL requires the same.
 
-**2. `libcom_err` has a disputed licence.** Ubuntu's copyright file for
-`libcom-err2` has no stanza covering `lib/et`, so the package default of GPL-2
-applies by omission; upstream e2fsprogs licenses `com_err` under MIT. One
-reading puts a GPL-2 library in the bundle, the other a permissive one.
+The PySide6 wheels make it worse rather than easier: they declare LGPL-3.0 in
+their metadata and ship no licence file, so there is nothing to copy forward
+automatically and the text has to be supplied from somewhere. Note also that
+LGPL-3.0 is not self-contained — it is a set of additional permissions on top
+of GPL-3.0, so shipping it alone ships half a licence.
 
-It is worth resolving by deletion rather than by legal opinion, because nothing
-needs it. The chain, read out of the ELF headers of the shipped bundle:
+[`tools/collect_licences.py`](tools/collect_licences.py) now assembles the tree
+and `orion.spec` adds it to the bundle as `licenses/`. A local Linux build
+produces **87 files**: Orion's own AGPL text, each wheel's own licence where it
+ships one, the canonical texts from [`licenses/`](licenses) for the wheels that
+ship none, and the build machine's copyright record for every system package
+whose library survives into the archive. Collection runs *after* the exclusion
+filter, so it documents what is actually shipped and nothing that was removed.
+
+**2. `libcom_err` had a disputed licence — removed rather than resolved.**
+Ubuntu's copyright file for `libcom-err2` has no stanza covering `lib/et`, so
+the package default of GPL-2 applies by omission; upstream e2fsprogs licenses
+`com_err` under MIT. One reading put a GPL-2 library in the archive.
+
+It is gone, which is a better answer than a legal opinion. The chain, read out
+of the ELF headers of the published bundle:
 
 ```
 libQt6Network  →  libgssapi_krb5  →  libcom_err, libkrb5, libk5crypto, libkrb5support
 ```
 
-and `libQt6Network` is itself reached only from Qt's TLS, network-information
-and PDF plugins. Orion imports `QtCore`, `QtGui` and `QtWidgets` and nothing
-else. Five libraries, one of them with a disputed licence, are in the archive
-for code that is never called.
+and `libQt6Network` was itself reached only from Qt's TLS, network-information,
+VNC, TUIO and PDF plugins. Orion imports `QtCore`, `QtGui` and `QtWidgets` and
+nothing else, so none of it ever loaded.
 
-**3. Qt PDF ships and is never used.** `libQt6Pdf` (4.3 MB) is in the Linux and
-macOS bundles for one reason: Qt's `qpdf` *image-format* plugin links it, and
-PyInstaller collects the plugin. Qt PDF embeds PDFium and its own third-party
-dependencies, so this is a second PDF engine — and a second set of licence
-obligations — riding along for a feature nothing calls. It is also what drags
-`libQt6Network` (2.0 MB) in, and with it the Kerberos chain from gap 2.
+**3. Qt PDF shipped and was never used — removed.** `libQt6Pdf` (4.3 MB) was in
+the Linux and macOS archives for one reason: Qt's `qpdf` *image-format* plugin
+links it, and PyInstaller collects the plugin. Qt PDF embeds PDFium and its own
+third-party dependencies, so this was a second PDF engine — and a second set of
+licence obligations — riding along for a feature nothing calls.
 
-Gaps 2 and 3 have a single fix: exclude the `qpdf` image-format plugin and the
-`tls` / `networkinformation` plugin directories in `orion.spec`, the same way
-Virtual Keyboard and GTK are already excluded. That removes roughly 6.3 MB of
-Qt plus five Kerberos libraries, and deletes eight rows from the table above.
+Removing a library without its dependants leaves them behind: PyInstaller
+resolves dependencies during Analysis, before the spec's filter runs, so
+dropping `libQt6Network` does not drop what `libQt6Network` dragged in. The
+orphaned Kerberos chain is named explicitly in `ORPHANED_BY_REMOVAL`, and
+`objdump -p` over the rebuilt bundle finds no referrer to any of it.
+
+Measured by building both specs in the same environment, the removals are worth
+**9.0 MB unpacked and 4.3 MB compressed** — net of the ~0.5 MB of licence texts
+added at the same time. The rebuilt bundle has no unresolved shared-library
+dependencies (`ldd` over all 202 libraries) and still starts under the real
+`xcb` platform plugin.
 
 ## Reproducing this
 

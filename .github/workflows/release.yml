@@ -163,7 +163,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libegl1 libgl1 libxkbcommon-x11-0 libdbus-1-3 libfontconfig1 \
             libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 \
-            libxcb-xinerama0 libxkbcommon0
+            libxcb-xinerama0 libxkbcommon0 xvfb
 
       - name: Install dependencies
         run: |
@@ -203,9 +203,14 @@ jobs:
           echo "bin=$bin" >> "$GITHUB_OUTPUT"
 
       # A bundle that cannot start is worse than no bundle, so it is run
-      # before it is offered for download. --version is enough: it exercises
-      # the frozen interpreter, the bundled standard library and the app's own
-      # entry point, and it returns without needing a display.
+      # before it is offered for download.
+      #
+      # --version alone is not a smoke test. argparse prints the version and
+      # exits before PySide6 is ever imported, so it proves the frozen
+      # interpreter and the bundled standard library work and nothing else: a
+      # bundle whose Qt platform plugin is missing passes it, and then fails
+      # on the user's desktop. --self-check constructs QApplication, which is
+      # what makes Qt load a platform plugin, and prints which one it got.
       - name: Smoke-test the bundle
         shell: bash
         env:
@@ -213,6 +218,25 @@ jobs:
         run: |
           chmod +x "$BIN" 2>/dev/null || true
           "$BIN" --version
+
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            # Under a virtual X server and the real xcb plugin — not
+            # offscreen, which would load none of the X libraries and so
+            # would not notice a broken xcb backend at all.
+            output=$(xvfb-run -a env QT_QPA_PLATFORM=xcb "$BIN" --self-check)
+          else
+            output=$("$BIN" --self-check)
+          fi
+          echo "$output"
+
+          plugin=$(echo "$output" | sed -n 's/^platform plugin: //p')
+          case "$RUNNER_OS:$plugin" in
+            Linux:xcb|macOS:cocoa|Windows:windows) ;;
+            *)
+              echo "::error::$RUNNER_OS bundle came up on platform plugin '$plugin'"
+              exit 1
+              ;;
+          esac
 
       - name: Package
         id: package

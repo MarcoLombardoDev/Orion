@@ -18,8 +18,13 @@ building or running Orion — this file exists so the project stays compatible
 with it.
 """
 
+import os
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(SPECPATH) / "tools"))  # noqa: F821 - PyInstaller global
+
+from collect_licences import collect as collect_licences  # noqa: E402
 
 BUILD_DIR = Path(SPECPATH)  # noqa: F821 - injected by PyInstaller
 APP_NAME = "Orion"
@@ -37,6 +42,7 @@ EXCLUDED_QT = [
     "PySide6.QtBluetooth",
     "PySide6.QtPositioning",
     "PySide6.QtSql",
+    "PySide6.QtNetwork",
     "PySide6.QtTest",
     "PySide6.QtDesigner",
 ]
@@ -76,6 +82,47 @@ UNUSED_QT_COMPONENTS = (
     "eglfs",                    # embedded/kiosk backends; Orion is a desktop app
     "egldeviceintegrations",
     "qgtk3",                    # GTK platform theme; see GTK_STACK below
+    #
+    # A second PDF engine, and the network stack behind it, for a feature
+    # nothing calls.  Qt's ``qpdf`` *image-format* plugin links libQt6Pdf,
+    # which embeds PDFium and links libQt6Network; the TLS, network-information,
+    # VNC and TUIO plugins link libQt6Network too.  Orion imports QtCore,
+    # QtGui and QtWidgets and nothing else, so none of it is ever loaded.
+    #
+    # It is worth removing for a licensing reason as much as for the 6.3 MB.
+    # libQt6Network drags in the Kerberos libraries, one of which — libcom_err
+    # — has a licence Ubuntu's copyright file and upstream e2fsprogs disagree
+    # about.  Deleting the chain settles the question without needing a legal
+    # opinion on a library nothing calls.
+    #
+    # Read out of the shipped bundle with ``objdump -p``: after these go,
+    # nothing in the bundle references libQt6Pdf or libQt6Network.
+    "imageformats/libqpdf",     # the only thing linking libQt6Pdf
+    "imageformats/qpdf",        # its Windows and macOS spellings
+    "qt6pdf",
+    "plugins/tls",
+    "plugins/networkinformation",
+    "qtuiotouchplugin",
+    "libqvnc",
+    "qt6network",
+    "qtnetwork",                # the Python binding, which links libQt6Network
+)
+
+# Removing Qt Network orphans the Kerberos stack it linked for GSSAPI: with
+# libQt6Network gone, ``objdump -p`` over the built bundle finds no referrer to
+# libgssapi_krb5 outside the chain itself.  PyInstaller collected these during
+# Analysis, before the filtering above, so they have to be named to leave.
+#
+# libcom_err is the one that motivated this: Ubuntu's copyright file has no
+# stanza for e2fsprogs' lib/et, so the package default of GPL-2 applies by
+# omission, while upstream licenses it MIT.  It is now simply not in the
+# archive, which is a better answer than either reading.
+ORPHANED_BY_REMOVAL = (
+    "libgssapi_krb5",
+    "libkrb5",              # also matches libkrb5support
+    "libk5crypto",
+    "libcom_err",
+    "libkeyutils",          # linked only by libkrb5
 )
 
 # Dropping the GTK platform theme leaves its dependency chain with nothing to
@@ -107,7 +154,8 @@ def _drop_unused(entries):
     kept = []
     for entry in entries:
         destination = str(entry[0]).replace("\\", "/").lower()
-        if any(name in destination for name in UNUSED_QT_COMPONENTS + GTK_STACK):
+        unused = UNUSED_QT_COMPONENTS + GTK_STACK + ORPHANED_BY_REMOVAL
+        if any(name in destination for name in unused):
             continue
         kept.append(entry)
     return kept
@@ -115,6 +163,26 @@ def _drop_unused(entries):
 
 analysis.binaries = _drop_unused(analysis.binaries)
 analysis.datas = _drop_unused(analysis.datas)
+
+# The v1.0.0 archives shipped without a single licence file in them, which the
+# LGPL, the AGPL and every BSD/MIT notice in the bundle all require.  Assemble
+# the texts and ship them.  This runs after the filtering above so the system
+# libraries it reads are the ones that actually survive into the archive.
+LICENCE_STAGING = BUILD_DIR / "build" / "licenses"
+# TOC entries are (destination, source, typecode) — appended directly, so they
+# bypass the normalisation Analysis() applies to its own ``datas`` argument and
+# have to be in that exact shape.
+analysis.datas += [
+    (
+        str(Path("licenses") / Path(path).relative_to(LICENCE_STAGING) / name),
+        str(Path(path) / name),
+        "DATA",
+    )
+    for path, _subdirs, names in os.walk(
+        collect_licences(str(BUILD_DIR), str(LICENCE_STAGING), analysis.binaries)
+    )
+    for name in names
+]
 
 pyz = PYZ(analysis.pure)  # noqa: F821
 

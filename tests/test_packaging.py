@@ -35,6 +35,21 @@ FORBIDDEN = {
 #: Unused, but a size and obligation concern rather than a licence conflict.
 UNWANTED = ("qt6quick", "qtquick", "qt6qml", "qtqml", "eglfs")
 
+#: Qt PDF, Qt Network and the plugins that link them. Orion imports QtCore,
+#: QtGui and QtWidgets; the ``qpdf`` image-format plugin pulled a whole second
+#: PDF engine along behind them, and Qt Network pulled the Kerberos stack.
+UNREACHABLE = (
+    "imageformats/libqpdf",
+    "qt6pdf",
+    "plugins/tls",
+    "plugins/networkinformation",
+    "qt6network",
+    "qtnetwork",
+)
+
+#: Orphaned once Qt Network leaves: nothing outside this chain links it.
+ORPHANS = ("libgssapi_krb5", "libkrb5", "libk5crypto", "libcom_err", "libkeyutils")
+
 
 @pytest.fixture(scope="module")
 def spec_source() -> str:
@@ -60,6 +75,61 @@ def test_gpl_only_components_are_excluded(spec_source, component, reason):
 @pytest.mark.parametrize("component", UNWANTED)
 def test_unused_components_are_excluded(spec_source, component):
     assert component in _filter_list(spec_source)
+
+
+@pytest.mark.parametrize("component", UNREACHABLE)
+def test_unreachable_qt_modules_are_excluded(spec_source, component):
+    """Qt PDF is a second PDF engine, shipped for a plugin nothing calls.
+
+    Orion renders with MuPDF. libQt6Pdf reached the v1.0.0 archives only
+    because Qt's ``qpdf`` *image-format* plugin links it, and it embeds PDFium
+    and its own third-party dependencies — a second engine, and a second set of
+    licence obligations, for a code path that never executes.
+    """
+    assert component in _filter_list(spec_source)
+
+
+@pytest.mark.parametrize("library", ORPHANS)
+def test_the_kerberos_chain_leaves_with_qt_network(spec_source, library):
+    """Removing a library without its dependants leaves them in the archive.
+
+    PyInstaller resolved these during Analysis, before the filter runs, so
+    dropping libQt6Network does not drop what libQt6Network dragged in. They
+    have to be named. libcom_err is the reason this matters beyond size: its
+    licence is disputed between Ubuntu's copyright file and upstream
+    e2fsprogs, and not shipping it settles the question.
+    """
+    start = spec_source.index("ORPHANED_BY_REMOVAL = (")
+    end = spec_source.index(")", start)
+    assert library in spec_source[start:end]
+
+
+def test_orphans_are_actually_filtered(spec_source):
+    """A second list that the filter never consults would be decoration."""
+    assert "ORPHANED_BY_REMOVAL" in spec_source.split("def _drop_unused")[1]
+
+
+def test_licence_texts_are_added_to_the_bundle(spec_source):
+    """The v1.0.0 archives shipped without a single licence file in them.
+
+    LGPL-3.0 §4 wants a copy of the licence to accompany the object code, and
+    every BSD and MIT library in the bundle wants its notice reproduced. A
+    THIRD-PARTY-LICENSES.md in the repository does not satisfy either: the
+    person who downloads a zip never sees it.
+    """
+    assert "collect_licences(" in spec_source
+    assert 'str(Path("licenses")' in spec_source, (
+        "the collected texts must land in the bundle as licenses/"
+    )
+
+
+def test_licences_are_collected_after_the_filter_runs(spec_source):
+    """Order matters: the system copyright records are read from the binaries
+    that survive, so collecting first would document libraries that were then
+    removed — and miss none that stayed."""
+    assert spec_source.index("analysis.binaries = _drop_unused") < spec_source.index(
+        "collect_licences("
+    )
 
 
 def test_qt_own_libraries_are_not_caught_by_the_gtk_filter(spec_source):

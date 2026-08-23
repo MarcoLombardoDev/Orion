@@ -127,6 +127,47 @@ def test_every_bundle_is_smoke_tested_before_it_is_offered_for_download():
     assert "--version" in step["run"]
 
 
+def test_the_smoke_test_actually_starts_qt():
+    """--version on its own proves nothing about Qt.
+
+    argparse's version action prints and exits inside argument parsing, before
+    PySide6 is imported at all. A bundle missing its Qt platform plugin passes
+    ``--version`` and then fails the moment a user double-clicks it. The smoke
+    test has to construct a QApplication, which is what makes Qt go looking for
+    a plugin, and it has to check which one it found.
+    """
+    step = step_named(build_steps(load_workflow()), "Smoke-test the bundle")
+    assert "--self-check" in step["run"], (
+        "the smoke test never starts Qt, so it cannot detect a broken bundle"
+    )
+    assert "platform plugin" in step["run"], (
+        "the smoke test does not check which platform plugin was loaded"
+    )
+
+
+def test_the_linux_smoke_test_uses_a_real_display_not_offscreen():
+    """offscreen loads none of the X libraries.
+
+    A Linux bundle with a broken or unshippable xcb plugin comes up perfectly
+    under QT_QPA_PLATFORM=offscreen — which is precisely the failure the smoke
+    test exists to catch. It has to run against a virtual X server and the
+    real backend.
+    """
+    step = step_named(build_steps(load_workflow()), "Smoke-test the bundle")
+    assert "xvfb-run" in step["run"]
+    assert "QT_QPA_PLATFORM=xcb" in step["run"]
+    assert "Linux:xcb" in step["run"], "no assertion that xcb is what came up"
+
+
+def test_the_virtual_x_server_is_installed_on_the_linux_runner():
+    """A smoke test that calls xvfb-run without xvfb fails the release."""
+    step = step_named(
+        build_steps(load_workflow()), "Install the platform's system libraries"
+    )
+    assert step is not None
+    assert "xvfb" in step["run"]
+
+
 def test_the_smoke_test_runs_before_packaging():
     steps = [step.get("name") for step in build_steps(load_workflow())]
     assert steps.index("Smoke-test the bundle") < steps.index("Package")
@@ -203,3 +244,44 @@ def test_the_release_body_points_at_the_licence_and_the_commercial_terms():
     body = BODY_PATH.read_text(encoding="utf-8")
     assert "AGPL-3.0" in body
     assert "COMMERCIAL-LICENSE.md" in body
+
+
+class TestSelfCheck:
+    """The flag the smoke test relies on.
+
+    Tested here rather than in the UI suite because its whole purpose is the
+    release: if ``--self-check`` stops reporting the platform plugin, the
+    workflow's ``case`` statement stops matching and every release fails, which
+    is a confusing way to find out.
+    """
+
+    def test_it_is_a_real_flag(self):
+        from orion.main import _parse_args
+
+        assert _parse_args(["--self-check"]).self_check is True
+        assert _parse_args([]).self_check is False
+
+    def test_it_reports_the_platform_plugin_and_succeeds(self, qapp, capsys):
+        from orion.main import _self_check
+
+        assert _self_check(qapp) == 0
+        printed = capsys.readouterr().out
+        assert "platform plugin:" in printed
+        # The workflow parses exactly this line; a reformat breaks the release.
+        plugin = [
+            line.split(": ", 1)[1]
+            for line in printed.splitlines()
+            if line.startswith("platform plugin: ")
+        ]
+        assert plugin and plugin[0], "the plugin name is missing or empty"
+
+    def test_it_fails_when_qt_has_no_platform(self, capsys):
+        """Qt normally aborts before this, but a silent empty platform name
+        would otherwise be reported as a healthy bundle."""
+        from orion.main import _self_check
+
+        class NoPlatform:
+            def platformName(self):
+                return ""
+
+        assert _self_check(NoPlatform()) == 1
