@@ -13,6 +13,20 @@ the text will actually be written with.  Both the on-screen renderer and the
 PDF writer consume the same :class:`TextLayout`, so what the user sees on the
 canvas is where the glyphs land in the saved file — no second, divergent
 wrapping implementation.
+
+The base-14 fonts are the fourteen every PDF reader is required to provide, so
+their metrics are fixed constants rather than something to read out of a font
+file. Widths come from reportlab's AFM tables; ascender and descender are the
+table below.
+
+Those two numbers deserve a note, because they are not the same quantity every
+library means by the words. reportlab reports the *typographic* ascent from the
+AFM — 0.718 for Helvetica — while the table below holds the font **bounding
+box** extent, 1.075. Orion positions its first baseline at
+``top + ascender * font_size``, and has always done so against the bounding-box
+figure: adopting reportlab's would lift the first line of every text box in
+every document a user has already saved. The numbers are therefore captured
+rather than recomputed, and ``tests/test_text_layout.py`` pins them.
 """
 
 from __future__ import annotations
@@ -21,34 +35,75 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
 
-import pymupdf
+from reportlab.pdfbase import pdfmetrics
 
 from orion.document.objects import Align
 from orion.utils.geometry import Rect
 
-__all__ = ["TextSegment", "TextLine", "TextLayout", "layout_text", "measure", "font_metrics"]
+__all__ = [
+    "TextSegment",
+    "TextLine",
+    "TextLayout",
+    "layout_text",
+    "measure",
+    "font_metrics",
+    "reportlab_name",
+]
+
+#: Orion's base-14 identifiers mapped to the names reportlab knows them by.
+#: The identifiers are the ones the document model stores, so they are part of
+#: the saved-file format and cannot be renamed.
+REPORTLAB_NAMES: dict[str, str] = {
+    "helv": "Helvetica",
+    "hebo": "Helvetica-Bold",
+    "heit": "Helvetica-Oblique",
+    "hebi": "Helvetica-BoldOblique",
+    "tiro": "Times-Roman",
+    "tibo": "Times-Bold",
+    "tiit": "Times-Italic",
+    "tibi": "Times-BoldItalic",
+    "cour": "Courier",
+    "cobo": "Courier-Bold",
+    "coit": "Courier-Oblique",
+    "cobi": "Courier-BoldOblique",
+}
+
+#: ``(ascender, descender)`` as fractions of the font size — the font bounding
+#: box, not the typographic ascent. See the module docstring for why.
+_BBOX_METRICS: dict[str, tuple[float, float]] = {
+    "helv": (1.075, -0.299),
+    "hebo": (1.070, -0.307),
+    "heit": (1.070, -0.284),
+    "hebi": (1.073, -0.309),
+    "tiro": (1.053, -0.281),
+    "tibo": (1.044, -0.341),
+    "tiit": (0.951, -0.270),
+    "tibi": (0.972, -0.324),
+    "cour": (0.932, -0.317),
+    "cobo": (1.007, -0.393),
+    "coit": (0.920, -0.317),
+    "cobi": (0.997, -0.393),
+}
+
+DEFAULT_FONT = "helv"
 
 
-@lru_cache(maxsize=32)
-def _font(fontname: str) -> pymupdf.Font:
-    try:
-        return pymupdf.Font(fontname)
-    except Exception:
-        return pymupdf.Font("helv")
+def reportlab_name(fontname: str) -> str:
+    """Orion's font identifier -> the name reportlab draws with."""
+    return REPORTLAB_NAMES.get(fontname, REPORTLAB_NAMES[DEFAULT_FONT])
 
 
 @lru_cache(maxsize=32)
 def font_metrics(fontname: str) -> tuple[float, float]:
     """``(ascender, descender)`` as fractions of the font size."""
-    font = _font(fontname)
-    return float(font.ascender), float(font.descender)
+    return _BBOX_METRICS.get(fontname, _BBOX_METRICS[DEFAULT_FONT])
 
 
 def measure(text: str, fontname: str, font_size: float) -> float:
     """Width of *text* in points."""
     if not text:
         return 0.0
-    return float(_font(fontname).text_length(text, fontsize=font_size))
+    return float(pdfmetrics.stringWidth(text, reportlab_name(fontname), font_size))
 
 
 @dataclass(frozen=True, slots=True)

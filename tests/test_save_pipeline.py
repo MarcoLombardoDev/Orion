@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import io
 
-import pymupdf
 import pytest
 from PIL import Image
 
@@ -23,7 +22,14 @@ from orion.pdf.writer import build_pdf_bytes
 from orion.services.export_service import ExportService
 from orion.services.file_service import FileService
 from orion.utils.geometry import Point, Rect, Size
-from tests.conftest import find_color_bbox, is_red
+from tests.conftest import (
+    PdfProbe,
+    find_color_bbox,
+    is_red,
+    make_encrypted_pdf,
+    make_marker_pdf,
+    make_pdf,
+)
 
 
 @pytest.fixture
@@ -66,10 +72,7 @@ def test_password_protected_file_is_reported_clearly(service, tmp_path):
     from orion.pdf.errors import PdfPasswordRequired
 
     path = tmp_path / "locked.pdf"
-    doc = pymupdf.open()
-    doc.new_page()
-    doc.save(path, encryption=pymupdf.PDF_ENCRYPT_AES_256, user_pw="secret")
-    doc.close()
+    make_encrypted_pdf(path, "secret")
 
     with pytest.raises(PdfPasswordRequired):
         service.open(path)
@@ -94,12 +97,11 @@ def test_text_is_written_as_real_searchable_text(service, sample_pdf, tmp_path):
     finally:
         session.close()
 
-    with pymupdf.open(out) as doc:
-        page = doc.load_page(0)
-        assert "ORION STAMP" in page.get_text()
-        hits = page.search_for("ORION STAMP")
+    with PdfProbe(out) as probe:
+        assert "ORION STAMP" in probe.text(0)
+        hits = probe.search_rects("ORION STAMP")
         assert hits, "the stamped text must be findable by other readers"
-        assert hits[0].y0 == pytest.approx(200, abs=25)
+        assert hits[0][1] == pytest.approx(200, abs=25)
 
 
 def test_shapes_annotations_and_images_all_survive(service, sample_pdf, tmp_path):
@@ -147,13 +149,10 @@ def test_shapes_annotations_and_images_all_survive(service, sample_pdf, tmp_path
     finally:
         session.close()
 
-    with pymupdf.open(out) as doc:
-        page = doc.load_page(0)
-        kinds = {annot.type[1] for annot in page.annots()}
-        assert {"Highlight", "Text", "Ink"} <= kinds
-        pixmap = page.get_pixmap(dpi=72)
-        assert find_color_bbox(pixmap, is_red) is not None
-        assert page.get_images(), "the image must be embedded in the output"
+    with PdfProbe(out) as probe:
+        assert {"Highlight", "Text", "Ink"} <= probe.annotation_subtypes(0)
+        assert find_color_bbox(probe.render(0, dpi=72), is_red) is not None
+        assert probe.has_images(0), "the image must be embedded in the output"
 
 
 def test_page_operations_are_reflected_in_the_output(service, sample_pdf, tmp_path):
@@ -168,11 +167,11 @@ def test_page_operations_are_reflected_in_the_output(service, sample_pdf, tmp_pa
     finally:
         session.close()
 
-    with pymupdf.open(out) as doc:
-        assert doc.page_count == 2
-        assert doc.load_page(0).rotation == 90
-        assert "PAGE 2" in doc.load_page(0).get_text()
-        assert "PAGE 1" in doc.load_page(1).get_text()
+    with PdfProbe(out) as probe:
+        assert probe.page_count == 2
+        assert probe.rotation(0) == 90
+        assert "PAGE 2" in probe.text(0)
+        assert "PAGE 1" in probe.text(1)
 
 
 def test_blank_pages_are_written(service, sample_pdf, tmp_path):
@@ -186,10 +185,10 @@ def test_blank_pages_are_written(service, sample_pdf, tmp_path):
     finally:
         session.close()
 
-    with pymupdf.open(out) as doc:
-        assert doc.page_count == 4
-        assert doc.load_page(1).rect.width == pytest.approx(300.0)
-        assert doc.load_page(1).get_text().strip() == ""
+    with PdfProbe(out) as probe:
+        assert probe.page_count == 4
+        assert probe.size(1)[0] == pytest.approx(300.0)
+        assert probe.text(1).strip() == ""
 
 
 # -- file safety ---------------------------------------------------------
@@ -206,9 +205,9 @@ def test_saving_over_the_open_file_does_not_duplicate_objects(service, sample_pd
     finally:
         session.close()
 
-    with pymupdf.open(sample_pdf) as doc:
-        assert doc.load_page(0).get_text().count("ONCE") == 1
-        assert doc.page_count == 3
+    with PdfProbe(sample_pdf) as probe:
+        assert probe.text(0).count("ONCE") == 1
+        assert probe.page_count == 3
 
 
 def test_saving_keeps_undo_history_valid(service, sample_pdf, tmp_path):
@@ -277,9 +276,9 @@ def test_extract_includes_unsaved_objects(service, sample_pdf, tmp_path):
     finally:
         session.close()
 
-    with pymupdf.open(out) as doc:
-        assert doc.page_count == 1
-        assert "UNSAVED" in doc.load_page(0).get_text()
+    with PdfProbe(out) as probe:
+        assert probe.page_count == 1
+        assert "UNSAVED" in probe.text(0)
 
 
 def test_split_and_merge_from_the_live_document(service, sample_pdf, tmp_path):
@@ -294,17 +293,14 @@ def test_split_and_merge_from_the_live_document(service, sample_pdf, tmp_path):
     finally:
         session.close()
 
-    with pymupdf.open(merged) as doc:
-        assert doc.page_count == 2
-        assert "PAGE 3" in doc.load_page(0).get_text()
+    with PdfProbe(merged) as probe:
+        assert probe.page_count == 2
+        assert "PAGE 3" in probe.text(0)
 
 
 def test_import_pages_references_the_other_file_until_save(service, sample_pdf, tmp_path):
     other = tmp_path / "other.pdf"
-    doc = pymupdf.open()
-    doc.new_page(width=200, height=200).insert_text((20, 40), "OTHER", fontsize=16)
-    doc.save(other)
-    doc.close()
+    make_pdf(other, [(200.0, 200.0, "OTHER")])
 
     session = service.open(sample_pdf)
     try:
@@ -317,9 +313,9 @@ def test_import_pages_references_the_other_file_until_save(service, sample_pdf, 
     finally:
         session.close()
 
-    with pymupdf.open(out) as result:
-        assert result.page_count == 4
-        assert "OTHER" in result.load_page(0).get_text()
+    with PdfProbe(out) as probe:
+        assert probe.page_count == 4
+        assert "OTHER" in probe.text(0)
 
 
 def test_build_pdf_bytes_is_a_valid_pdf(service, sample_pdf):
@@ -329,8 +325,8 @@ def test_build_pdf_bytes_is_a_valid_pdf(service, sample_pdf):
     finally:
         session.close()
     assert data.startswith(b"%PDF")
-    with pymupdf.open("pdf", data) as doc:
-        assert doc.page_count == 3
+    with PdfProbe(data) as probe:
+        assert probe.page_count == 3
 
 
 # -- what you see is what you save ---------------------------------------
@@ -343,11 +339,7 @@ def test_rotating_a_page_saves_what_the_canvas_showed(service, tmp_path, rotatio
     on-screen renderer put it.
     """
     source = tmp_path / f"marker{rotation}.pdf"
-    doc = pymupdf.open()
-    page = doc.new_page(width=400, height=600)
-    page.draw_rect(pymupdf.Rect(0, 0, 80, 40), color=(1, 0, 0), fill=(1, 0, 0))
-    doc.save(source)
-    doc.close()
+    make_marker_pdf(source)
 
     session = service.open(source)
     try:
@@ -372,15 +364,24 @@ def test_rotating_a_page_saves_what_the_canvas_showed(service, tmp_path, rotatio
         assert xs, "the marker was not found"
         return (sum(xs) / len(xs), sum(ys) / len(ys))
 
+    def marker_centre_of_pixmap(pixmap):
+        xs, ys = [], []
+        for y in range(0, pixmap.height, 3):
+            for x in range(0, pixmap.width, 3):
+                pixel = pixmap.pixel(x, y)
+                if pixel[0] > 180 and pixel[1] < 90:
+                    xs.append(x)
+                    ys.append(y)
+        assert xs, "the marker was not found in the saved file"
+        return (sum(xs) / len(xs), sum(ys) / len(ys))
+
     on_screen = marker_centre_of_buffer(
         rendered.samples, rendered.width, rendered.height, rendered.stride
     )
-    with pymupdf.open(out) as result:
-        pixmap = result.load_page(0).get_pixmap(dpi=72, alpha=False)
+    with PdfProbe(out) as probe:
+        pixmap = probe.render(0, dpi=72)
         assert (pixmap.width, pixmap.height) == (rendered.width, rendered.height)
-        in_file = marker_centre_of_buffer(
-            pixmap.samples, pixmap.width, pixmap.height, pixmap.stride
-        )
+        in_file = marker_centre_of_pixmap(pixmap)
 
     assert in_file[0] == pytest.approx(on_screen[0], abs=4)
     assert in_file[1] == pytest.approx(on_screen[1], abs=4)
@@ -405,11 +406,9 @@ def test_rotating_a_page_carries_its_objects_with_it(service, sample_pdf, tmp_pa
     finally:
         session.close()
 
-    with pymupdf.open(out) as doc:
-        result = doc.load_page(0)
-        assert result.rotation == 90
-        pixmap = result.get_pixmap(dpi=72)
-        bbox = find_color_bbox(pixmap, is_red)
+    with PdfProbe(out) as probe:
+        assert probe.rotation(0) == 90
+        bbox = find_color_bbox(probe.render(0, dpi=72), is_red)
     assert bbox is not None
     # Base-space (20,30)-(80,50) on a 400x600 page, turned 90° clockwise for
     # display, lands near the top-right of the 600x400 result.
@@ -422,10 +421,7 @@ def test_merge_can_include_the_open_document(service, sample_pdf, tmp_path):
     from orion.ui.dialogs.merge_dialog import CURRENT_DOCUMENT
 
     other = tmp_path / "other.pdf"
-    doc = pymupdf.open()
-    doc.new_page(width=200, height=200).insert_text((20, 40), "OTHER", fontsize=16)
-    doc.save(other)
-    doc.close()
+    make_pdf(other, [(200.0, 200.0, "OTHER")])
 
     session = service.open(sample_pdf)
     export = ExportService()
@@ -442,10 +438,10 @@ def test_merge_can_include_the_open_document(service, sample_pdf, tmp_path):
     finally:
         session.close()
 
-    with pymupdf.open(merged) as result:
-        assert result.page_count == 4
-        assert "OTHER" in result.load_page(0).get_text()
-        assert "NOT YET SAVED" in result.load_page(1).get_text()
+    with PdfProbe(merged) as probe:
+        assert probe.page_count == 4
+        assert "OTHER" in probe.text(0)
+        assert "NOT YET SAVED" in probe.text(1)
 
 
 def test_merge_without_a_document_reports_it(service, tmp_path):

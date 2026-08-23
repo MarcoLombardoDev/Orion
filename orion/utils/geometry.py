@@ -8,12 +8,12 @@
 
 """Geometry primitives and the *only* place coordinate maths is written.
 
-Everything here is plain Python (no Qt, no PyMuPDF) and uses a **y-down,
-top-left origin** convention, matching both Qt and PyMuPDF's page API.
+Everything here is plain Python (no Qt, no PDF library) and uses a **y-down,
+top-left origin** convention, matching Qt and the page as the user sees it.
 
 Rotation angles are **degrees, clockwise-positive**, matching
-``QGraphicsItem.setRotation``.  PyMuPDF uses the opposite sign; that single
-conversion lives in :mod:`orion.pdf.coordinates` and nowhere else.
+``QGraphicsItem.setRotation``.  PDF content space uses the opposite sign; that
+single conversion lives in :mod:`orion.pdf.coordinates` and nowhere else.
 """
 
 from __future__ import annotations
@@ -53,7 +53,7 @@ class Point:
     y: float = 0.0
 
     def __post_init__(self) -> None:
-        # Coerce once here so every downstream consumer (JSON, Qt, PyMuPDF)
+        # Coerce once here so every downstream consumer (JSON, Qt, the writer)
         # sees floats and never an int/float mix.
         object.__setattr__(self, "x", float(self.x))
         object.__setattr__(self, "y", float(self.y))

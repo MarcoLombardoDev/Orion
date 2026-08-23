@@ -15,10 +15,12 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-import pymupdf
+import pypdfium2 as pdfium
+import pypdfium2.raw as pdfium_raw
 
 from orion.document.document import Document, DocumentSource
 from orion.document.page import Page, PageSource
+from orion.pdf.coordinates import PageGeometry
 from orion.pdf.errors import PdfCorruptError, PdfPasswordRequired, PdfReadError
 from orion.utils.geometry import Size
 
@@ -29,25 +31,75 @@ __all__ = ["OpenedPdf", "open_pdf", "build_document", "load_document", "page_siz
 
 @dataclass
 class OpenedPdf:
-    """A PyMuPDF handle plus the lock that serialises access to it.
+    """A pdfium handle plus the lock that serialises access to it.
 
-    PyMuPDF is not documented as thread-safe for concurrent access to the same
-    document, so every engine call must hold this lock (spec §24 background
-    rendering).
+    pdfium is not safe for concurrent access to the same document, so every
+    engine call must hold this lock (spec §24 background rendering).
     """
 
     path: Path | None
-    doc: pymupdf.Document
+    doc: pdfium.PdfDocument
     lock: threading.RLock
 
     @property
+    def is_closed(self) -> bool:
+        """pdfium drops its handle on close; asking it anything then crashes."""
+        return getattr(self.doc, "raw", None) is None
+
+    @property
     def page_count(self) -> int:
-        return self.doc.page_count
+        return len(self.doc)
+
+    def geometry(self, index: int) -> PageGeometry:
+        """The unrotated mediabox and /Rotate of one page.
+
+        This is what :mod:`orion.pdf.coordinates` needs, and the reason it is
+        read here: ``get_size()`` reports the page *as displayed*, which is the
+        right answer for laying out the canvas and the wrong one for placing
+        content, and having both come from the same place stops them being
+        confused for each other.
+        """
+        with self.lock:
+            page = self.doc[index]
+            left, bottom, right, top = page.get_mediabox()
+            return PageGeometry(
+                width=abs(right - left),
+                height=abs(top - bottom),
+                rotation=int(page.get_rotation()),
+            )
 
     def close(self) -> None:
         with self.lock:
-            if not self.doc.is_closed:
+            if not self.is_closed:
                 self.doc.close()
+
+
+def _classify_load_failure(path: Path, password: str | None, exc: Exception) -> Exception:
+    """Turn a pdfium load failure into the error the user should see.
+
+    pdfium reports a missing password and a wrong one with the same code, so it
+    cannot tell them apart — but the caller can: if no password was offered,
+    one is needed; if one was offered and the file still will not open, it was
+    the wrong one. That is exactly the distinction the UI needs to decide
+    between prompting and reporting a failure.
+
+    The code is read from ``FPDF_GetLastError`` rather than matched out of the
+    message text, which is a sentence meant for humans and free to change.
+    """
+    code = pdfium_raw.FPDF_GetLastError()
+    if code == pdfium_raw.FPDF_ERR_PASSWORD:
+        if password is None:
+            return PdfPasswordRequired(
+                f"“{path.name}” is password protected. Enter the password to open it."
+            )
+        return PdfPasswordRequired(wrong=True)
+    if code == pdfium_raw.FPDF_ERR_FILE:
+        return PdfReadError(
+            f"“{path.name}” could not be read from disk.", detail=str(exc)
+        )
+    return PdfCorruptError(
+        f"“{path.name}” is damaged or is not a valid PDF document.", detail=str(exc)
+    )
 
 
 def open_pdf(path: str | Path, password: str | None = None) -> OpenedPdf:
@@ -61,30 +113,22 @@ def open_pdf(path: str | Path, password: str | None = None) -> OpenedPdf:
         raise PdfReadError(f"“{path.name}” is a folder, not a PDF file.")
 
     try:
-        doc = pymupdf.open(path)
+        doc = pdfium.PdfDocument(path, password=password, autoclose=True)
     except FileNotFoundError as exc:
         raise PdfReadError(f"The file “{path.name}” does not exist.", detail=str(exc)) from exc
     except PermissionError as exc:
         raise PdfReadError(
             f"Permission denied while opening “{path.name}”.", detail=str(exc)
         ) from exc
-    except Exception as exc:  # PyMuPDF raises a variety of low-level errors
+    except pdfium.PdfiumError as exc:
+        raise _classify_load_failure(path, password, exc) from exc
+    except Exception as exc:  # pdfium raises a variety of low-level errors
         raise PdfCorruptError(
             f"“{path.name}” is damaged or is not a valid PDF document.", detail=str(exc)
         ) from exc
 
-    if doc.needs_pass:
-        if password is None:
-            doc.close()
-            raise PdfPasswordRequired(
-                f"“{path.name}” is password protected. Enter the password to open it."
-            )
-        if not doc.authenticate(password):
-            doc.close()
-            raise PdfPasswordRequired(wrong=True)
-
     try:
-        count = doc.page_count
+        count = len(doc)
     except Exception as exc:
         doc.close()
         raise PdfCorruptError(detail=str(exc)) from exc
@@ -105,11 +149,11 @@ def page_sizes(opened: OpenedPdf) -> list[tuple[Size, int]]:
     """
     result: list[tuple[Size, int]] = []
     with opened.lock:
-        for index in range(opened.doc.page_count):
+        for index in range(len(opened.doc)):
             try:
-                page = opened.doc.load_page(index)
-                rect = page.rect
-                result.append((Size(rect.width, rect.height), int(page.rotation)))
+                page = opened.doc[index]
+                width, height = page.get_size()
+                result.append((Size(width, height), int(page.get_rotation())))
             except Exception as exc:  # a single broken page must not stop the open
                 log.warning("Page %d has unreadable geometry (%s); using A4", index, exc)
                 result.append((Size(595.0, 842.0), 0))
@@ -139,7 +183,7 @@ def build_document(opened: OpenedPdf) -> Document:
         try:
             document.metadata = {
                 key: str(value)
-                for key, value in (opened.doc.metadata or {}).items()
+                for key, value in (opened.doc.get_metadata_dict() or {}).items()
                 if value
             }
         except Exception:  # metadata is optional; never fail an open over it

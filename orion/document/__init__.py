@@ -8,7 +8,7 @@
 
 """The intermediate document model.
 
-This layer is deliberately free of Qt *and* of PyMuPDF: it is the neutral
+This layer is deliberately free of Qt *and* of the PDF libraries: it is the neutral
 representation the UI edits and the PDF writer consumes.
 """
 

@@ -2,6 +2,7 @@
 # Versions pinned to the minimum tested; see pyproject.toml for the packaging
 # metadata and docs/ARCHITECTURE.md §6 for the licence analysis.
 PySide6>=6.6
-PyMuPDF>=1.24
+pypdfium2>=4.30
 pypdf>=4.0
+reportlab>=4.0
 Pillow>=10.0

@@ -38,7 +38,7 @@ class AboutDialog(QDialog):
 
         versions = QLabel(
             f"Version {__version__}\n"
-            f"Python {sys.version.split()[0]} · {_qt_version()} · {_pymupdf_version()}"
+            f"Python {sys.version.split()[0]} · {_qt_version()} · {_engine_version()}"
         )
         versions.setProperty("role", "hint")
         layout.addWidget(versions)
@@ -66,10 +66,23 @@ def _qt_version() -> str:
         return "Qt"
 
 
-def _pymupdf_version() -> str:
-    try:
-        import pymupdf
+def _engine_version() -> str:
+    """The PDF engine, named in the About box because bug reports need it.
 
-        return f"PyMuPDF {pymupdf.__version__}"
+    Two libraries share the work, and a rendering complaint and a saving
+    complaint point at different ones, so both versions are shown.
+    """
+    parts = []
+    try:
+        import pypdfium2
+
+        parts.append(f"pdfium {pypdfium2.PDFIUM_INFO.version}")
     except Exception:  # pragma: no cover - defensive
-        return "PyMuPDF"
+        parts.append("pdfium (unknown)")
+    try:
+        import pypdf
+
+        parts.append(f"pypdf {pypdf.__version__}")
+    except Exception:  # pragma: no cover - defensive
+        parts.append("pypdf (unknown)")
+    return " · ".join(parts)

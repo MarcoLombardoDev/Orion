@@ -45,7 +45,7 @@ replaced without touching the UI.
 └───────────────┬──────────────────────────────────────────────┘
                 │
 ┌───────────────▼──────────────────────────────────────────────┐
-│ PyMuPDF · pypdf · Pillow                                     │
+│ pypdfium2 · pypdf · reportlab · Pillow                        │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -53,7 +53,7 @@ Dependency direction is strictly downward. Concretely:
 
 * `orion/document`, `orion/commands`, `orion/utils` **do not import Qt at all.**
   They are plain Python and are unit-testable without a GUI or a display server.
-* `orion/pdf` imports PyMuPDF/Pillow but not Qt (the renderer returns raw RGB
+* `orion/pdf` imports the PDF libraries and Pillow but not Qt (the renderer returns raw RGB
   buffers; the Qt conversion lives in `orion/ui/render_bridge.py`).
 * `orion/ui` is the only Qt-aware layer.
 
@@ -93,18 +93,24 @@ Three spaces exist and **all conversions live in `orion/utils/geometry.py` and
 | **View/device space** | widget | pixels | Qt, after `zoom` transform |
 | **PDF content space** | bottom-left / mediabox | points | inside `pdf/writer.py` only |
 
-Key decisions, each verified experimentally against PyMuPDF 1.28 (see
-`tests/test_coordinates.py`, which re-verifies them on every run):
+Key decisions, each verified by rendering a page and asserting where the ink
+landed (see `tests/test_coordinates.py`, which re-verifies them on every run):
 
-1. **PyMuPDF's content API is *not* rotation-aware.** `draw_*`, `insert_text`,
-   `insert_image`, `add_*_annot` and `search_for` all work in the **unrotated
-   mediabox space**; only `page.rect` and `get_pixmap()` reflect `/Rotate`.
-   Therefore the writer converts base-page coordinates with
-   `page.derotation_matrix` before drawing, and the search feature converts the
-   other way with `page.rotation_matrix`.
-2. **`pymupdf.Matrix(a)` rotates counter-clockwise on screen.** Orion uses the
-   graphics-editor convention (clockwise-positive, same as `QGraphicsItem.setRotation`),
-   so the writer passes `-angle`.
+1. **Nothing below the conversion is rotation-aware.** reportlab draws into the
+   unrotated mediabox and pdfium reports text rectangles there too, so
+   `orion/pdf/coordinates.py` maps base page space onto it explicitly. The four
+   cases — one per `/Rotate` value — are plain arithmetic derived from where the
+   corners of a rotated sheet end up, and each is pinned by a test.
+2. **The two spaces disagree about the direction of rotation.** Base space is
+   y-down and clockwise-positive (the graphics-editor convention, same as
+   `QGraphicsItem.setRotation`); PDF content space is y-up and
+   counter-clockwise-positive. The map between them reverses an axis, and a
+   reflection turns a rotation into its inverse — so every angle changes sign on
+   the way down. On a quarter-turn page it also *swaps* the axes, which is a
+   second, separate term: content that has its own up direction, meaning text
+   and images, has to be turned by `/Rotate` as well or it comes out running
+   down the page. Missing that second term was a real bug, invisible on upright
+   pages, and `test_text_stays_upright_on_a_rotated_page` exists because of it.
 3. **Objects are stored in *base* page space, not in the rotated view space.**
    Rotating a page is therefore an O(1) metadata change and objects stay glued to
    the content they annotate. The page rotation is applied by the canvas
@@ -209,7 +215,7 @@ Orion/
 | Class | Responsibility |
 |---|---|
 | `PdfReader` | Opens a file, handles encryption/corruption, produces a `Document`. |
-| `PageRenderer` | `render(source, index, rotation, scale) -> RenderedPage` (raw RGB). Size-bounded LRU cache, one lock per opened `pymupdf.Document` (PyMuPDF is not thread-safe per document). |
+| `PageRenderer` | `render(source, index, rotation, scale) -> RenderedPage` (raw RGB). Size-bounded LRU cache, one lock per opened document (pdfium is not safe for concurrent access to one document). |
 | `PdfWriter` | Assembles the output: copies source page runs, appends blank pages, applies rotation, stamps objects, adds annotations, writes atomically. |
 | `operations` | `merge_files`, `split_by_ranges`, `split_every`, `extract_pages` — file-level, reusable by both the UI and (future) a CLI. |
 
@@ -236,23 +242,30 @@ not from memory. **Verify them again before publishing** — upstream licenses c
 | Package | Version tested | License (from package metadata) |
 |---|---|---|
 | PySide6 / shiboken6 | 6.11.2 | `LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only` |
-| PyMuPDF | 1.28.2 | `Dual Licensed - GNU AFFERO GPL 3.0 or Artifex Commercial License` |
+| pypdfium2 | 5.13.0 | `BSD-3-Clause, Apache-2.0` |
 | pypdf | 6.16.1 | `BSD-3-Clause` |
+| reportlab | 5.0.1 | `BSD-3-Clause` |
 | Pillow | 12.3.0 | `MIT-CMU` |
 
-**Consequence — this is a hard constraint, not a preference:**
-PyMuPDF is **AGPL-3.0** unless a commercial Artifex license is purchased. AGPL-3.0
-is the strongest copyleft here, and a work that links it must be distributed under
-AGPL-3.0-compatible terms. Orion therefore ships under **AGPL-3.0-or-later**.
-LGPL-3.0 (PySide6, used unmodified and dynamically linked), BSD-3-Clause and MIT-CMU
-are all compatible with that outcome.
+**This section used to record a hard constraint.** Orion's engine was PyMuPDF,
+which is **AGPL-3.0** unless a commercial Artifex licence is purchased — the
+strongest copyleft in the dependency set, and one Orion had no right to
+sublicense. It is what made the commercial tiers undeliverable, and this document
+said so, along with the note that a permissive licence would mean replacing it
+with something like `pypdfium2`.
 
-If a permissive license is ever required for Orion, PyMuPDF must be replaced
-(rendering would move to e.g. `pypdfium2`, Apache-2.0/BSD-3). The engine boundary in
-`orion/pdf/` exists partly to keep that swap feasible.
+That is what happened. The work is split three ways now:
 
-`pypdf` is used for the file-level page operations (merge/split/extract) and
-`PyMuPDF` for rendering and content writing. Both are kept behind `orion/pdf/`.
+* **pypdfium2** (Google's PDFium) rasterises pages, extracts text and searches.
+* **pypdf** assembles documents, copies page runs, and writes annotations as PDF
+  dictionaries.
+* **reportlab** generates the content stream for everything the user added, as a
+  transparent overlay merged onto the page.
+
+All three are permissive. Qt remains the only copyleft dependency, LGPL-3.0, used
+unmodified and dynamically linked — the easy case. The engine boundary in
+`orion/pdf/` is what made the swap a five-module change with the layers above it
+untouched, which is the argument for having drawn it there.
 
 **Optional, not a V1 requirement:** OCR is deliberately left out. A
 `orion/pdf/ocr.py` module based on Tesseract can be added later behind a feature
@@ -278,27 +291,33 @@ check; nothing in V1 depends on it.
 
 ## 8. Known technical risks and how they are handled
 
-1. **PyMuPDF rotation semantics** (§3) — the most likely source of silent
-   coordinate bugs. Mitigation: one conversion module + regression tests that
-   *render* and assert pixel positions, so a PyMuPDF behaviour change fails loudly.
+1. **Rotation semantics** (§3) — the most likely source of silent coordinate
+   bugs, and the one that has actually bitten. Mitigation: one conversion module
+   plus regression tests that *render* and assert pixel positions. Those tests
+   survived the engine replacement unchanged, which is the point of writing them
+   against ink rather than against an API; the one they did not previously cover,
+   text on a rotated page, was where the bug was.
 2. **Memory on zoom.** A 200-page document rendered at 400% would be gigabytes.
    Mitigation: only visible pages are rendered; the cache is bounded **by bytes**
    (default 256 MB) not by page count, and evicts LRU. Thumbnails use a separate
    tiny fixed-scale cache.
-3. **PyMuPDF thread-safety.** Documented as not thread-safe for concurrent access
-   to the same document. Mitigation: one `RLock` per open document, held for the
+3. **Engine thread-safety.** pdfium is not safe for concurrent access to the
+   same document. Mitigation: one `RLock` per open document, held for the
    duration of every engine call.
 4. **Saving over the file being viewed.** The renderer holds the file open.
    Mitigation: write to a temp file in the same directory, validate by reopening,
    close all engine handles, `os.replace`, then reopen. `os.replace` is atomic on
    POSIX and on Windows for same-volume paths.
-5. **Font fidelity.** Qt renders the on-screen text; PyMuPDF renders the PDF text.
+5. **Font fidelity.** Qt renders the on-screen text; reportlab writes the PDF text.
    To keep them equivalent V1 restricts text objects to the **base-14** PDF fonts,
    which need no embedding and exist on every platform. Arbitrary TTF embedding is
    a documented follow-up, not a rewrite.
-6. **Arbitrary-angle images.** PyMuPDF's `insert_image` only supports 90° steps.
-   Mitigation: for non-multiples of 90 the raster is pre-rotated with Pillow and
-   inserted into its expanded bounding box; exact multiples take the lossless path.
+6. **Arbitrary-angle images.** No longer a risk, and worth recording as one the
+   engine change retired. The old engine could only rotate an image in 90-degree
+   steps, so any other angle was baked into the pixels with Pillow and placed in
+   an expanded bounding box — resampling the image on every save. reportlab
+   rotates in the content stream, so the original pixels are written once and the
+   viewer does the turning.
 7. **Very large documents.** Page geometry is computed lazily and thumbnails are
    rendered on demand, so opening is O(1) in page count apart from reading the
    page sizes.

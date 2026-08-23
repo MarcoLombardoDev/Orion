@@ -185,7 +185,7 @@ Document (orion/document) Document · Page · Text/Image/Shape/Annotation
         │
 PDF engine (orion/pdf)    reader · renderer · writer · operations
         │
-PyMuPDF · pypdf · Pillow
+pypdfium2 · pypdf · reportlab · Pillow
 ```
 
 The rule the whole design follows: **the UI never manipulates the PDF file.**
@@ -217,8 +217,9 @@ over your PDF.
 | Dependency | Purpose |
 |---|---|
 | PySide6 ≥ 6.6 | The interface |
-| PyMuPDF ≥ 1.24 | Rendering and writing PDFs |
-| pypdf ≥ 4.0 | Page-level operations: split, merge, extract |
+| pypdfium2 ≥ 4.30 | Rendering pages, extracting and searching text |
+| pypdf ≥ 4.0 | Assembling documents, page operations, annotations |
+| reportlab ≥ 4.0 | Drawing added text, shapes and images |
 | Pillow ≥ 10.0 | Image decoding for inserted pictures |
 
 ## Development
@@ -360,14 +361,12 @@ Prices are per licensed legal entity, excluding VAT. **Seats are never counted.*
 terms, the Employee Count and Corporate Group definitions, and the third-party component
 review: **[COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)**.
 
-> ⚠️ **Two dependencies are not permissively licensed.** PySide6 is offered under
-> LGPL-3.0, GPL-2.0 or GPL-3.0, and PyMuPDF under AGPL-3.0 or an Artifex commercial
-> licence. A commercial licence to Orion covers Orion's own code and cannot
-> relicense either of them: their terms stay between you and their own licensors.
-> The full table is in
-> [§11](COMMERCIAL-LICENSE.md#11-third-party-components), and every component
-> in the downloadable builds — 519 native binaries across the three archives —
-> is inventoried in
+> ⚠️ **One dependency is not permissively licensed.** PySide6 is offered under
+> LGPL-3.0, GPL-2.0 or GPL-3.0. A commercial licence to Orion covers Orion's own
+> code and cannot relicense it: its terms stay between you and The Qt Company.
+> Everything else — the PDF engine included — is BSD, MIT or Apache. The full
+> table is in [§11](COMMERCIAL-LICENSE.md#11-third-party-components), and every
+> component in a build is inventoried in
 > [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).
 
 ### How to get in touch

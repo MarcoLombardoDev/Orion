@@ -10,7 +10,7 @@
 
 These work on files and byte buffers rather than on the document model, so the
 same code serves the UI today and a command-line interface later.  ``pypdf`` is
-used here (rather than PyMuPDF) because page copying is exactly what it is good
+used here because page copying is exactly what it is good
 at, and it keeps a second, independent implementation available for the
 operations that must never corrupt a user's file.
 """

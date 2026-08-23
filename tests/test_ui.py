@@ -261,7 +261,7 @@ def test_search_finds_and_navigates(window, qapp, sample_pdf):
 
 # -- saving --------------------------------------------------------------
 def test_save_round_trip_through_the_window(window, qapp, sample_pdf, tmp_path):
-    import pymupdf
+    from tests.conftest import PdfProbe
 
     window.open_path(sample_pdf)
     pump(qapp)
@@ -278,8 +278,8 @@ def test_save_round_trip_through_the_window(window, qapp, sample_pdf, tmp_path):
     assert not window.session.is_modified
     assert window.windowTitle().startswith("window-save.pdf")
 
-    with pymupdf.open(out) as doc:
-        assert "WINDOW SAVE" in doc.load_page(0).get_text()
+    with PdfProbe(out) as probe:
+        assert "WINDOW SAVE" in probe.text(0)
 
 
 def test_closing_a_modified_document_can_be_cancelled(window, qapp, sample_pdf, monkeypatch):
@@ -420,13 +420,9 @@ def test_rebuilding_the_scene_keeps_the_reading_position(window, qapp, sample_pd
 
 # -- password protected documents ----------------------------------------
 def _encrypted_pdf(path, password: str = "letmein"):
-    import pymupdf
+    from tests.conftest import make_encrypted_pdf
 
-    doc = pymupdf.open()
-    doc.new_page(width=300, height=400).insert_text((40, 60), "SECRET", fontsize=18)
-    doc.save(path, encryption=pymupdf.PDF_ENCRYPT_AES_256, user_pw=password)
-    doc.close()
-    return path
+    return make_encrypted_pdf(path, password, width=300.0, height=400.0)
 
 
 def test_opening_a_protected_file_asks_for_the_password(window, qapp, tmp_path, monkeypatch):

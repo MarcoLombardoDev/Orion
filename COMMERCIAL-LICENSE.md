@@ -368,81 +368,73 @@ separately licensed by its own authors, and this licence cannot and does not
 relicense any of it. §10 applies: no rights to third-party components are granted
 here.
 
+### The dependency that used to make this section a problem
+
+Until recently Orion rendered and wrote PDFs with **MuPDF**, licensed by Artifex
+under the AGPL-3.0 or a commercial licence of its own. Orion held no right to
+sublicense it, so a Redistribution customer still received AGPL MuPDF and still
+carried the AGPL's obligations — including its network clause — no matter what
+they had paid here. That was a real limit on what this licence could deliver, and
+it was stated as such.
+
+**It no longer applies.** MuPDF has been replaced by pypdfium2 (Google's PDFium),
+pypdf and reportlab, all permissively licensed. Nothing in Orion's dependencies
+is copyleft any more except Qt, which is LGPL and has always been workable inside
+a closed product.
+
 ### What Orion depends on
 
-The four packages Orion requires, plus the interpreter it runs on and the tool that
-freezes it, with the licence each declares in its own metadata at the versions pinned
-in `requirements.txt`:
+The five packages Orion requires, plus the interpreter it runs on and the tool
+that freezes it, with the licence each declares in its own metadata at the
+versions pinned in `requirements.txt`:
 
 | Component | Licence | What it asks of you |
 |---|---|---|
 | Python, standard library | PSF-2.0 | Attribution. Nothing further. |
+| pypdfium2 (PDFium) | BSD-3-Clause / Apache-2.0 | Reproduce the copyright notices in binary distributions. |
 | pypdf | BSD-3-Clause | Reproduce the copyright notice in binary distributions. |
+| reportlab | BSD-3-Clause | Reproduce the copyright notice in binary distributions. |
 | Pillow | MIT-CMU (HPND) | Reproduce the copyright notice in binary distributions. |
 | PyInstaller | GPL-2.0-or-later **with the Bootloader Exception** | Nothing. The exception grants unlimited permission to embed the bootloader in a combined program and distribute it without restriction — which is exactly what a frozen application does. |
 | PySide6 / shiboken6 | LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only | Under the LGPL option: ship the licence text, state that Qt is used, keep Qt replaceable by the recipient, and impose no further restriction on Qt itself. |
-| PyMuPDF | AGPL-3.0-only **or** an Artifex Commercial License | See below. This is the one that decides whether redistribution is possible at all. |
 
-The PyPI wheels for PySide6 *are* the open-source build of Qt; their metadata offers no
-commercial option. A Qt commercial licence is bought from The Qt Company and is not
-something this licence, or a wheel, can grant.
+The PyPI wheels for PySide6 *are* the open-source build of Qt; their metadata
+offers no commercial option. A Qt commercial licence is bought from The Qt
+Company and is not something this licence, or a wheel, can grant.
 
 ### What a downloadable build actually contains
 
-The table above is Orion's **source** dependency list. It is not what a redistributor
-ships. A standalone build is a frozen bundle, and the bundle contains the transitive
-closure of everything those packages link — Qt's own libraries and plugins, the
-libraries Pillow vendors, and whatever the build machine's linker resolved.
+The table above is Orion's **source** dependency list. It is not what a
+redistributor ships. A standalone build is a frozen bundle, and the bundle
+contains the transitive closure of everything those packages link — Qt's own
+libraries and plugins, the libraries Pillow vendors, and whatever the build
+machine's linker resolved.
 
-The published v1.0.0 archives contain **519 native binaries** across the three
-platforms, drawn from roughly a hundred distinct projects. Every one of them is
-inventoried, with the source of each licence determination, in
-**[THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md)**. Grouped by what they require:
+A Linux build contains **199 native binaries**. Every one of them is inventoried,
+with the source of each licence determination, in
+**[THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md)**, and the licence texts
+themselves now ship inside the archive as `licenses/`. Grouped by what they
+require:
 
-| Class | Binaries in v1.0.0 | What it asks of you |
-|---|--:|---|
-| Permissive — MIT, BSD, ISC, Apache-2.0, Zlib, Unicode | 153 | Reproduce the notices. |
-| Python and its extension modules — PSF-2.0 | 118 | Attribution. |
-| Qt — LGPL-3.0 | 171 | Licence text, notice, and the recipient's ability to relink. |
-| Other LGPL-2.1 / LGPL-2.0 libraries | 13 | The same, in their earlier form. |
-| GCC runtime — GPL-3.0-or-later **with GCC Runtime Library Exception 3.1** | 2 | Nothing. The exception is what makes it distributable; without it a GPL-3 library would sit inside every build. |
-| Microsoft Visual C++ and Universal CRT runtime (Windows) | 45 | Microsoft's own redistributable terms — **not an open-source licence**, and a different legal basis from every other row here. |
-| MuPDF, via PyMuPDF — AGPL-3.0 or Artifex commercial | 17 | See below. |
+| Class | What it asks of you |
+|---|---|
+| Permissive — MIT, BSD, ISC, Apache-2.0, Zlib, Unicode | Reproduce the notices. |
+| Python and its extension modules — PSF-2.0 | Attribution. |
+| Qt — LGPL-3.0 | Licence text, notice, and the recipient's ability to relink. |
+| Other LGPL-2.1 / LGPL-2.0 libraries | The same, in their earlier form. |
+| GCC runtime — GPL-3.0-or-later **with GCC Runtime Library Exception 3.1** | Nothing. The exception is what makes it distributable; without it a GPL-3 library would sit inside every build. |
+| Microsoft Visual C++ and Universal CRT runtime (Windows) | Microsoft's own redistributable terms — **not an open-source licence**, and a different legal basis from every other row here. |
 
-Counts describe v1.0.0 and change with the build. The inventory is regenerated from the
-archives at each release rather than maintained by hand.
-
-### MuPDF, and what it means for a Redistribution licence
-
-**Read this before buying a Redistribution licence.**
-
-Orion renders and writes PDFs with MuPDF, through PyMuPDF. Artifex licenses MuPDF under
-the AGPL-3.0 **or** a commercial licence of its own. Orion holds no right to sublicense
-Artifex's code, so:
-
-- A commercial or redistribution licence to Orion covers **Orion's code only**. The
-  MuPDF inside the build you receive is still the AGPL-licensed MuPDF.
-- The AGPL's obligations therefore attach to **you**, directly, on your own
-  distribution or network deployment — including its source-availability requirement
-  for users interacting with it over a network.
-- Resolving that is between you and Artifex. The usual route is an Artifex commercial
-  or OEM licence, bought separately.
-
-This is a property of the dependency, not a limitation chosen here, and no payment to
-the Project Owner removes it. It is stated plainly rather than buried because a buyer
-who discovers it after purchase has bought the wrong thing.
-
-Work is under way to determine whether MuPDF can be replaced with a permissively
-licensed engine. Until that ships, the paragraph above is the position, and any
-Redistribution quotation will restate it.
+Counts change with the build. The inventory is regenerated from the archives at
+each release rather than maintained by hand.
 
 ### Verify against what you ship
 
-The determinations above and in THIRD-PARTY-LICENSES.md were made from package metadata
-and from the build machine's own copyright records, and each entry names its source so
-it can be re-checked. They are given in good faith, are current as at the version of
-this document, and are **not a legal opinion**. Verify them against the versions you
-actually ship.
+The determinations above and in THIRD-PARTY-LICENSES.md were made from package
+metadata and from the build machine's own copyright records, and each entry names
+its source so it can be re-checked. They are given in good faith, are current as
+at the version of this document, and are **not a legal opinion**. Verify them
+against the versions you actually ship.
 
 ---
 

@@ -47,11 +47,14 @@ THIRD-PARTY-LICENSES.md, and the reader of a bundle gets pointed at both.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
 import subprocess
 import sys
+
+log = logging.getLogger(__name__)
 
 #: Distributions whose wheels ship no licence file, mapped to the canonical
 #: texts that have to be supplied on their behalf. Qt's entry carries two
@@ -62,17 +65,7 @@ SUPPLIED_TEXTS = {
     "PySide6_Essentials": ("LGPL-3.0.txt", "GPL-3.0.txt"),
     "PySide6_Addons": ("LGPL-3.0.txt", "GPL-3.0.txt"),
     "shiboken6": ("LGPL-3.0.txt", "GPL-3.0.txt"),
-    # PyMuPDF's COPYING is a single line naming the dual licence and nothing
-    # else — "Dual Licensed - GNU AFFERO GPL 3.0 or Artifex Commercial
-    # License" — so the AGPL text it points at has to be supplied. It is the
-    # same text as Orion's own LICENSE, and comes from there rather than from
-    # a second copy committed to the repository.
-    "PyMuPDF": ("AGPL-3.0.txt",),
 }
-
-#: Canonical texts that are not files in ``licenses/`` but are already in the
-#: repository under another name.
-ALIASED_TEXTS = {"AGPL-3.0.txt": "LICENSE"}
 
 #: Runtime distributions, in the order a reader should meet them. Build-time
 #: tools are deliberately absent: they are not in the archive, so their terms
@@ -84,13 +77,24 @@ RUNTIME_DISTRIBUTIONS = (
     "PySide6_Essentials",
     "PySide6_Addons",
     "shiboken6",
-    "PyMuPDF",
+    "pypdfium2",
     "pypdf",
+    "reportlab",
+    "charset-normalizer",
     "pillow",
     "pyinstaller",
 )
 
+#: A licence file is usually *named* like one...
 LICENCE_FILE = re.compile(r"(?i)^(licen[cs]e|copying|notice|authors)")
+
+#: ...but not always. pypdfium2 ships nineteen of them, named after the licence
+#: rather than after the word — Apache-2.0.txt, BSD-3-Clause.txt, and one per
+#: library PDFium builds in: freetype, icu, libjpeg_turbo, libpng, zlib and the
+#: rest. Matching on the file name alone silently collected none of them, which
+#: is precisely the failure this script exists to prevent, so a file sitting in
+#: a directory that announces itself as licences counts too.
+LICENCE_DIRECTORY = re.compile(r"(?i)^(licen[cs]es?|build_licenses)$")
 
 
 def _distribution_licence_files(name: str) -> list[tuple[str, str]]:
@@ -122,13 +126,42 @@ def _distribution_licence_files(name: str) -> list[tuple[str, str]]:
         )
         if info is None:
             continue
-        if not LICENCE_FILE.match(parts[-1]):
+        below = parts[info + 1:]
+        named = LICENCE_FILE.match(parts[-1])
+        housed = any(LICENCE_DIRECTORY.match(part) for part in below[:-1])
+        if not named and not housed:
             continue
         try:
-            found.append(("/".join(parts[info + 1:]), file.read_text(encoding="utf-8")))
+            text = _read_text(file.locate())
         except Exception:
+            # Loud on purpose. A licence file that cannot be read has to be
+            # noticed, not quietly left out of the archive — a tree that looks
+            # complete and is not is worse than one with an obvious hole.
+            log.warning("Could not read the licence file %s", file, exc_info=True)
             continue
+        found.append(("/".join(below), text))
     return _flatten(found)
+
+
+def _read_text(path) -> str:
+    """Read a licence file whatever it happens to be encoded in.
+
+    Not everything is UTF-8. FreeType's licence, which arrives inside
+    pypdfium2 because PDFium builds FreeType in, is Latin-1: the copyright
+    sign in "copyright \xa9 The FreeType Project" is a single byte that UTF-8
+    rejects outright. Reading it as UTF-8 raised, the exception handler
+    dropped the file, and the tree came out with eighteen of pypdfium2's
+    nineteen notices and no indication that one was missing.
+
+    Latin-1 is the fallback because it cannot fail — every byte is a
+    character — and it decodes exactly the Western European text these older
+    files contain. The result is written back out as UTF-8.
+    """
+    data = path.read_bytes()
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data.decode("latin-1")
 
 
 def _flatten(files: list[tuple[str, str]]) -> list[tuple[str, str]]:
@@ -222,13 +255,10 @@ def collect(repo: str, staging: str, binaries=()) -> str:
                 out.write(text)
             written.append(filename)
         for canonical in supplied:
-            alias = ALIASED_TEXTS.get(canonical)
-            source = (
-                os.path.join(repo, alias)
-                if alias
-                else os.path.join(repo, "licenses", canonical)
+            shutil.copyfile(
+                os.path.join(repo, "licenses", canonical),
+                os.path.join(target, canonical),
             )
-            shutil.copyfile(source, os.path.join(target, canonical))
             written.append(f"{canonical} (supplied — the wheel ships none)")
         index.append(f"- **{name}** — {', '.join(written)}")
     index.append("")

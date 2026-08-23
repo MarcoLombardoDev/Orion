@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import pymupdf
 import pytest
 
 from orion.document.document import Document, DocumentSource
@@ -27,13 +26,17 @@ from orion.utils.geometry import Rect, Size
 @pytest.fixture
 def marked_pdf(tmp_path):
     """A 400x600 page with a red block in its top-left corner."""
+    from reportlab.pdfgen import canvas
+
     path = tmp_path / "marked.pdf"
-    doc = pymupdf.open()
-    page = doc.new_page(width=400, height=600)
-    page.draw_rect(pymupdf.Rect(0, 0, 80, 40), color=(1, 0, 0), fill=(1, 0, 0))
-    page.insert_text((120, 200), "FINDME", fontsize=20)
-    doc.save(path)
-    doc.close()
+    pdf = canvas.Canvas(str(path), pagesize=(400.0, 600.0))
+    pdf.setFillColorRGB(1.0, 0.0, 0.0)
+    pdf.rect(0.0, 600.0 - 40.0, 80.0, 40.0, stroke=0, fill=1)
+    pdf.setFillColorRGB(0.0, 0.0, 0.0)
+    pdf.setFont("Helvetica", 20)
+    pdf.drawString(120.0, 600.0 - 200.0, "FINDME")
+    pdf.showPage()
+    pdf.save()
     return path
 
 

@@ -19,7 +19,7 @@ The script walks an *extracted* release bundle — the artefact users download,
 not the build tree — and attributes every native library in it to the thing
 that put it there:
 
-  wheel   a Python wheel vendored it (PySide6, PyMuPDF, Pillow)
+  wheel   a Python wheel vendored it (PySide6, pypdfium2, Pillow)
   cpython the interpreter and its stdlib extension modules
   system  PyInstaller collected it from the build machine's own libraries
 
@@ -89,7 +89,7 @@ ORIGIN_SOURCES = {
 WHEEL_LICENCES = {
     "PySide6 / Qt 6": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
     "PySide6 / Qt 6 (ICU)": "Unicode-3.0 (vendored in the PySide6 wheel)",
-    "PyMuPDF / MuPDF": "AGPL-3.0-only OR Artifex-Commercial",
+    "pypdfium2 / PDFium": "BSD-3-Clause AND Apache-2.0 (PDFium: BSD-3-Clause)",
     "Pillow (vendored native libraries)": "MIT-CMU, plus the per-library terms in Pillow's LICENSE",
 }
 
@@ -263,8 +263,8 @@ def classify(rel: str) -> tuple[str, str] | None:
     base = os.path.basename(rel)
     lower = rel.replace("\\", "/").lower()
 
-    if lower.startswith("pymupdf/") or base.startswith(("libmupdf", "_mupdf")):
-        return "wheel", "PyMuPDF / MuPDF"
+    if lower.startswith(("pypdfium2/", "pypdfium2_raw/")) or base.startswith("libpdfium"):
+        return "wheel", "pypdfium2 / PDFium"
     if (
         lower.startswith(("pyside6/", "shiboken6/"))
         or base.startswith(("libQt6", "Qt6", "libpyside", "libshiboken", "shiboken6"))

@@ -19,13 +19,13 @@ from __future__ import annotations
 import logging
 import threading
 from collections import OrderedDict
+from collections.abc import Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 
-import pymupdf
-
 from orion.document.document import Document, DocumentSource
 from orion.document.page import Page
+from orion.pdf.coordinates import from_pdf_rect, to_pdf_rect
 from orion.pdf.errors import PdfReadError
 from orion.pdf.reader import OpenedPdf, open_pdf
 from orion.utils.geometry import Rect, Size
@@ -86,11 +86,21 @@ def quantize_scale(scale: float) -> float:
     return max(MIN_SCALE, min(MAX_SCALE, snapped))
 
 
+def _overlaps(a: Sequence[float], b: Sequence[float]) -> bool:
+    """Do two ``(x0, y0, x1, y1)`` boxes share any area?
+
+    Both are already normalised, so this is the plain interval test on each
+    axis. Touching edges do not count: a selection dragged to end exactly on a
+    line's top edge should not pick that line up.
+    """
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
 class PageRenderer:
     """Rasterises pages on demand and caches the results.
 
     Thread-safe: `render` may be called from worker threads.  Each opened PDF
-    keeps its own re-entrant lock, held for the whole PyMuPDF call.
+    keeps its own re-entrant lock, held for the whole pdfium call.
     """
 
     def __init__(self, cache_bytes: int = DEFAULT_CACHE_BYTES) -> None:
@@ -233,65 +243,92 @@ class PageRenderer:
 
     def _render_source(self, request: RenderRequest) -> RenderedPage:
         opened = self.source_handle(request.source_key or "")
-        if opened is None or opened.doc.is_closed:
+        if opened is None or opened.is_closed:
             log.debug("No handle for source %s; rendering blank", request.source_key)
             return self._render_blank(request)
 
-        matrix = pymupdf.Matrix(request.scale, request.scale)
         with opened.lock:
             try:
-                page = opened.doc.load_page(request.source_index)
-                if request.rotation:
-                    # Orion's rotation is applied on top of the source /Rotate.
-                    # A positive angle here turns the *rendered page* clockwise,
-                    # which is the opposite of the sign PyMuPDF's ``morph=``
-                    # takes; both directions are pinned by the test-suite
-                    # (tests/test_renderer.py and tests/test_coordinates.py).
-                    matrix = matrix * pymupdf.Matrix(request.rotation)
-                pixmap = page.get_pixmap(matrix=matrix, alpha=False, colorspace=pymupdf.csRGB)
+                page = opened.doc[request.source_index]
+                # Orion's rotation is applied on top of the source /Rotate, and
+                # pdfium turns the rendered page clockwise for a positive
+                # angle — the same direction Orion means. Verified by rendering
+                # a marked page in tests/test_renderer.py rather than assumed.
+                #
+                # rev_byteorder asks pdfium for RGB rather than its native BGR,
+                # which is the byte order RenderedPage promises and Qt expects.
+                # Without it every rendered page comes out with red and blue
+                # swapped, and the stride happens to match either way, so
+                # nothing else would notice.
+                bitmap = page.render(
+                    scale=request.scale,
+                    rotation=int(request.rotation) % 360,
+                    rev_byteorder=True,
+                    draw_annots=True,
+                )
             except MemoryError:
                 raise
             except Exception as exc:
                 log.warning("Could not render page %d: %s", request.source_index, exc)
                 return self._render_blank(request)
 
-        return RenderedPage(
-            key=request.cache_key,
-            width=pixmap.width,
-            height=pixmap.height,
-            stride=pixmap.stride,
-            samples=bytes(pixmap.samples),
-            scale=request.scale,
-        )
+            return RenderedPage(
+                key=request.cache_key,
+                width=bitmap.width,
+                height=bitmap.height,
+                stride=bitmap.stride,
+                samples=bytes(bitmap.buffer),
+                scale=request.scale,
+            )
 
     # -- text --------------------------------------------------------------
+    def _text_source(self, page: Page) -> OpenedPdf | None:
+        """The open handle backing *page*, or None if its text is unreachable."""
+        if page.source is None:
+            return None
+        opened = self.source_handle(page.source.source_key)
+        if opened is None or opened.is_closed:
+            return None
+        return opened
+
     def search_page(self, page: Page, needle: str, *, limit: int = 200) -> list[Rect]:
         """Find *needle* on *page*, returning hit rectangles in base page space."""
-        if not needle or page.source is None:
+        if not needle:
             return []
-        opened = self.source_handle(page.source.source_key)
-        if opened is None or opened.doc.is_closed:
+        opened = self._text_source(page)
+        if opened is None or page.source is None:
             return []
-        from orion.pdf.coordinates import from_pdf_rect
 
+        index = page.source.index
+        geometry = opened.geometry(index)
+        hits: list[Rect] = []
         with opened.lock:
             try:
-                pdf_page = opened.doc.load_page(page.source.index)
-                hits = pdf_page.search_for(needle)[:limit]
-                return [from_pdf_rect(pdf_page, hit) for hit in hits]
+                textpage = opened.doc[index].get_textpage()
+                searcher = textpage.search(needle)
+                while len(hits) < limit:
+                    found = searcher.get_next()
+                    if found is None:
+                        break
+                    start, count = found
+                    # A single hit spans several rectangles when it wraps a
+                    # line, and each one has to be highlighted separately.
+                    for rect_index in range(textpage.count_rects(start, count)):
+                        hits.append(
+                            from_pdf_rect(geometry, textpage.get_rect(rect_index))
+                        )
             except Exception as exc:
-                log.debug("Search failed on page %d: %s", page.source.index, exc)
+                log.debug("Search failed on page %d: %s", index, exc)
                 return []
+        return hits[:limit]
 
     def page_text(self, page: Page) -> str:
-        if page.source is None:
-            return ""
-        opened = self.source_handle(page.source.source_key)
-        if opened is None or opened.doc.is_closed:
+        opened = self._text_source(page)
+        if opened is None or page.source is None:
             return ""
         with opened.lock:
             try:
-                return opened.doc.load_page(page.source.index).get_text()
+                return opened.doc[page.source.index].get_textpage().get_text_range()
             except Exception:
                 return ""
 
@@ -300,33 +337,33 @@ class PageRenderer:
 
         Used by the highlight/underline/strikeout tools so a markup annotation
         snaps to the actual text lines rather than to the raw drag rectangle.
-        """
-        if page.source is None:
-            return []
-        opened = self.source_handle(page.source.source_key)
-        if opened is None or opened.doc.is_closed:
-            return []
-        from orion.pdf.coordinates import from_pdf_rect, to_pdf_rect
 
+        pdfium already groups the page's characters into one rectangle per run
+        of text on a line, which is exactly the granularity wanted here — so
+        this asks for those rather than reassembling lines out of word boxes
+        and having to guess where one ends.
+        """
+        opened = self._text_source(page)
+        if opened is None or page.source is None:
+            return []
+
+        index = page.source.index
+        geometry = opened.geometry(index)
+        selection = to_pdf_rect(geometry, rect)
         with opened.lock:
             try:
-                pdf_page = opened.doc.load_page(page.source.index)
-                selection = to_pdf_rect(pdf_page, rect)
-                words = pdf_page.get_text("words")
+                textpage = opened.doc[index].get_textpage()
+                candidates = [
+                    textpage.get_rect(i) for i in range(textpage.count_rects(0, -1))
+                ]
             except Exception:
                 return []
 
-        lines: dict[tuple[int, int], pymupdf.Rect] = {}
-        for x0, y0, x1, y1, _text, block, line, _word in words:
-            word_rect = pymupdf.Rect(x0, y0, x1, y1)
-            if not word_rect.intersects(selection):
-                continue
-            key = (block, line)
-            lines[key] = word_rect if key not in lines else lines[key] | word_rect
-
-        with opened.lock:
-            pdf_page = opened.doc.load_page(page.source.index)
-            return [from_pdf_rect(pdf_page, r) for r in lines.values()]
+        return [
+            from_pdf_rect(geometry, candidate)
+            for candidate in candidates
+            if _overlaps(candidate, selection)
+        ]
 
     def __del__(self) -> None:  # pragma: no cover - best-effort cleanup
         with suppress(Exception):

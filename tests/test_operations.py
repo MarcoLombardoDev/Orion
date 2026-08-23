@@ -10,26 +10,27 @@
 
 from __future__ import annotations
 
-import pymupdf
 import pytest
 
 from orion.pdf import operations
 from orion.pdf.errors import PdfWriteError
+from tests.conftest import PdfProbe, make_pdf
 
 
 def _pdf(path, pages: int, tag: str):
-    doc = pymupdf.open()
-    for index in range(pages):
-        page = doc.new_page(width=300, height=400)
-        page.insert_text((40, 60), f"{tag}{index + 1}", fontsize=24)
-    doc.save(path)
-    doc.close()
-    return path
+    return make_pdf(
+        path, [(300.0, 400.0, f"{tag}{index + 1}") for index in range(pages)]
+    )
 
 
 def _text_of(path, index: int) -> str:
-    with pymupdf.open(path) as doc:
-        return doc.load_page(index).get_text().strip()
+    with PdfProbe(path) as probe:
+        return probe.text(index).strip()
+
+
+def _page_count(path) -> int:
+    with PdfProbe(path) as probe:
+        return probe.page_count
 
 
 # -- page ranges ---------------------------------------------------------
@@ -58,8 +59,7 @@ def test_merge_keeps_the_requested_order(tmp_path):
     b = _pdf(tmp_path / "b.pdf", 1, "B")
     out = operations.merge([b, a], tmp_path / "merged.pdf")
 
-    with pymupdf.open(out) as doc:
-        assert doc.page_count == 3
+    assert _page_count(out) == 3
     assert _text_of(out, 0) == "B1"
     assert _text_of(out, 1) == "A1"
     assert _text_of(out, 2) == "A2"
@@ -83,8 +83,7 @@ def test_merge_rejects_an_empty_job(tmp_path):
 def test_extract_pages(tmp_path):
     src = _pdf(tmp_path / "src.pdf", 5, "P")
     out = operations.extract_pages(src, tmp_path / "extract.pdf", [4, 2])
-    with pymupdf.open(out) as doc:
-        assert doc.page_count == 2
+    assert _page_count(out) == 2
     assert _text_of(out, 0) == "P5"
     assert _text_of(out, 1) == "P3"
 
@@ -101,8 +100,7 @@ def test_split_every(tmp_path):
     assert [p.name for p in parts] == ["doc_1.pdf", "doc_2.pdf", "doc_3.pdf"]
     counts = []
     for part in parts:
-        with pymupdf.open(part) as doc:
-            counts.append(doc.page_count)
+        counts.append(_page_count(part))
     assert counts == [2, 2, 1]
 
 

@@ -16,7 +16,7 @@ this file does not try to re-derive the inventory. It checks the part that
 the four runtime dependencies.
 
 The failure this guards against is mundane and easy to miss. Someone adds a
-fifth dependency, or swaps PyMuPDF for something permissive, and the licence
+sixth dependency, or swaps one engine for another, and the licence
 document keeps describing the old set — which is worse than having no document,
 because a stale licence document is one people rely on.
 
@@ -100,13 +100,14 @@ def test_the_document_names_no_dependency_orion_dropped(document: str) -> None:
 @pytest.mark.parametrize(
     "dependency, licence",
     [
-        # The two that constrain redistribution. If either of these strings
-        # stops matching the wheel metadata, the whole licensing analysis in
+        # The one that still constrains redistribution. If this string stops
+        # matching the wheel metadata, the licensing analysis in
         # COMMERCIAL-LICENSE.md is built on a false premise.
-        ("PyMuPDF", "AGPL-3.0-only OR Artifex-Commercial"),
         ("PySide6", "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"),
-        # The two that do not.
+        # The ones that do not.
+        ("pypdfium2", "BSD-3-Clause"),
         ("pypdf", "BSD-3-Clause"),
+        ("reportlab", "BSD"),
         ("Pillow", "MIT-CMU"),
     ],
 )
@@ -124,16 +125,28 @@ def test_licence_of_each_dependency_is_stated(
     )
 
 
-def test_the_known_gaps_are_not_quietly_deleted(document: str) -> None:
-    """Gaps stay listed until they are actually closed.
+def test_the_document_says_the_published_archives_are_older(document: str) -> None:
+    """The one caveat that outlives the fixes.
 
-    Deleting the section is the tempting way to make a licence document look
-    clean. These three are open defects, and the archives still ship without
-    licence texts; the section goes when the fix lands, not before.
+    Three defects this document opened with are closed in the repository —
+    licence texts ship, libcom_err is gone, Qt PDF is gone — and the PDF engine
+    has been replaced outright. None of that is in a file anyone can download
+    yet. A licence document that describes the repository while readers hold
+    an older archive is the kind of accurate-but-misleading that gets someone
+    into trouble, so it has to say which one it is describing.
     """
     assert "## Known gaps" in document
-    for gap in ("no licence texts", "libcom_err", "Qt PDF"):
-        assert gap in document, f"the '{gap}' gap vanished without a fix"
+    assert "predate" in document, (
+        "nothing tells the reader the published archives are older than this"
+    )
+
+
+def test_the_engine_replacement_is_explained_not_just_applied(document: str) -> None:
+    """Why MuPDF left is the question a commercial buyer will ask first."""
+    assert "MuPDF" in document
+    assert "sublicense" in document.lower() or "sublicence" in document.lower()
+    for library in ("pypdfium2", "pypdf", "reportlab"):
+        assert library in document, f"{library} took over part of the job and is unnamed"
 
 
 class TestBundleClassifier:
@@ -145,7 +158,7 @@ class TestBundleClassifier:
             # Linux: PyInstaller hoists wheel libraries next to system ones,
             # so the name is all there is to go on.
             ("libQt6Core.so.6", "PySide6 / Qt 6"),
-            ("libmupdf.so.28.2", "PyMuPDF / MuPDF"),
+            ("libpdfium.so", "pypdfium2 / PDFium"),
             ("pillow.libs/libjpeg-31e2ca52.so.62.4.0", "Pillow (vendored native libraries)"),
             # ICU is vendored inside the PySide6 wheel and looks exactly like
             # a system library once hoisted. Attributing it to the system
@@ -160,7 +173,7 @@ class TestBundleClassifier:
             # package belongs to that package.
             ("_socket.pyd", "CPython"),
             ("PySide6/QtCore.pyd", "PySide6 / Qt 6"),
-            ("pymupdf/_mupdf.pyd", "PyMuPDF / MuPDF"),
+            ("pypdfium2_raw/pdfium.dll", "pypdfium2 / PDFium"),
         ],
     )
     def test_attribution(self, path: str, component: str) -> None:
@@ -222,13 +235,25 @@ class TestLicenceCollection:
             directory = os.path.join(tree, "python", name)
             assert os.path.exists(os.path.join(directory, "GPL-3.0.txt"))
 
-    def test_mupdfs_one_line_copying_is_backed_by_the_agpl_text(self, tree: str) -> None:
-        """PyMuPDF's COPYING is a single line naming the dual licence."""
-        directory = os.path.join(tree, "python", "PyMuPDF")
-        with open(os.path.join(directory, "COPYING"), encoding="utf-8") as f:
-            assert len(f.read().strip().splitlines()) == 1
-        with open(os.path.join(directory, "AGPL-3.0.txt"), encoding="utf-8") as f:
-            assert "GNU AFFERO GENERAL PUBLIC LICENSE" in f.read()
+    def test_pdfiums_own_third_party_notices_are_collected(self, tree: str) -> None:
+        """pypdfium2's licence files are not named like licence files.
+
+        It ships nineteen of them, named after the licence rather than the
+        word — Apache-2.0.txt, BSD-3-Clause.txt, and one per library PDFium
+        builds in. Matching on the file name alone collected none of them and
+        said nothing about it, which is the exact failure the collector exists
+        to prevent, so this checks the awkward case rather than the easy one.
+        """
+        directory = os.path.join(tree, "python", "pypdfium2")
+        assert os.path.isdir(directory), "pypdfium2 got no licence directory"
+        collected = {
+            os.path.basename(name)
+            for _root, _dirs, files in os.walk(directory)
+            for name in files
+        }
+        assert "pdfium.txt" in collected, "PDFium's own licence was not collected"
+        for library in ("freetype.txt", "libpng.txt", "zlib.txt", "icu.txt"):
+            assert library in collected, f"PDFium bundles {library} and says so"
 
     def test_pillows_licence_covers_its_vendored_libraries(self, tree: str) -> None:
         """Pillow's LICENSE is the notice for a dozen native libraries.

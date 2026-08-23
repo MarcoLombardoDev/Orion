@@ -98,35 +98,6 @@ def encode(img, fmt: str = "png") -> tuple[bytes, str, Size]:
     return buffer.getvalue(), fmt, Size(float(img.size[0]), float(img.size[1]))
 
 
-def rotate_image(data: bytes, degrees: float, *, opacity: float = 1.0) -> tuple[bytes, Size]:
-    """Rasterise a rotation (and optional opacity) into a new PNG.
-
-    Needed because PyMuPDF's ``insert_image`` only supports 90° steps; Orion
-    supports arbitrary object rotation, so non-multiples of 90 take this path.
-    The result is always PNG so the alpha channel survives.
-    """
-    Image = _pillow()
-    with Image.open(io.BytesIO(data)) as src:
-        img = src.convert("RGBA")
-
-    if opacity < 1.0:
-        alpha = img.getchannel("A").point(lambda v: int(v * max(0.0, min(1.0, opacity))))
-        img.putalpha(alpha)
-
-    if degrees % 360.0:
-        # Pillow rotates counter-clockwise; Orion angles are clockwise.
-        img = img.rotate(-degrees, resample=Image.BICUBIC, expand=True)
-
-    buffer = io.BytesIO()
-    img.save(buffer, format="PNG")
-    return buffer.getvalue(), Size(float(img.size[0]), float(img.size[1]))
-
-
-def apply_opacity(data: bytes, opacity: float) -> bytes:
-    """Bake *opacity* into the alpha channel, returning PNG bytes."""
-    return rotate_image(data, 0.0, opacity=opacity)[0]
-
-
 def natural_size(data: bytes) -> Size:
     Image = _pillow()
     with Image.open(io.BytesIO(data)) as img:

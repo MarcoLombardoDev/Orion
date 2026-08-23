@@ -46,7 +46,7 @@ __all__ = [
 #: Objects may not be resized below this (points) — smaller is unselectable.
 MIN_OBJECT_SIZE = 4.0
 
-#: RGB in the 0..1 range, matching both PyMuPDF and the PDF specification.
+#: RGB in the 0..1 range, matching the PDF specification.
 Color = tuple[float, float, float]
 
 BLACK: Color = (0.0, 0.0, 0.0)
@@ -169,7 +169,10 @@ class PageObject:
 #: embedding font files.  TTF embedding is a documented follow-up.
 BASE14_FAMILIES: tuple[str, ...] = ("Helvetica", "Times", "Courier")
 
-#: family -> (regular, bold, italic, bold-italic) PyMuPDF base-14 names.
+#: family -> (regular, bold, italic, bold-italic) base-14 font identifiers.
+#: These are stored in saved documents, so they are part of the file format and
+#: cannot be renamed; orion/pdf/text_layout.py maps them to the names the writer
+#: draws with.
 BASE14_MAP: dict[str, tuple[str, str, str, str]] = {
     "Helvetica": ("helv", "hebo", "heit", "hebi"),
     "Times": ("tiro", "tibo", "tiit", "tibi"),
@@ -195,7 +198,7 @@ class TextObject(PageObject):
 
     @property
     def base14_name(self) -> str:
-        """PyMuPDF font identifier for this style combination."""
+        """Base-14 font identifier for this style combination."""
         regular, bold, italic, bold_italic = BASE14_MAP.get(
             self.font_family, BASE14_MAP["Helvetica"]
         )

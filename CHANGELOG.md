@@ -79,7 +79,41 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   its own subsection: Orion cannot sublicense Artifex's code, so a
   Redistribution licence still hands the buyer AGPL MuPDF and its obligations.
 
+### Changed
+- **The PDF engine was replaced.** Orion rendered and wrote PDFs with MuPDF,
+  through PyMuPDF, which Artifex licenses under the AGPL-3.0 or a commercial
+  licence of its own. Orion held no right to sublicense it, so a customer who
+  bought a commercial or redistribution licence still received AGPL MuPDF and
+  still carried its obligations — the single reason those tiers did not work.
+  The job is now split between **pypdfium2** (Google's PDFium) for rendering,
+  text extraction and search, **pypdf** for document assembly, page operations
+  and annotations, and **reportlab** for drawing added text, shapes and images.
+  All three are BSD or Apache licensed; Qt is now the only copyleft dependency,
+  and LGPL has always been workable. The build is **46.6 MB smaller unpacked
+  and 20.6 MB compressed**, measured by building both engines in the same
+  environment.
+
+  The port was checked against the engine it replaced rather than only against
+  the test suite: the same documents were saved through both writers and the
+  rendered pages compared pixel by pixel. Rectangles, rotated objects,
+  highlights and images came out identical on all four page rotations.
+
+### Fixed
+- **Text on a rotated page was saved running down the page.** Found by that
+  comparison. Base page space is the page as displayed, and the old writer put
+  text into the unrotated mediabox without turning it to match the page's own
+  `/Rotate` — so a text box on a page carrying `/Rotate 90` was written
+  sideways, and the reader then turned it again. It reproduced on 90, 180 and
+  270 and not on 0, which is why it went unnoticed: an upright page is the one
+  everybody checks. Images were already handled correctly, which is what
+  confirmed the diagnosis.
+
 ### Removed
+- **PyMuPDF**, and with it `rotate_image`/`apply_opacity` in
+  `orion/utils/image_utils.py`. Those existed only because the old engine could
+  rotate an image in 90-degree steps and had no opacity parameter, so any other
+  angle was baked into the pixels with Pillow — resampling the image on every
+  save. reportlab does both in the content stream, so nothing calls them now.
 - **Qt PDF, Qt Network and the Kerberos stack behind them.** `libQt6Pdf`
   reached the archives because Qt's `qpdf` *image-format* plugin links it; it
   embeds PDFium and its own third-party dependencies, so a second PDF engine

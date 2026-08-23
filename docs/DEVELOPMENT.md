@@ -69,23 +69,28 @@ The one thing worth reading twice.
 | View space | the widget | pixels |
 | PDF content space | mediabox, ignoring `/Rotate` | points |
 
-Two PyMuPDF behaviours drive the design, both verified experimentally and both
-pinned by `tests/test_coordinates.py`:
+Two facts drive the design, both pinned by `tests/test_coordinates.py`:
 
-1. PyMuPDF's content API (`draw_*`, `insert_text`, `insert_image`,
-   `add_*_annot`, `search_for`) works in **unrotated mediabox space** — it is
-   *not* rotation aware. Only `page.rect` and `get_pixmap()` reflect `/Rotate`.
-2. `pymupdf.Matrix(a)` rotates **counter-clockwise** on screen; Orion (like
-   `QGraphicsItem.setRotation`) is clockwise-positive.
+1. Nothing below the conversion is rotation aware. reportlab draws into the
+   **unrotated mediabox** and pdfium reports text rectangles there too, so
+   `orion/pdf/coordinates.py` maps base page space onto it explicitly, one case
+   per `/Rotate` value.
+2. The two spaces disagree about rotation twice over. Base space is y-down and
+   clockwise-positive (like `QGraphicsItem.setRotation`); content space is y-up
+   and counter-clockwise-positive, so angles change sign. And on a quarter turn
+   the map *swaps the axes*, so anything with its own up direction — text and
+   images — must also be turned by `/Rotate`, or it is written running down the
+   page.
 
 Object rectangles are stored in *base* page space, so rotating a page is an
 O(1) metadata change and objects stay attached to the content they annotate.
 `PageItem`'s content layer carries the display rotation on the canvas; the
-writer carries it through `derotation_matrix`.
+writer carries it through the conversion in `orion/pdf/coordinates.py`.
 
 If you touch any of this, `tests/test_coordinates.py` renders the output and
-asserts pixel positions. That is deliberate: it fails loudly if a PyMuPDF
-upgrade changes the rules.
+asserts pixel positions. That is deliberate: it fails loudly if a library
+upgrade changes the rules — and it is why replacing the PDF engine outright
+did not have to change a single one of those assertions.
 
 ## Adding a tool
 
@@ -128,7 +133,7 @@ session, so running the suite never touches your real settings.
   of the same page at 25%.
 - Rendering runs on a `QThreadPool`, is de-duplicated by cache key, and is
   cancelled wholesale when the zoom changes.
-- PyMuPDF is not thread-safe per document: every engine call holds that
+- pdfium is not safe for concurrent access to one document: every engine call holds that
   document's lock. Never call into `orion/pdf` without going through the
   renderer or the writer.
 - Thumbnails use a separate small renderer so they cannot evict canvas pages.
