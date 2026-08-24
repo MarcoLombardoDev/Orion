@@ -4,7 +4,7 @@ Orion is licensed **AGPL-3.0-or-later** (see [LICENSE](LICENSE)), with a
 commercial licence available separately (see
 [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)). That covers the code in this
 repository. It does not cover the code Orion is built on, and a downloadable
-release is mostly that other code: a Linux build contains 199 native binaries
+release is mostly that other code: a Linux build contains 185 native binaries
 and not one of them was written for Orion. Orion's own code travels through
 them as Python bytecode.
 
@@ -41,6 +41,15 @@ source tree. That distinction matters: PyInstaller collects whatever the build
 machine's linker resolved, so the contents change when the runner image
 changes, not when someone edits this repository. A hand-maintained list would
 be stale within one CI image bump and nobody would notice.
+
+One caveat on this table specifically: it comes from a build of the tagged
+source made on Ubuntu 24.04, the same family as the release runner, rather
+than from the runner itself. Iris, Proteus and Argus generate their inventory
+during the release and ship it inside the archive, which is strictly better —
+their published numbers are the runner's own. Orion does not yet do that, and
+the same source built on the runner resolves a different number of files into
+the same set of projects, so treat the counts here as the shape of the bundle
+rather than as a checksum of the download.
 
 Every entry traces to a machine-readable source:
 
@@ -146,8 +155,9 @@ Beyond MuPDF, five things were dropped from the bundle for licensing reasons:
   described a bundle nobody had looked at closely enough. `libpython` does not
   link it — only that module does, and Orion never reads a line from an
   interactive prompt — so it and `rlcompleter` are now excluded, and `libtinfo`
-  leaves with them. The v1.0.0 archives still contain it; builds from the next
-  release on do not.
+  leaves with them. The v1.0.0 tag was re-cut onto the fixed build, so the
+  archives on the releases page no longer contain it — but a copy downloaded
+  before that does, and nothing about the file name says which one it is.
 
 All of these exclusions are pinned by
 [`tests/test_packaging.py`](tests/test_packaging.py) so they cannot silently
@@ -176,22 +186,16 @@ Counts are files, not projects: one project usually contributes several
 binaries. "Evidence" names where the licence came from, so any line here can
 be re-checked rather than taken on trust.
 
-### Linux — 199 native binaries (v1.0.0)
+### Linux — 185 native binaries
 
-This table is the **v1.0.0** build, which is what a redistributor holding a
-published archive actually has. It therefore still contains `libreadline8t64`
-— see *What was deliberately removed* above. The same build produced with
-`readline` excluded contains 185 native binaries and no GPL-3.0 library
-without an exception; the table is regenerated at the next release rather than
-edited here, because a hand-edited row in a generated document is how a
-document stops being evidence.
+Regenerated from the build the current `v1.0.0` archives were made from. The
+same build before `readline` was excluded contained 199, one of which was
+`libreadline8t64` under GPL-3.0-or-later — see *What was deliberately removed*
+above. Nothing in this table is copyleft without an exception.
 
 | Component | Files | Licence | Evidence |
 |---|--:|---|---|
-| `CPython` | 28 | PSF-2.0 | the Python Software Foundation License, version 2 |
-| `Pillow (vendored native libraries)` | 32 | MIT-CMU, plus the per-library terms in Pillow's LICENSE | the wheel's own distribution metadata |
-| `PySide6 / Qt 6` | 66 | LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only | the wheel's own distribution metadata |
-| `PySide6 / Qt 6 (ICU)` | 3 | Unicode-3.0 (vendored in the PySide6 wheel) | the wheel's own distribution metadata |
+| `CPython` | 26 | PSF-2.0 | the Python Software Foundation License, version 2 |
 | `libblkid1` | 1 | LGPL-2.1-or-later | reviewed: Files: libblkid/* — default stanza says GPL-2+ |
 | `libbrotli1` | 2 | MIT | debian/copyright, Files: * stanza |
 | `libbsd0` | 1 | BSD-3-Clause AND BSD-2-Clause AND ISC | reviewed: per-file stanzas, all permissive BSD/ISC variants |
@@ -217,30 +221,19 @@ document stops being evidence.
 | `libpcre2-8-0` | 1 | BSD-3-Clause (PCRE2 variant) | debian/copyright, Files: * stanza |
 | `libpixman-1-0` | 1 | MIT | free-form copyright: 'MIT license' |
 | `libpng16-16t64` | 1 | Libpng | debian/copyright, Files: * stanza |
-| `libreadline8t64` | 1 | GPL-3+ | debian/copyright, Files: * stanza |
 | `libselinux1` | 1 | public domain | debian/copyright, Files: * stanza |
 | `libssl3t64` | 2 | Apache-2.0 | debian/copyright, Files: * stanza |
 | `libstdc++6` | 1 | GPL-3.0-or-later WITH GCC-exception-3.1 | free-form copyright: 'version 3.1 of the GCC Runtime Library Exception' |
 | `libsystemd0` | 1 | LGPL-2.1-or-later | debian/copyright, Files: * stanza |
-| `libtinfo6` | 1 | MIT | debian/copyright, Files: * stanza |
-| `libuuid1` | 1 | BSD-3-Clause | reviewed: Files: libuuid/* — default stanza says GPL-2+ |
 | `libx11-6` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libx11-xcb1` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxau6` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
-| `libxcb-cursor0` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxcb-glx0` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
-| `libxcb-icccm4` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
-| `libxcb-image0` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
-| `libxcb-keysyms1` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxcb-randr0` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
-| `libxcb-render-util0` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxcb-render0` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
-| `libxcb-shape0` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxcb-shm0` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxcb-sync1` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
-| `libxcb-util1` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxcb-xfixes0` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
-| `libxcb-xkb1` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxcomposite1` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxcursor1` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxdamage1` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
@@ -249,12 +242,14 @@ document stops being evidence.
 | `libxfixes3` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxi6` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxinerama1` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
-| `libxkbcommon-x11-0` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxkbcommon0` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxrandr2` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxrender1` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libzstd1` | 1 | BSD-3-Clause OR GPL-2.0-only | debian/copyright, Files: * stanza |
+| `Pillow (vendored native libraries)` | 32 | MIT-CMU, plus the per-library terms in Pillow's LICENSE | the wheel's own distribution metadata |
 | `pypdfium2 / PDFium` | 1 | BSD-3-Clause AND Apache-2.0 (PDFium: BSD-3-Clause) | the wheel's own distribution metadata |
+| `PySide6 / Qt 6` | 66 | LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only | the wheel's own distribution metadata |
+| `PySide6 / Qt 6 (ICU)` | 3 | Unicode-3.0 (vendored in the PySide6 wheel) | the wheel's own distribution metadata |
 | `zlib1g` | 1 | Zlib | debian/copyright, Files: * stanza |
 
 Windows and macOS carry the same wheels and the same Qt, and differ below that:

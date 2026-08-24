@@ -103,6 +103,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   highlights and images came out identical on all four page rotations.
 
 ### Fixed
+- **`tools/licence_inventory.py` crashed on any machine without dpkg.**
+  `subprocess.run` raises on a missing executable rather than returning
+  non-zero, so running the inventory on Windows or macOS died instead of
+  reporting what it could not resolve. Guarded, and given its own exit code
+  for "the report was written and some rows need a human" — 1 could not mean
+  that, since an uncaught exception exits 1 too. Found on Proteus, where the
+  release workflow does run it per platform; Orion's runs by hand, so nothing
+  it published was affected.
 - **A GPL-3.0 library was being shipped inside archives offered for commercial
   redistribution.** PyInstaller collects the standard library's optional
   `readline` extension by default, and it links `libreadline` —
