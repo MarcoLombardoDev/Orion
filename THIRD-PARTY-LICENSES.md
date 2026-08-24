@@ -122,7 +122,7 @@ and carries its own conditions.
 
 ## What was deliberately removed
 
-Beyond MuPDF, four things were dropped from the bundle for licensing reasons:
+Beyond MuPDF, five things were dropped from the bundle for licensing reasons:
 
 - **Qt Virtual Keyboard** — GPLv3-only, not LGPL like the rest of Qt. It was
   shipping by accident as part of the default PySide6 collection. A GPLv3
@@ -137,6 +137,17 @@ Beyond MuPDF, four things were dropped from the bundle for licensing reasons:
 - **Qt Network and the Kerberos stack behind it** — including `libcom_err`,
   whose licence Ubuntu's copyright file and upstream e2fsprogs disagree about.
   Not shipping it settles the question better than an opinion would.
+- **The standard library's `readline` extension** — it links `libreadline`,
+  **GPL-3.0-or-later with no linking exception**. This one was missed the first
+  time round, and the inventory below is the evidence: `libreadline8t64` is in
+  it, in a build offered for commercial redistribution, while the top of this
+  document says nothing in the closure is copyleft but Qt. The table was right
+  and the sentence was about the *dependency* closure; between them they
+  described a bundle nobody had looked at closely enough. `libpython` does not
+  link it — only that module does, and Orion never reads a line from an
+  interactive prompt — so it and `rlcompleter` are now excluded, and `libtinfo`
+  leaves with them. The v1.0.0 archives still contain it; builds from the next
+  release on do not.
 
 All of these exclusions are pinned by
 [`tests/test_packaging.py`](tests/test_packaging.py) so they cannot silently
@@ -165,7 +176,16 @@ Counts are files, not projects: one project usually contributes several
 binaries. "Evidence" names where the licence came from, so any line here can
 be re-checked rather than taken on trust.
 
-### Linux — 199 native binaries
+### Linux — 199 native binaries (v1.0.0)
+
+This table is the **v1.0.0** build, which is what a redistributor holding a
+published archive actually has. It therefore still contains `libreadline8t64`
+— see *What was deliberately removed* above. The same build produced with
+`readline` excluded contains 185 native binaries and no GPL-3.0 library
+without an exception; the table is regenerated at the next release rather than
+edited here, because a hand-edited row in a generated document is how a
+document stops being evidence.
+
 | Component | Files | Licence | Evidence |
 |---|--:|---|---|
 | `CPython` | 28 | PSF-2.0 | the Python Software Foundation License, version 2 |

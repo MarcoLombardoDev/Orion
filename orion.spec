@@ -55,7 +55,19 @@ analysis = Analysis(  # noqa: F821 - PyInstaller globals
     hiddenimports=["pypdfium2", "pypdf", "reportlab", "PIL.Image"],
     hookspath=[],
     runtime_hooks=[],
-    excludes=EXCLUDED_QT + ["tkinter", "matplotlib", "numpy", "pytest"],
+    excludes=EXCLUDED_QT + [
+        "tkinter", "matplotlib", "numpy", "pytest",
+        # readline is excluded for the same reason as the virtual keyboard
+        # below, and it was missed the first time round. The standard
+        # library's optional readline extension links libreadline —
+        # **GPL-3.0-or-later, with no linking exception** — so v1.0.0's Linux
+        # archive contains a GPL-3 library, which THIRD-PARTY-LICENSES.md
+        # duly recorded while §11 was saying nothing in the bundle is copyleft
+        # but Qt. libpython does not link it; only this module does, and Orion
+        # never reads a line from an interactive prompt. rlcompleter goes with
+        # it: it imports readline and exists for nothing else.
+        "readline", "rlcompleter",
+    ],
     noarchive=False,
 )
 

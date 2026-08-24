@@ -181,3 +181,37 @@ def _filter_list(spec_source: str) -> str:
     start = spec_source.index("UNUSED_QT_COMPONENTS = (")
     end = spec_source.index(")", start)
     return spec_source[start:end].lower()
+
+
+@pytest.mark.parametrize(
+    "module, reason",
+    [
+        ("readline", "links libreadline, GPL-3.0-or-later with no linking exception"),
+        ("rlcompleter", "imports readline and exists for nothing else"),
+    ],
+)
+def test_the_gpl3_readline_chain_is_excluded(spec_source, module, reason):
+    """The exclusion that v1.0.0 was missing.
+
+    PyInstaller collects the standard library's optional readline extension by
+    default, and it links libreadline — GPL-3.0-or-later with no linking
+    exception. That put a GPL-3 library inside an archive
+    COMMERCIAL-LICENSE.md offers for redistribution in closed-source products,
+    which is the one combination the commercial tier cannot survive.
+    THIRD-PARTY-LICENSES.md recorded it the whole time; nobody read the row.
+
+    libpython does not link it. Only that module does, and Orion never reads a
+    line from an interactive prompt.
+    """
+    assert f'"{module}"' in spec_source, (
+        f"{module} is not excluded from the bundle — {reason}"
+    )
+
+
+def test_the_readline_exclusion_says_why():
+    """A bare name in an exclusion list is deleted by the next person who tidies
+    it, because nothing tells them what it is for.
+    """
+    assert "GPL-3.0-or-later, with no linking exception" in SPEC_PATH.read_text(
+        encoding="utf-8"
+    )

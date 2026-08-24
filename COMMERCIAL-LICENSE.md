@@ -425,6 +425,15 @@ require:
 | GCC runtime — GPL-3.0-or-later **with GCC Runtime Library Exception 3.1** | Nothing. The exception is what makes it distributable; without it a GPL-3 library would sit inside every build. |
 | Microsoft Visual C++ and Universal CRT runtime (Windows) | Microsoft's own redistributable terms — **not an open-source licence**, and a different legal basis from every other row here. |
 
+The published v1.0.0 archives had one more row than this, and it should not
+have been there: `libreadline`, **GPL-3.0-or-later with no linking exception**,
+collected by PyInstaller along with the standard library's optional `readline`
+extension. A GPL-3 library inside an archive offered under this licence is the
+one combination a Redistribution tier cannot survive. Nothing in Orion used it;
+it is excluded from the build from this version on, and a test fails if the
+exclusion is ever removed. If you hold a v1.0.0 archive, it is in it — see
+THIRD-PARTY-LICENSES.md, where the table is labelled as that build.
+
 Counts change with the build. The inventory is regenerated from the archives at
 each release rather than maintained by hand.
 

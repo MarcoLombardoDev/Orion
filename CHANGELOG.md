@@ -103,6 +103,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   highlights and images came out identical on all four page rotations.
 
 ### Fixed
+- **A GPL-3.0 library was being shipped inside archives offered for commercial
+  redistribution.** PyInstaller collects the standard library's optional
+  `readline` extension by default, and it links `libreadline` —
+  GPL-3.0-or-later, with no linking exception. THIRD-PARTY-LICENSES.md had
+  recorded the row since it was first generated, directly under a sentence
+  saying nothing in the closure is copyleft but Qt; the table was about the
+  bundle and the sentence about the dependencies, and between them nobody read
+  it. `libpython` does not link it — only that module does, and Orion never
+  reads a line from an interactive prompt — so it and `rlcompleter` are now
+  excluded in `orion.spec`, `libtinfo` leaves with them, and the same build
+  drops from 199 native binaries to 185. `tests/test_packaging.py` pins the
+  exclusion. The v1.0.0 archives still contain it, which §11 and the inventory
+  now both say.
 - **Text on a rotated page was saved running down the page.** Found by that
   comparison. Base page space is the page as displayed, and the old writer put
   text into the unrotated mediabox without turning it to match the page's own

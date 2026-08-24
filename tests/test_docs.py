@@ -413,6 +413,19 @@ class TestThirdPartySection:
     ) -> None:
         assert obligation in section
 
+    def test_the_gpl3_library_that_used_to_ship_is_disclosed(
+        self, section: str
+    ) -> None:
+        """Removed from the build, and said out loud rather than quietly fixed.
+
+        The v1.0.0 archives contain libreadline, GPL-3.0-or-later with no
+        linking exception, and somebody holding one still has it. §11 is where
+        they would look, and this is the same disclosure Iris, Proteus and
+        Argus carry.
+        """
+        assert "libreadline" in section
+        assert "no linking exception" in section
+
     def test_it_still_disclaims_being_a_legal_opinion(self, section: str) -> None:
         """More detail is not more authority."""
         assert "not a legal opinion" in section.lower()

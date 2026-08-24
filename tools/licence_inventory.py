@@ -147,6 +147,14 @@ SPDX = {
 #: but the something is disputed or unrepresentative, and the report says so
 #: instead of presenting a clean answer that might be wrong.
 FLAGGED = {
+    "libreadline8t64": (
+        "GPL-3.0-or-later with no linking exception. Nothing here should be "
+        "linking it: it arrives only with the standard library's optional "
+        "readline extension, which orion.spec excludes for exactly this "
+        "reason. If it appears in this table, that exclusion has stopped "
+        "working — or the table predates it, which is the case for the "
+        "v1.0.0 inventory below."
+    ),
     "libcom-err2": (
         "Ubuntu's copyright file has no stanza for lib/et, so the GPL-2 default "
         "applies by omission; upstream e2fsprogs licenses com_err under MIT. "
