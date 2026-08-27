@@ -20,8 +20,27 @@ machine, and your original file is untouched until you press Save.
 | Linux (x64) | `Orion-{{VERSION}}-linux-x64.tar.gz` |
 
 Each archive is built on that platform's own runner — no cross-compilation, no emulation.
-Unpack and run: no installation, and no Python needed. The builds are **unsigned**, so
-Windows SmartScreen and macOS Gatekeeper warn on first launch.
+Unpack and run: no installation, and no Python needed.
+
+### Windows will say the publisher is unknown
+
+It is meant to. These builds carry **no code-signing certificate**, so Microsoft Defender
+SmartScreen shows *"Windows protected your PC"* and offers only **Don't run**. Click
+**More info**, then **Run anyway**. Nothing is wrong with the download; SmartScreen is
+reporting that it has never seen this publisher, which is true.
+
+Because that warning asks you to trust a file you cannot check by looking at it, every
+archive ships with a `.sha256` beside it. In PowerShell:
+
+```powershell
+Get-FileHash .\Orion-{{VERSION}}-windows-x64.zip -Algorithm SHA256
+```
+
+The hash it prints must match the one inside `Orion-{{VERSION}}-windows-x64.zip.sha256`.
+If it does, the file is byte for byte what the build produced.
+
+On **macOS**, Gatekeeper refuses an unidentified developer the same way: right-click the
+app and choose **Open**, or run `xattr -dr com.apple.quarantine Orion.app`.
 
 Running from source instead is described in the
 [README](https://github.com/MarcoLombardoDev/Orion/blob/{{TAG}}/README.md).

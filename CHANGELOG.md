@@ -8,6 +8,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- **A SHA-256 checksum beside every archive.** These builds are unsigned, so
+  Windows tells whoever downloads one that the publisher is unknown and offers
+  only "Don't run". Nothing in this repository can remove that — a
+  code-signing certificate is the only thing that does — but the warning asks
+  a question a checksum can answer: is this the file the build produced. Each
+  archive now ships with a `.sha256` in the format `sha256sum -c` reads, and
+  the release notes say how to use it and how to get past the warning rather
+  than only that the build is unsigned.
 - **Real builds for Windows, macOS and Linux.** `.github/workflows/release.yml`
   builds each platform on its own GitHub runner — PyInstaller does not
   cross-compile, so this is the only way each binary can be genuine — and

@@ -330,3 +330,59 @@ class TestRoundTrip:
 
         assert main_module._self_check(FakeApp()) == 1
         assert "FAILED" in capsys.readouterr().out
+
+
+class TestChecksums:
+    """What an unsigned build can offer in place of a signature.
+
+    Windows tells whoever downloads one of these that the publisher is
+    unknown, and it is right: there is no code-signing certificate. Nothing in
+    this repository can change that. What it can do is answer the question the
+    warning raises — is this the file the build produced? — and that answer is
+    a checksum published beside the archive.
+
+    It is weaker than a signature and it is not nothing: it covers everything
+    between the build machine and the user's disk.
+    """
+
+    def test_every_archive_gets_a_checksum(self):
+        step = step_named(build_steps(load_workflow()), "Record the checksum")
+        assert step is not None, "the archives ship with nothing to check them against"
+        assert "sha256" in step["run"].lower()
+
+    def test_the_checksum_is_uploaded_with_the_archive(self):
+        """A checksum that stays on the runner is a checksum nobody has."""
+        step = step_named(build_steps(load_workflow()), "Upload to the release")
+        assert '"$ASSET.sha256"' in step["run"]
+
+    def test_it_is_recorded_after_packaging(self):
+        """The checksum describes the archive, so the archive has to exist."""
+        names = [step.get("name") for step in build_steps(load_workflow())]
+        assert names.index("Package") < names.index("Record the checksum")
+        assert names.index("Record the checksum") < names.index("Upload to the release")
+
+    def test_the_cleanup_does_not_strip_the_checksums(self):
+        """The release job deletes every asset it does not recognise. Left off
+        that list, a re-run of that job alone would remove the checksums and
+        leave the archives unverifiable.
+        """
+        steps = load_workflow()["jobs"]["release"]["steps"]
+        step = step_named(steps, "Remove assets left by a previous build")
+        assert ".sha256" in step["run"]
+
+    def test_it_is_written_in_the_format_a_tool_can_check(self):
+        """`sha256sum -c` reads "<hex>  <name>". Anything else has to be
+        compared by eye, which is how a wrong hash gets approved.
+        """
+        step = step_named(build_steps(load_workflow()), "Record the checksum")
+        assert "{digest}  {archive.name}" in step["run"]
+
+
+def test_the_download_notes_say_what_the_windows_warning_is():
+    """Somebody who hits "Windows protected your PC" and is told only that the
+    build is unsigned has been given a fact, not an instruction.
+    """
+    body = BODY_PATH.read_text(encoding="utf-8")
+    assert "SmartScreen" in body
+    assert "Run anyway" in body, "the notes do not say how to get past the warning"
+    assert ".sha256" in body, "the notes do not say the checksum exists"

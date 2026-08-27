@@ -113,9 +113,37 @@ Each archive is built on that platform's own runner — PyInstaller does not
 cross-compile, so nothing here is emulated or claimed for a platform that was not
 actually built. Unpack and run: no installation, and no Python needed.
 
-The builds are **unsigned**, so Windows SmartScreen and macOS Gatekeeper warn on first
-launch. On macOS, `xattr -dr com.apple.quarantine Orion.app` clears the warning if you
-would rather not click through it.
+### Windows and macOS will warn on first launch
+
+These builds carry **no code-signing certificate**. A certificate costs money every year
+and identifies a legal entity; Orion is one person's project given away under the AGPL,
+and the certificate is the one part of shipping software that cannot be done for nothing.
+So the operating system has no publisher to check, and says so.
+
+On **Windows**, Microsoft Defender SmartScreen shows *"Windows protected your PC"* and
+offers only **Don't run**. Click **More info**, then **Run anyway**.
+
+On **macOS**, Gatekeeper refuses to open an app from an unidentified developer.
+Right-click it and choose **Open**, or run `xattr -dr com.apple.quarantine Orion.app`.
+
+Neither warning means anything is wrong with the file. Both mean the same thing: nobody
+has paid to put a name on it.
+
+**Check the download instead.** Every archive is published with a `.sha256` file beside
+it, holding the checksum of the archive as the build machine produced it:
+
+```powershell
+Get-FileHash .\Orion-1.0.0-windows-x64.zip -Algorithm SHA256      # Windows
+```
+
+```sh
+sha256sum -c Orion-1.0.0-linux-x64.tar.gz.sha256                   # Linux
+shasum -a 256 -c Orion-1.0.0-macos-arm64.zip.sha256                # macOS
+```
+
+That is a weaker guarantee than a signature — it proves the file was not altered between
+the build and your disk, not who wrote it — but it is the part a signature would give you
+that can be given for free, and it is what the warning is actually asking about.
 
 ## Installation from source
 
@@ -271,7 +299,7 @@ the release.
 |---|---|
 | `ImportError` mentioning `libEGL` or `libxkbcommon` on Linux | The Qt shared libraries are missing — install the packages under [Linux system packages](#linux-system-packages). |
 | The application starts and immediately exits on a headless machine | There is no display. Set `QT_QPA_PLATFORM=offscreen` for tests; the editor itself needs a real one. |
-| Windows SmartScreen or macOS Gatekeeper blocks the download | The builds are unsigned. See [Download](#download). |
+| Windows SmartScreen or macOS Gatekeeper blocks the download | Expected: the builds are unsigned. See [Windows and macOS will warn on first launch](#windows-and-macos-will-warn-on-first-launch). |
 | Text added to a page is not selectable in another reader | Only text placed with the Text tool is written as real PDF text. Freehand ink and comments are annotations by design. |
 | A saved file looks different in another viewer | Report it with the source document attached, if you can share it — differences between PDF writers are the kind of bug worth a test. |
 

@@ -115,7 +115,10 @@ jobs:
         run: |
           keep=""
           for asset in "windows-x64.zip" "macos-arm64.zip" "linux-x64.tar.gz"; do
-            keep="$keep $APP_NAME-$VERSION-$asset"
+            # The checksum file is as much a release asset as the archive it
+            # describes: without it in this list, a re-run of this job alone
+            # would strip the checksums and leave the archives unverifiable.
+            keep="$keep $APP_NAME-$VERSION-$asset $APP_NAME-$VERSION-$asset.sha256"
           done
           for name in $(gh release view "$TAG" --json assets --jq '.assets[].name'); do
             case " $keep " in
@@ -269,10 +272,43 @@ jobs:
           echo "name=$name" >> "$GITHUB_OUTPUT"
           ls -la "$name"
 
+      # These builds are unsigned, so Windows tells whoever downloads one that
+      # the publisher is unknown and offers to not run it. Nothing here can
+      # remove that — only a code-signing certificate can — but a published
+      # checksum is what lets a cautious person answer the question the
+      # warning actually raises: is this the file the build produced, or
+      # something that replaced it on the way here.
+      #
+      # Computed with Python rather than sha256sum or certutil: setup-python
+      # has already run on all three runners, so one line means the same thing
+      # everywhere, and file_digest reads in chunks rather than pulling a
+      # 360 MB archive into memory.
+      - name: Record the checksum
+        id: checksum
+        shell: bash
+        env:
+          ASSET: ${{ steps.package.outputs.name }}
+        run: |
+          python - "$ASSET" <<'PY'
+          import hashlib
+          import pathlib
+          import sys
+
+          archive = pathlib.Path(sys.argv[1])
+          with archive.open("rb") as handle:
+              digest = hashlib.file_digest(handle, "sha256").hexdigest()
+          # The format sha256sum -c reads, so it can be checked with a tool
+          # rather than by eye.
+          pathlib.Path(f"{archive.name}.sha256").write_text(
+              f"{digest}  {archive.name}\n", encoding="utf-8"
+          )
+          print(f"{digest}  {archive.name}")
+          PY
+
       - name: Upload to the release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.release.outputs.tag }}
           ASSET: ${{ steps.package.outputs.name }}
-        run: gh release upload "$TAG" "$ASSET" --clobber
+        run: gh release upload "$TAG" "$ASSET" "$ASSET.sha256" --clobber
