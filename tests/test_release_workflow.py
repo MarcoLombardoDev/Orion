@@ -612,3 +612,28 @@ def test_the_windows_archive_unpacks_to_the_same_folder_as_the_others():
     step = step_named(build_steps(load_workflow()), "Package")
     assert 'cd "$(dirname "$PAYLOAD")"' in step["run"]
     assert '7z a -tzip "$name" "$PAYLOAD"' not in step["run"]
+
+
+def test_the_release_stops_if_the_tag_and_the_program_disagree():
+    """The tag names the archive; the program has a version of its own, and
+    nothing used to make the two agree. A `v1.0.0` tag would produce an
+    archive called 1.0.0 holding a program that answers `--version` with
+    something else — a download whose name contradicts its contents, which is
+    the one thing a release must not be.
+    """
+    step = step_named(build_steps(load_workflow()), "Smoke-test the bundle")
+    assert "needs.release.outputs.version" in step["env"].get("VERSION", ""), (
+        "the smoke test cannot see the version the tag asked for"
+    )
+    assert "the tag says" in step["run"], "nothing compares the tag to the program"
+
+
+def test_the_version_comparison_survives_a_windows_line_ending():
+    """A Windows build prints CRLF. Comparing without stripping the carriage
+    return fails on every Windows release and passes everywhere else, which is
+    the worst way for a check like this to be wrong.
+    """
+    step = step_named(build_steps(load_workflow()), "Smoke-test the bundle")
+    assert "--version | tr -d" in step["run"], (
+        "the version is compared without stripping the carriage return"
+    )

@@ -77,6 +77,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   the annual rate of the same tier.
 
 ### Changed
+- **The release now fails if the tag and the program disagree about the
+  version.** Nothing checked it, which is exactly how a `v1.0.0` tag could
+  produce `Orion-1.0.0-windows-x64.zip` containing a program that answers
+  `--version` with something else — a download whose name and contents
+  contradict each other. The smoke test compares the two on every platform and
+  stops the release rather than publishing that.
 - **The Windows start script waits for the window instead of vanishing.** It
   handed off and closed at once, which left whoever double-clicked it staring
   at an empty desktop for however long Windows took to scan the folder — most

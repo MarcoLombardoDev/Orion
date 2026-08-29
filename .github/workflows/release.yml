@@ -218,9 +218,28 @@ jobs:
         shell: bash
         env:
           BIN: ${{ steps.built.outputs.bin }}
+          VERSION: ${{ needs.release.outputs.version }}
         run: |
           chmod +x "$BIN" 2>/dev/null || true
-          "$BIN" --version
+
+          # The tag names the archive; this is the version the program itself
+          # reports, and nothing until now made the two agree. A tag alone
+          # would happily produce $APP_NAME-1.0.0-windows-x64.zip containing a
+          # program that says 2.3.0 when asked -- a download whose name and
+          # contents disagree, which is the one thing a release must not be.
+          #
+          # tr -d because a Windows build prints CRLF and the comparison would
+          # fail on the carriage return alone.
+          reported=$("$BIN" --version | tr -d '\r')
+          echo "$reported"
+          case "$reported" in
+            *" $VERSION") ;;
+            *)
+              echo "::error::the tag says $VERSION but the program says '$reported'"
+              echo "::error::update the version in the source, or tag the version the source has"
+              exit 1
+              ;;
+          esac
 
           if [ "$RUNNER_OS" = "Linux" ]; then
             # Under a virtual X server and the real xcb plugin — not
