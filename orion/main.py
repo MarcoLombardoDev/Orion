@@ -213,7 +213,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     window = MainWindow()
     _install_exception_hook(window)
-    window.show()
+    # Always maximised, whatever was saved. The restored geometry is not
+    # discarded by this: Qt keeps it as the window's normal size, so
+    # un-maximising returns to wherever the last session left it.
+    window.showMaximized()
 
     for path in args.files:
         if window.open_path(Path(path)):

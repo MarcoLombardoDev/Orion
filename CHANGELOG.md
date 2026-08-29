@@ -97,6 +97,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   the annual rate of the same tier.
 
 ### Changed
+- **The window opens maximised.** All four now fill the screen at start-up
+  rather than opening at a fixed size in the corner. Deliberately maximised
+  and not true full screen: that hides the title bar and the way out of it,
+  which is right for a slideshow and wrong for a tool somebody works in
+  alongside other windows. The size each window returns to when un-maximised
+  is the one it used to open at.
 - **The release now fails if the tag and the program disagree about the
   version.** Nothing checked it, which is exactly how a `v1.0.0` tag could
   produce `Orion-1.0.0-windows-x64.zip` containing a program that answers

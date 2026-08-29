@@ -637,3 +637,32 @@ class TestLicenceNotice:
         from orion import APP_NAME, LICENSE_NOTICE
 
         assert APP_NAME in LICENSE_NOTICE
+
+
+class TestStartsMaximised:
+    """The window opens filling the screen."""
+
+    def test_the_application_shows_it_maximised(self):
+        from pathlib import Path
+
+        repo = Path(__file__).resolve().parent.parent
+        source = (repo / "orion" / "main.py").read_text(encoding="utf-8")
+        assert "window.showMaximized()" in source
+        assert "window.show()" not in source, (
+            "showing it unmaximised as well would fight the line above"
+        )
+
+    def test_maximising_does_not_throw_away_the_remembered_size(self, qapp):
+        """Qt keeps the restored geometry as the window's normal size, so
+        un-maximising returns to wherever the last session left it. Losing
+        that would make "always maximised" mean "the size is forgotten".
+        """
+        from orion.ui.main_window import MainWindow
+
+        window = MainWindow()
+        window.resize(1000, 700)
+        window.showMaximized()
+        qapp.processEvents()
+        assert window.isMaximized()
+        assert window.normalGeometry().width() > 0
+        window.close()
