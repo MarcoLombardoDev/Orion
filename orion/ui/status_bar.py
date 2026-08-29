@@ -10,8 +10,13 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from urllib.parse import quote
+
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QLabel, QStatusBar, QWidget
+
+from orion import CONTACT_EMAIL, LICENSE_NOTICE, LICENSING_SUBJECT
 
 __all__ = ["OrionStatusBar"]
 
@@ -28,11 +33,47 @@ class OrionStatusBar(QStatusBar):
 
         for label in (self._page, self._zoom, self._mode, self._modified):
             label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+
+        self.addWidget(self._licence_notice())
         self.addPermanentWidget(self._modified)
         self.addPermanentWidget(self._page)
         self.addPermanentWidget(self._zoom)
         self.addPermanentWidget(self._mode)
         self.clear_document()
+
+    def _licence_notice(self) -> QLabel:
+        """The copyright and licence line, with the address spelled out.
+
+        AGPL-3.0 section 5 asks the work to carry Appropriate Legal Notices,
+        and Iris, Proteus and Argus have all shown this line since their first
+        release. Orion shipped v1.0.0 without one.
+
+        The address is a link rather than plain text because the person
+        running the application is exactly the person who might need to buy a
+        commercial licence, and "available on request" tells them nothing
+        about where to ask.
+
+        Added with ``addWidget`` rather than ``addPermanentWidget`` so it sits
+        on the left, where a credit belongs, rather than among the page and
+        zoom indicators. Qt hides normal status-bar widgets while a transient
+        message is showing, which is the accepted cost of that placement: the
+        notice is on screen the rest of the time, and the messages last four
+        seconds.
+        """
+        label = QLabel(
+            f'{LICENSE_NOTICE} <a href="mailto:{CONTACT_EMAIL}'
+            f'?subject={quote(LICENSING_SUBJECT)}">{CONTACT_EMAIL}</a>'
+        )
+        label.setTextFormat(Qt.TextFormat.RichText)
+        label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        # Opened through QDesktopServices rather than setOpenExternalLinks, so
+        # a machine with no mail client configured fails quietly instead of
+        # raising: the address stays readable on screen either way.
+        label.linkActivated.connect(
+            lambda url: QDesktopServices.openUrl(QUrl(url))
+        )
+        label.setStyleSheet("color: palette(mid); font-size: 10px;")
+        return label
 
     def set_page(self, index: int, total: int) -> None:
         self._page.setText(f"Page {index + 1} / {total}" if total else "")

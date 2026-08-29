@@ -56,11 +56,10 @@ def _set_application_icon(app) -> None:
 
     from orion.utils.paths import resources_dir
 
-    for name in ("orion.png", "orion.svg"):
-        candidate = resources_dir() / "icons" / name
-        if candidate.exists():
-            app.setWindowIcon(QIcon(str(candidate)))
-            return
+    candidate = resources_dir() / "icons" / "orion.png"
+    if candidate.exists():
+        app.setWindowIcon(QIcon(str(candidate)))
+        return
     log.debug("No application icon found; using the platform default")
 
 

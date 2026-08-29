@@ -198,7 +198,12 @@ analysis.datas += [
 
 pyz = PYZ(analysis.pure)  # noqa: F821
 
-icon_path = BUILD_DIR / "resources" / "icons" / "orion.png"
+# Windows embeds an .ico in the executable's resources and will not take a
+# PNG; everywhere else the PNG is what PyInstaller wants. Both are drawn by
+# tools/make_icon.py and committed, so a build never depends on which fonts
+# the runner happens to have.
+_icons = BUILD_DIR / "resources" / "icons"
+icon_path = _icons / ("orion.ico" if sys.platform == "win32" else "orion.png")
 icon = str(icon_path) if icon_path.exists() else None
 
 executable = EXE(  # noqa: F821

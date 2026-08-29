@@ -215,3 +215,50 @@ def test_the_readline_exclusion_says_why():
     assert "GPL-3.0-or-later, with no linking exception" in SPEC_PATH.read_text(
         encoding="utf-8"
     )
+
+
+class TestApplicationIcon:
+    """One letter, black, on white, in a serif face — the same drawing in all
+    four products, differing only in the letter.
+
+    Committed rather than generated during the build: a release that depended
+    on which fonts a runner happened to have would produce a different icon
+    depending on the machine, or none.
+    """
+
+    ICO = REPO / "resources/icons/orion.ico"
+    PNG = REPO / "resources/icons/orion.png"
+
+    def test_both_files_are_in_the_repository(self):
+        assert self.ICO.is_file(), f"{self.ICO} is missing"
+        assert self.PNG.is_file(), f"{self.PNG} is missing"
+
+    def test_the_ico_carries_every_size_windows_asks_for(self):
+        """An .ico with only one frame makes Windows scale it, and a 256-pixel
+        letter scaled to 16 is a grey smudge on the taskbar.
+        """
+        Image = pytest.importorskip("PIL.Image", reason="Pillow reads the icon")
+        with Image.open(self.ICO) as icon:
+            sizes = {size[0] for size in icon.info["sizes"]}
+        assert {16, 24, 32, 48, 64, 128, 256} <= sizes, f"only {sorted(sizes)}"
+
+    def test_the_png_is_big_enough_for_a_retina_dock(self):
+        Image = pytest.importorskip("PIL.Image", reason="Pillow reads the icon")
+        with Image.open(self.PNG) as png:
+            assert png.size == (512, 512)
+
+    def test_it_is_black_on_white(self):
+        """Not a check of taste: an icon that came out mostly transparent, or
+        inverted, still opens and still looks like a file.
+        """
+        Image = pytest.importorskip("PIL.Image", reason="Pillow reads the icon")
+        with Image.open(self.PNG) as png:
+            pixels = list(png.convert("L").getdata())
+        white = sum(1 for value in pixels if value > 200)
+        black = sum(1 for value in pixels if value < 60)
+        assert white > black, "the icon is mostly dark; the background should be white"
+        assert black > len(pixels) // 100, "there is almost no ink; is the letter there?"
+
+    def test_the_generator_is_kept_with_them(self):
+        """So the next one can be drawn the same way rather than guessed at."""
+        assert (REPO / "tools" / "make_icon.py").is_file()

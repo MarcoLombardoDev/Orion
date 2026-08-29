@@ -8,6 +8,26 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- **The copyright and licence notice, along the bottom of the window.** Iris,
+  Proteus and Argus have shown one since their first release; Orion shipped
+  v1.0.0 without it. AGPL-3.0 section 5 asks the work to carry Appropriate
+  Legal Notices, so this was a compliance gap rather than a cosmetic one. The
+  commercial licensing address is a link rather than plain text: the person
+  running the application is exactly the person who might need to buy a
+  licence, and "available on request" tells them nothing about where to ask.
+- **One icon across the four products: the initial, in black, on white, in a
+  serif face.** Drawn by `tools/make_icon.py`, which the four share and which
+  differs only in the letter, so a taskbar with all of them open reads as one
+  family instead of four unrelated programs. The face is Liberation Serif,
+  metric-compatible with Times New Roman and redistributable, where Times New
+  Roman itself is neither free nor present on the machines that build these.
+
+  Every size is drawn for itself rather than scaled down from a single master:
+  a frame that reads as a hairline at 256 pixels is a smear at 16, and the
+  letter that has room to breathe at 256 has to fill the square at 16 to still
+  be a letter. Below 32 pixels there is no frame at all. Both files are
+  committed rather than generated during the build, so no release depends on
+  which fonts a runner happens to have.
 - **A start script and the program's own checksum, inside the archive.** Every
   archive now unpacks to a folder holding the program, `start.cmd`,
   `start.command` or `start.sh` beside it, and the digest that script checks.

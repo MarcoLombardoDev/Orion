@@ -1,26 +1,25 @@
-# Icons
+# Application icon
 
-Orion's **toolbar and menu icons are drawn in code**, not stored here — see
-`orion/ui/icons.py`. They are described as a few primitives in a normalised
-0–1 box and painted with `QPainter`.
-
-That is a deliberate choice:
-
-- the repository carries no binary assets to review or license;
-- icons stay crisp at any device pixel ratio;
-- they recolour automatically when the theme changes, with no second set of
-  files to keep in step.
-
-This directory holds only the **application icon**, which the operating system
-and the packager need as a real file:
-
-| File | Used by |
+| File | What it is |
 |---|---|
-| `orion.svg` | source of truth for the application icon |
-| `orion.png` | generated from the SVG for PyInstaller (`make-png.py`) |
+| `orion.png` | 512×512, used for the window and taskbar icon at runtime, and for the executable everywhere except Windows |
+| `orion.ico` | 16 to 256 pixels, seven sizes, embedded in the Windows executable and used by Explorer and the taskbar |
 
-Regenerate the PNG with:
+Both are drawn by [`tools/make_icon.py`](../../tools/make_icon.py) — the
+initial in black on white, in Liberation Serif, which is metric-compatible
+with Times New Roman and redistributable. Orion, Iris, Proteus and Argus share
+that script and differ only in the letter, so a taskbar with all four open
+reads as one family.
 
-```bash
-python resources/icons/make-png.py
+They are committed rather than generated during the build, so no release
+depends on which fonts a runner happens to have installed.
+
+```sh
+python tools/make_icon.py Orion resources/icons
 ```
+
+Every size is drawn for itself rather than scaled down from one master: a
+frame that reads as a hairline at 256 pixels is a smear at 16, and the letter
+that has room to breathe at 256 has to fill the square at 16 to still be a
+letter. Below 32 pixels there is no frame at all — at that size it costs more
+in contrast than it returns in shape.

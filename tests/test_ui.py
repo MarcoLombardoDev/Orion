@@ -521,3 +521,55 @@ def test_releasing_the_clipboard_leaves_other_applications_data_alone(window, qa
     clipboard.setText("something another application copied")
     release_system_clipboard()
     assert clipboard.text() == "something another application copied"
+
+
+class TestLicenceNotice:
+    """The copyright and licence line along the bottom of the window.
+
+    AGPL-3.0 section 5 asks the work to carry Appropriate Legal Notices, and
+    section 7(b) lets an author require attribution be preserved. Iris,
+    Proteus and Argus have shown this line since their first release; Orion
+    shipped v1.0.0 without one, which is what these pin against happening
+    again.
+    """
+
+    def test_the_status_bar_shows_it(self, qapp):
+        from PySide6.QtWidgets import QLabel
+
+        from orion.ui.status_bar import OrionStatusBar
+
+        bar = OrionStatusBar()
+        shown = " ".join(label.text() for label in bar.findChildren(QLabel))
+        assert "AGPL-3.0" in shown
+        assert "Marco Lombardo" in shown
+
+    def test_it_says_where_to_ask_about_a_commercial_licence(self, qapp):
+        """"Available on request" tells the one person who might buy one
+        nothing about where to ask."""
+        from PySide6.QtWidgets import QLabel
+
+        from orion import CONTACT_EMAIL
+        from orion.ui.status_bar import OrionStatusBar
+
+        bar = OrionStatusBar()
+        shown = " ".join(label.text() for label in bar.findChildren(QLabel))
+        assert CONTACT_EMAIL in shown
+        assert f"mailto:{CONTACT_EMAIL}" in shown, "the address is not clickable"
+
+    def test_the_notice_survives_a_transient_message(self, qapp):
+        """Qt hides normal status-bar widgets while a message is showing. The
+        message lasts seconds; the notice has to come back after it.
+        """
+        from PySide6.QtWidgets import QLabel
+
+        from orion.ui.status_bar import OrionStatusBar
+
+        bar = OrionStatusBar()
+        bar.flash("something happened", 1)
+        shown = " ".join(label.text() for label in bar.findChildren(QLabel))
+        assert "AGPL-3.0" in shown, "the notice was destroyed rather than hidden"
+
+    def test_the_notice_names_this_product(self):
+        from orion import APP_NAME, LICENSE_NOTICE
+
+        assert APP_NAME in LICENSE_NOTICE
