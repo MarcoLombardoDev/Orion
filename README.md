@@ -113,6 +113,26 @@ Each archive is built on that platform's own runner — PyInstaller does not
 cross-compile, so nothing here is emulated or claimed for a platform that was not
 actually built. Unpack and run: no installation, and no Python needed.
 
+Every archive unpacks to a single `Orion/` folder holding the program, a start
+script beside it, and the checksum that script checks:
+
+| | Windows | macOS | Linux |
+|---|---|---|---|
+| the program | `Orion.exe` | `Orion.app` | `Orion` |
+| start it with | `start.cmd` | `start.command` | `start.sh` |
+| what that checks | `Orion.exe.sha256` | `Orion.sha256` | `Orion.sha256` |
+
+**Start it through the script.** It recomputes the program's digest and compares
+it against the one recorded when the archive was built, then hands over. A
+truncated download and a half-finished unpack both produce something that looks
+like a working program until it isn't; this is where they get caught, with one
+sentence, instead of somewhere further in. If the two disagree the script stops
+and says so rather than launching.
+
+The program is still there and still starts on its own — the script only checks
+first. `ORION_SKIP_VERIFY=1` turns the check off for anyone who has changed the
+executable on purpose.
+
 ### Windows and macOS will warn on first launch
 
 These builds carry **no code-signing certificate**. A certificate costs money every year
@@ -144,6 +164,11 @@ shasum -a 256 -c Orion-1.0.0-macos-arm64.zip.sha256                # macOS
 That is a weaker guarantee than a signature — it proves the file was not altered between
 the build and your disk, not who wrote it — but it is the part a signature would give you
 that can be given for free, and it is what the warning is actually asking about.
+
+That published `.sha256` is the one worth checking, and the one inside the archive is not
+a substitute for it. A checksum that travels beside the file it describes can only tell
+you the file is undamaged: whoever could alter one could alter the other. The published
+one arrives by a different route, which is the entire reason it is worth anything.
 
 ## Installation from source
 

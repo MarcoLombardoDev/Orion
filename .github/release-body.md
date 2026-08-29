@@ -22,6 +22,12 @@ machine, and your original file is untouched until you press Save.
 Each archive is built on that platform's own runner — no cross-compilation, no emulation.
 Unpack and run: no installation, and no Python needed.
 
+Each unpacks to a single `Orion/` folder. Start it with the script beside the program —
+`start.cmd` on Windows, `start.command` on macOS, `start.sh` on Linux. It checks the
+program against the digest recorded when the archive was built and stops rather than
+launching if they disagree, which is how a truncated download gets caught at the point of
+launch instead of somewhere further in. The program still starts on its own if you prefer.
+
 ### Windows will say the publisher is unknown
 
 It is meant to. These builds carry **no code-signing certificate**, so Microsoft Defender
@@ -38,6 +44,9 @@ Get-FileHash .\Orion-{{VERSION}}-windows-x64.zip -Algorithm SHA256
 
 The hash it prints must match the one inside `Orion-{{VERSION}}-windows-x64.zip.sha256`.
 If it does, the file is byte for byte what the build produced.
+
+That is the checksum worth checking. The one inside the archive catches damage; this one
+arrives by a different route from the file it describes, which is what makes it evidence.
 
 On **macOS**, Gatekeeper refuses an unidentified developer the same way: right-click the
 app and choose **Open**, or run `xattr -dr com.apple.quarantine Orion.app`.

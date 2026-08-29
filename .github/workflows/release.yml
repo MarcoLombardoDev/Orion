@@ -241,11 +241,129 @@ jobs:
               ;;
           esac
 
+      # What the user asked for, and the reason it is done here rather than in
+      # orion.spec: PyInstaller 6 puts everything a spec declares as `datas`
+      # under _internal/, which is exactly where a launcher must not be. The
+      # only place that can write next to the executable is the workflow,
+      # after COLLECT has finished.
+      #
+      # The checksum written here is of the executable, and it travels in the
+      # same archive as the executable. That combination catches a truncated
+      # download or a half-finished unpack; it cannot catch tampering, because
+      # whoever could replace the one could replace the other. The archive's
+      # own .sha256 — published as a separate release asset, reaching the user
+      # by a different path — is the one that answers that question, and the
+      # launcher's own comments say so rather than implying more than it does.
+      - name: Add the launcher and its checksum
+        id: launcher
+        shell: bash
+        env:
+          PAYLOAD: ${{ steps.built.outputs.payload }}
+          BIN: ${{ steps.built.outputs.bin }}
+        run: |
+          case "$RUNNER_OS" in
+            Windows)
+              root="$PAYLOAD"
+              cp packaging/start.cmd "$root/start.cmd"
+              named="$APP_NAME.exe"
+              sums="$root/$APP_NAME.exe.sha256"
+              ;;
+            macOS)
+              # The payload is Orion.app, and a launcher does not belong
+              # inside somebody else's bundle. So the app moves into a folder
+              # of its own and the launcher sits beside it — which also makes
+              # all three archives unpack to the same shape.
+              root="dist/pkg/$APP_NAME"
+              mkdir -p "$root"
+              mv "$PAYLOAD" "$root/"
+              cp packaging/start.sh "$root/start.command"
+              chmod +x "$root/start.command"
+              named="$APP_NAME.app/Contents/MacOS/$APP_NAME"
+              sums="$root/$APP_NAME.sha256"
+              ;;
+            *)
+              root="$PAYLOAD"
+              cp packaging/start.sh "$root/start.sh"
+              chmod +x "$root/start.sh"
+              named="$APP_NAME"
+              sums="$root/$APP_NAME.sha256"
+              ;;
+          esac
+
+          # Written in the format `sha256sum -c` reads, with the name relative
+          # to the file itself, so the archive can also be checked with a tool
+          # instead of only by the launcher.
+          python - "$root/$named" "$sums" "$named" <<'PY'
+          import hashlib
+          import pathlib
+          import sys
+
+          target, out, name = sys.argv[1:4]
+          with open(target, "rb") as handle:
+              digest = hashlib.file_digest(handle, "sha256").hexdigest()
+          pathlib.Path(out).write_text(f"{digest}  {name}\n", encoding="utf-8")
+          print(f"{digest}  {name}")
+          PY
+
+          echo "payload=$root" >> "$GITHUB_OUTPUT"
+          ls -la "$root"
+
+      # A launcher that refuses to launch is worse than no launcher, so the
+      # one that ships is the one that just ran.
+      # A launcher that refuses to launch is worse than no launcher, and one
+      # that launches whatever it finds is decoration. Both halves are checked
+      # here, on the copy that is about to be packaged.
+      - name: Start the bundle through the launcher
+        shell: bash
+        env:
+          ROOT: ${{ steps.launcher.outputs.payload }}
+        run: |
+          case "$RUNNER_OS" in
+            # `cmd //c` and not `cmd /c`: Git Bash rewrites a lone leading
+            # slash into a Windows path, and the doubled one survives that as
+            # the /c cmd expects.
+            Windows) launch="cmd //c start.cmd"; sums="$ROOT/$APP_NAME.exe.sha256" ;;
+            macOS)   launch="./start.command";   sums="$ROOT/$APP_NAME.sha256" ;;
+            *)       launch="./start.sh";        sums="$ROOT/$APP_NAME.sha256" ;;
+          esac
+
+          output=$(cd "$ROOT" && $launch --version)
+          echo "$output"
+          case "$output" in
+            "$APP_NAME "*) ;;
+            *)
+              echo "::error::the launcher did not start $APP_NAME"
+              exit 1
+              ;;
+          esac
+
+          # Now the refusal. The recorded digest is corrupted rather than the
+          # executable, so nothing that ships is ever written to.
+          cp "$sums" "$sums.keep"
+          python - "$sums" <<'PY'
+          import pathlib
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          digest, _, rest = path.read_text(encoding="utf-8").partition("  ")
+          # A digest of the right shape and the wrong value: the launcher has
+          # to reject it on the comparison, not on failing to parse it.
+          path.write_text(f"{'f' * len(digest)}  {rest}", encoding="utf-8")
+          PY
+
+          if ( cd "$ROOT" && $launch --version ) > /dev/null 2>&1; then
+            mv "$sums.keep" "$sums"
+            echo "::error::the launcher started a binary that failed its checksum"
+            exit 1
+          fi
+          mv "$sums.keep" "$sums"
+          echo "the launcher refuses a mismatched checksum"
+
       - name: Package
         id: package
         shell: bash
         env:
-          PAYLOAD: ${{ steps.built.outputs.payload }}
+          PAYLOAD: ${{ steps.launcher.outputs.payload }}
           VERSION: ${{ needs.release.outputs.version }}
         run: |
           base="$APP_NAME-$VERSION-${{ matrix.asset }}"
@@ -255,7 +373,13 @@ jobs:
               # 7z ships on the Windows runner image and, unlike
               # Compress-Archive, keeps the top-level folder for a directory
               # payload — so every platform's archive unpacks the same way.
-              7z a -tzip "$name" "$PAYLOAD" > /dev/null
+              #
+              # Run from inside the payload's parent, because 7z stores the
+              # path it is given: `7z a out.zip dist/Orion` produced archives
+              # that unpacked to dist/Orion/, one level deeper than the Linux
+              # tarball's Orion/. v1.0.0 shipped that way.
+              ( cd "$(dirname "$PAYLOAD")" \
+                  && 7z a -tzip "../$name" "$(basename "$PAYLOAD")" > /dev/null )
               ;;
             macOS)
               name="$base.zip"

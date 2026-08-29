@@ -8,6 +8,27 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- **A start script and the program's own checksum, inside the archive.** Every
+  archive now unpacks to a folder holding the program, `start.cmd`,
+  `start.command` or `start.sh` beside it, and the digest that script checks.
+  Starting through it recomputes the program's SHA-256 and refuses to launch on
+  a mismatch, which turns a truncated download or a half-finished unpack into
+  one sentence at the point of launch instead of a program that misbehaves
+  later for no visible reason. `ORION_SKIP_VERIFY=1` skips the check for
+  anyone who has changed the executable deliberately.
+
+  It is deliberately modest about what it proves. That digest travels in the
+  same archive as the program, so it catches damage and not tampering — whoever
+  could replace one could replace the other. The `.sha256` published as a
+  separate release asset is the one that answers that question, because it
+  reaches you by a different route, and the launcher, the README and the
+  release notes all say so rather than implying more.
+
+  Added by the workflow rather than by `orion.spec`, because PyInstaller 6 puts
+  everything a spec declares as `datas` under `_internal/` — the one place a
+  launcher must not be. The release run starts the bundle through the script,
+  and then corrupts the recorded digest and checks that it refuses: a launcher
+  that verifies nothing would pass the first half on its own.
 - **A SHA-256 checksum beside every archive.** These builds are unsigned, so
   Windows tells whoever downloads one that the publisher is unknown and offers
   only "Don't run". Nothing in this repository can remove that — a
@@ -111,6 +132,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   highlights and images came out identical on all four page rotations.
 
 ### Fixed
+- **The Windows archive unpacked one folder deeper than the other two.** `7z`
+  stores the path it is given, so `7z a out.zip dist/Orion` produced a zip
+  rooted at `dist/Orion/` while the Linux tarball was rooted at `Orion/`.
+  v1.0.0 shipped that way. 7z now runs from inside the payload's parent, and
+  `tests/test_release_workflow.py` pins it — found by downloading the published
+  zip and listing it, which is the only thing that would have found it.
 - **`tools/licence_inventory.py` crashed on any machine without dpkg.**
   `subprocess.run` raises on a missing executable rather than returning
   non-zero, so running the inventory on Windows or macOS died instead of

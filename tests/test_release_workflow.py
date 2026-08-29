@@ -386,3 +386,133 @@ def test_the_download_notes_say_what_the_windows_warning_is():
     assert "SmartScreen" in body
     assert "Run anyway" in body, "the notes do not say how to get past the warning"
     assert ".sha256" in body, "the notes do not say the checksum exists"
+
+
+class TestLauncher:
+    """The start script that ships next to the executable.
+
+    A download that arrives truncated, or an unpack that stops half way,
+    produces an executable that starts and then misbehaves in ways nobody can
+    diagnose. The launcher turns that into one sentence at the point of
+    launch, by comparing the executable against the digest recorded when it
+    was built.
+
+    It is careful about what it claims. The digest travels inside the same
+    archive as the executable it describes, so it catches damage and not
+    tampering — anyone who could replace one could replace the other. The
+    check that answers *that* question is on the archive itself, against the
+    ``.sha256`` published separately on the release page.
+    """
+
+    def test_both_launchers_are_in_the_repository(self):
+        for name in ("start.sh", "start.cmd"):
+            assert (REPO / "packaging" / name).is_file(), f"packaging/{name} is missing"
+
+    def test_the_launcher_is_installed_beside_the_executable(self):
+        """Not through the spec file: PyInstaller 6 puts everything a spec
+        declares as ``datas`` under ``_internal/``, which is the one place a
+        launcher must not be. Only the workflow can write next to the
+        executable.
+        """
+        step = step_named(build_steps(load_workflow()), "Add the launcher and its checksum")
+        assert step is not None, "nothing puts a start script in the bundle"
+        assert "packaging/start.cmd" in step["run"]
+        assert "packaging/start.sh" in step["run"]
+
+    def test_the_executable_gets_its_own_checksum_in_the_bundle(self):
+        step = step_named(build_steps(load_workflow()), "Add the launcher and its checksum")
+        assert "sha256" in step["run"]
+        assert ".exe.sha256" in step["run"], "no checksum beside the Windows exe"
+        assert ".sha256" in step["run"]
+
+    def test_that_checksum_is_written_where_a_tool_can_read_it(self):
+        """``<hex>  <name>`` is what ``sha256sum -c`` reads. Any other shape
+        has to be compared by eye, which is how a wrong digest gets waved
+        through.
+        """
+        step = step_named(build_steps(load_workflow()), "Add the launcher and its checksum")
+        assert "{digest}  {name}" in step["run"]
+
+    def test_the_launcher_is_added_before_the_archive_is_made(self):
+        names = [step.get("name") for step in build_steps(load_workflow())]
+        assert names.index("Add the launcher and its checksum") < names.index("Package")
+
+    def test_the_archive_is_made_from_what_the_launcher_step_produced(self):
+        """macOS moves the .app into a folder so the launcher has somewhere to
+        sit beside it. Packaging the pre-move path would ship an archive with
+        no launcher in it and nobody would notice until it was downloaded.
+        """
+        step = step_named(build_steps(load_workflow()), "Package")
+        assert "steps.launcher.outputs.payload" in step["env"]["PAYLOAD"]
+
+    def test_the_launcher_is_run_before_the_archive_is_made(self):
+        """A launcher nobody started is a launcher nobody knows works."""
+        names = [step.get("name") for step in build_steps(load_workflow())]
+        assert "Start the bundle through the launcher" in names
+        assert names.index("Start the bundle through the launcher") < names.index("Package")
+
+    def test_the_release_run_proves_the_launcher_refuses_a_bad_checksum(self):
+        """Checking that it starts the program proves half of it. A launcher
+        that verifies nothing also passes that half.
+        """
+        step = step_named(build_steps(load_workflow()), "Start the bundle through the launcher")
+        run = step["run"]
+        assert "failed its checksum" in run, "nothing checks that the launcher can refuse"
+
+    def test_the_launcher_refuses_rather_than_warning(self):
+        script = (REPO / "packaging" / "start.sh").read_text(encoding="utf-8")
+        body = script.split("digest_of()", 1)[1]
+        assert "exit 1" in body, "the launcher does not stop on a mismatch"
+
+    def test_the_launcher_can_be_told_to_skip_the_check(self):
+        """Somebody who has patched the executable on purpose should be able
+        to run it. The point is that they have to say so.
+        """
+        for name in ("start.sh", "start.cmd"):
+            text = (REPO / "packaging" / name).read_text(encoding="utf-8")
+            assert "ORION_SKIP_VERIFY" in text
+
+    def test_the_launcher_passes_arguments_through(self):
+        """``--version`` and ``--self-check`` are how the release itself
+        starts the bundle. A launcher that swallowed them could not be tested
+        by running it.
+        """
+        assert '"$exe" "$@"' in (REPO / "packaging" / "start.sh").read_text(encoding="utf-8")
+        assert '"%EXE%" %*' in (REPO / "packaging" / "start.cmd").read_text(encoding="utf-8")
+
+    def test_the_batch_launcher_keeps_windows_line_endings(self):
+        """cmd.exe has historically mis-parsed ``goto`` in an LF-only batch
+        file. ``.gitattributes`` pins it so no checkout can undo it.
+        """
+        raw = (REPO / "packaging" / "start.cmd").read_bytes()
+        assert b"\r\n" in raw
+        assert raw.replace(b"\r\n", b"") .count(b"\n") == 0, "mixed line endings"
+        attrs = (REPO / ".gitattributes").read_text(encoding="utf-8")
+        assert "*.cmd text eol=crlf" in attrs
+
+    def test_the_shell_launcher_keeps_unix_line_endings(self):
+        """/bin/sh treats a trailing CR as part of the last word, so a CRLF
+        checkout produces "bad interpreter" and nothing else.
+        """
+        assert b"\r" not in (REPO / "packaging" / "start.sh").read_bytes()
+        assert "*.sh text eol=lf" in (REPO / ".gitattributes").read_text(encoding="utf-8")
+
+    def test_the_launcher_does_not_claim_to_prove_authorship(self):
+        """The digest ships in the same archive as the file it describes. It
+        catches damage, not tampering, and saying otherwise would be worse
+        than saying nothing.
+        """
+        for name in ("start.sh", "start.cmd"):
+            text = (REPO / "packaging" / name).read_text(encoding="utf-8").lower()
+            assert "tampering" in text, f"packaging/{name} does not say what it cannot do"
+
+
+def test_the_windows_archive_unpacks_to_the_same_folder_as_the_others():
+    """7z stores the path it is given, so ``7z a out.zip dist/Orion`` produced
+    an archive that unpacked to ``dist/Orion/`` while the Linux tarball
+    unpacked to ``Orion/``. v1.0.0 shipped that way. Running 7z from inside
+    the payload's parent is what makes the three agree.
+    """
+    step = step_named(build_steps(load_workflow()), "Package")
+    assert 'cd "$(dirname "$PAYLOAD")"' in step["run"]
+    assert '7z a -tzip "$name" "$PAYLOAD"' not in step["run"]

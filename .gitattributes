@@ -1,0 +1,10 @@
+# A batch file is read by cmd.exe, which is happier with CRLF and, for `goto`
+# in particular, has historically needed it. Git's autocrlf setting is a local
+# preference and cannot be relied on, so the line endings are pinned here
+# instead — for the file and for the checkout, on every platform.
+*.cmd text eol=crlf
+
+# The launcher shipped on Linux and macOS is read by /bin/sh, which treats a
+# trailing CR as part of the last word on the line. A checkout with autocrlf
+# on would produce a script that fails with "bad interpreter".
+*.sh text eol=lf
