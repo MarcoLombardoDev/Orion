@@ -247,6 +247,32 @@ class TestApplicationIcon:
         with Image.open(self.PNG) as png:
             assert png.size == (512, 512)
 
+    def test_the_frame_is_there_at_every_size(self):
+        """The four products draw their window icon from different sources —
+        Qt scales the 512-pixel PNG, Tk picks the matching frame out of the
+        .ico — so a rule that dropped the frame at small sizes made one
+        product look like two and the four look like four families. Reported
+        exactly that way: one had a black border and another did not.
+        """
+        Image = pytest.importorskip("PIL.Image", reason="Pillow reads the icon")
+        with Image.open(self.ICO) as icon:
+            sizes = sorted(icon.info["sizes"])
+            for size in sizes:
+                icon.size = size
+                frame = icon.copy().convert("L")
+                width, height = frame.size
+                edge = (
+                    [frame.getpixel((x, 0)) for x in range(width)]
+                    + [frame.getpixel((x, height - 1)) for x in range(width)]
+                    + [frame.getpixel((0, y)) for y in range(height)]
+                    + [frame.getpixel((width - 1, y)) for y in range(height)]
+                )
+                dark = sum(1 for value in edge if value < 128)
+                assert dark > len(edge) * 0.8, (
+                    f"the {width}px frame is missing or too faint "
+                    f"({dark} of {len(edge)} edge pixels are dark)"
+                )
+
     def test_it_is_black_on_white(self):
         """Not a check of taste: an icon that came out mostly transparent, or
         inverted, still opens and still looks like a file.

@@ -69,20 +69,28 @@ def _font(size: int) -> ImageFont.FreeTypeFont:
 
 
 def _frame_width(target: int) -> int:
-    """In target pixels. Zero below 32: at that size a frame costs more in
-    contrast than it returns in shape, and the letter needs the room."""
-    if target < 32:
-        return 0
+    """In target pixels, and never zero.
+
+    It was zero below 32 pixels, on the reasoning that at that size a frame
+    costs more in contrast than it returns in shape. That was a judgement
+    about one icon rather than about four: the products draw their window
+    icon from different sources -- Qt scales the 512-pixel PNG, Tk picks the
+    matching frame out of the .ico -- so a rule that changed the drawing with
+    the size made the same product look like two, and the four look like
+    four different families. One shape, one letter apart, at every size.
+    """
     return max(1, round(target / 28))
 
 
 def _letter_height(target: int) -> float:
     """As a fraction of the square. The smaller the icon, the more of it the
-    letter has to be before it stops reading as a letter."""
+    letter has to be before it stops reading as a letter -- but it now shares
+    the square with a frame at every size, so there is a little less of it to
+    have."""
     if target < 32:
-        return 0.86
+        return 0.66
     if target <= 48:
-        return 0.72
+        return 0.68
     return 0.62
 
 

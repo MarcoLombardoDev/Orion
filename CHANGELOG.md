@@ -174,6 +174,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   highlights and images came out identical on all four page rotations.
 
 ### Fixed
+- **The icon lost its frame below 32 pixels, so the four did not match.** The
+  frame was dropped at the small sizes on the reasoning that it costs more in
+  contrast than it returns in shape — a judgement about one icon rather than
+  about four. The products draw their window icon from different sources: Qt
+  scales the 512-pixel PNG, Tk picks the matching frame out of the `.ico`. So
+  the same product looked like two and the four looked like four families, one
+  with a black border and one without. One shape now, one letter apart, at
+  every size, and `tests/test_packaging.py` checks the frame is there in each
+  frame of the `.ico`.
 - **The licence notice is centred on the whole status bar.** It was laid out
   as a normal status-bar widget, which centres it in whatever the page and
   zoom indicators leave over and slides it sideways as they come and go. It is
