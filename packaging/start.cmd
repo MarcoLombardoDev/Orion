@@ -88,13 +88,61 @@ if /i not "%ACTUAL%"=="%EXPECTED%" (
 
 :launch
 rem With arguments -- --version, --self-check -- run in the foreground, so
-rem whatever is printed lands in the console the caller is watching. With
-rem none, which is what a double-click sends, hand off with start so this
-rem console window closes instead of sitting behind the application for as
-rem long as it runs.
-if "%~1"=="" (
-    start "" "%EXE%"
-    exit /b 0
+rem whatever is printed lands in the console the caller is watching.
+if not "%~1"=="" goto :foreground
+
+rem With none, which is what a double-click sends, this console has one job
+rem left: stay up while the program starts, and say what it is waiting for. A
+rem frozen Qt application is not quick off the mark -- Windows scans every
+rem file in _internal before it will let any of them load, which the first
+rem time can take the better part of a minute -- and a console that vanishes
+rem instantly leaves nothing on screen for that whole wait.
+rem
+rem Asking Windows when the program is ready needs PowerShell. Without it
+rem there is no way to know, so hand off and let this window close at once,
+rem which is what it did before.
+where powershell > nul 2>&1
+if errorlevel 1 goto :handoff
+
+echo Starting %APP%...
+echo.
+echo The first launch is the slow one: Windows checks every file in this
+echo folder before it will run any of them. This window closes by itself as
+echo soon as %APP% is on screen.
+
+rem The path travels in a variable rather than inside the quoted -Command
+rem string, so a folder name containing a space or a quote cannot break the
+rem PowerShell that receives it.
+set "_LAUNCH_TARGET=%EXE%"
+
+rem WaitForInputIdle returns when the process has finished starting and is
+rem sitting in its message loop waiting for input -- which is the moment its
+rem window is up and this console has nothing left to say. It throws if the
+rem process has already exited, so that is caught and reported rather than
+rem being left to look like a timeout.
+powershell -NoProfile -Command "$p = Start-Process -FilePath ${env:_LAUNCH_TARGET} -PassThru; try { $ready = $p.WaitForInputIdle(180000) } catch { $ready = $false }; if ($p.HasExited) { exit 4 }; if (-not $ready) { exit 3 }; exit 0"
+set "STATUS=%ERRORLEVEL%"
+
+rem Past this point the program has been started, whatever PowerShell went on
+rem to report. Nothing below may start it a second time.
+if "%STATUS%"=="0" exit /b 0
+
+if "%STATUS%"=="4" (
+    echo. 1>&2
+    echo %APP% stopped before it opened a window. 1>&2
+    if not defined CI pause
+    exit /b 1
 )
+
+echo. 1>&2
+echo %APP% has not opened a window yet. It may still be starting. 1>&2
+if not defined CI pause
+exit /b 0
+
+:handoff
+start "" "%EXE%"
+exit /b 0
+
+:foreground
 "%EXE%" %*
 exit /b %ERRORLEVEL%

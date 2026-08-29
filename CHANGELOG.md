@@ -77,6 +77,22 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   the annual rate of the same tier.
 
 ### Changed
+- **The Windows start script waits for the window instead of vanishing.** It
+  handed off and closed at once, which left whoever double-clicked it staring
+  at an empty desktop for however long Windows took to scan the folder — most
+  of a minute, the first time. It now says what it is waiting for and closes
+  itself the moment the program is actually on screen, using
+  `WaitForInputIdle`, which is Windows' own answer to "has it finished
+  starting". Without PowerShell to ask, it hands off as before rather than
+  guessing.
+- **The archives' checksums moved from the download list into the release
+  notes.** Three `.sha256` files beside three archives doubled the length of
+  the list for no one's benefit. The digests are now printed under
+  **Checksums** in the notes, which keeps the property that matters — a
+  checksum is only evidence if it reaches you by a route the archive did not —
+  and takes the clutter away. `tests/test_release_workflow.py` pins that they
+  are written after all three builds, and that a re-run rewrites the block
+  rather than stacking a second one under it.
 - **Every Python source file carries the same seven-line licence header**, in
   the same place: the product name, the copyright line, an
   `SPDX-License-Identifier: AGPL-3.0-or-later` a tool can read, a pointer to

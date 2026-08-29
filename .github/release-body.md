@@ -35,18 +35,17 @@ SmartScreen shows *"Windows protected your PC"* and offers only **Don't run**. C
 **More info**, then **Run anyway**. Nothing is wrong with the download; SmartScreen is
 reporting that it has never seen this publisher, which is true.
 
-Because that warning asks you to trust a file you cannot check by looking at it, every
-archive ships with a `.sha256` beside it. In PowerShell:
+Because that warning asks you to trust a file you cannot check by looking at it, the
+SHA-256 of all three archives is listed under **Checksums** at the bottom of these notes.
+In PowerShell:
 
 ```powershell
 Get-FileHash .\Orion-{{VERSION}}-windows-x64.zip -Algorithm SHA256
 ```
 
-The hash it prints must match the one inside `Orion-{{VERSION}}-windows-x64.zip.sha256`.
-If it does, the file is byte for byte what the build produced.
-
-That is the checksum worth checking. The one inside the archive catches damage; this one
-arrives by a different route from the file it describes, which is what makes it evidence.
+If what it prints matches the line below, the file is byte for byte what the build
+produced. Those digests are here rather than in the archives on purpose: one that travels
+with the file it describes can only tell you the file is undamaged.
 
 On **macOS**, Gatekeeper refuses an unidentified developer the same way: right-click the
 app and choose **Open**, or run `xattr -dr com.apple.quarantine Orion.app`.

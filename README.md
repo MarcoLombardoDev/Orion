@@ -149,26 +149,28 @@ Right-click it and choose **Open**, or run `xattr -dr com.apple.quarantine Orion
 Neither warning means anything is wrong with the file. Both mean the same thing: nobody
 has paid to put a name on it.
 
-**Check the download instead.** Every archive is published with a `.sha256` file beside
-it, holding the checksum of the archive as the build machine produced it:
+**Check the download instead.** Every release lists the SHA-256 of each archive, as the
+build machine produced it, under **Checksums** in the release notes. Compute your copy's
+and compare:
 
 ```powershell
 Get-FileHash .\Orion-1.0.0-windows-x64.zip -Algorithm SHA256      # Windows
 ```
 
 ```sh
-sha256sum -c Orion-1.0.0-linux-x64.tar.gz.sha256                   # Linux
-shasum -a 256 -c Orion-1.0.0-macos-arm64.zip.sha256                # macOS
+sha256sum Orion-1.0.0-linux-x64.tar.gz                             # Linux
+shasum -a 256 Orion-1.0.0-macos-arm64.zip                          # macOS
 ```
 
 That is a weaker guarantee than a signature — it proves the file was not altered between
 the build and your disk, not who wrote it — but it is the part a signature would give you
 that can be given for free, and it is what the warning is actually asking about.
 
-That published `.sha256` is the one worth checking, and the one inside the archive is not
-a substitute for it. A checksum that travels beside the file it describes can only tell
-you the file is undamaged: whoever could alter one could alter the other. The published
-one arrives by a different route, which is the entire reason it is worth anything.
+Those are the digests worth checking, and the `Orion.sha256` inside the archive is not a
+substitute for them. A checksum that travels with the file it describes can only tell you
+the file is undamaged: whoever could replace the one could replace the other. The digests
+on the release page arrive by a different route, which is the entire reason they are worth
+anything — and why they are printed there rather than offered as three more downloads.
 
 ## Installation from source
 
