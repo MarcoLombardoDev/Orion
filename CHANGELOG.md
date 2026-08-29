@@ -154,6 +154,23 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   highlights and images came out identical on all four page rotations.
 
 ### Fixed
+- **The Windows start script waited on the wrong process.** It called
+  `WaitForInputIdle` on what `Start-Process` handed back, which is right for
+  one process and wrong for two: a onefile build starts a bootloader that
+  unpacks itself and re-runs itself, and the copy that opens the window is its
+  child. The bootloader has no message loop, so the wait ran out its whole
+  timeout while the program sat there on screen, and the console then
+  announced that nothing had happened and asked for a keypress. It now polls
+  for a main window on any process with the program's image name, which covers
+  both shapes, and reads "it stopped" from the process handle rather than from
+  a name disappearing.
+- **The release now runs the start script the way a user does.** Every check
+  passed it arguments, and the no-argument path -- the double-click, the one
+  that waits for the window -- was the one nobody ran. The release now takes it
+  too, on Windows, and fails if the launcher reports failure while the program
+  is running. It also runs on a copy of the staging directory rather than in
+  it, so anything a program writes on first start cannot end up inside the
+  archive.
 - **The Windows archive unpacked one folder deeper than the other two.** `7z`
   stores the path it is given, so `7z a out.zip dist/Orion` produced a zip
   rooted at `dist/Orion/` while the Linux tarball was rooted at `Orion/`.

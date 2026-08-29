@@ -93,9 +93,9 @@ if not "%~1"=="" goto :foreground
 
 rem With none, which is what a double-click sends, this console has one job
 rem left: stay up while the program starts, and say what it is waiting for. A
-rem frozen Qt application is not quick off the mark -- Windows scans every
-rem file in _internal before it will let any of them load, which the first
-rem time can take the better part of a minute -- and a console that vanishes
+rem frozen application is not quick off the mark -- Windows scans every file
+rem before it will let any of them load, and a onefile build unpacks itself
+rem into a temporary folder on top of that -- and a console that vanishes
 rem instantly leaves nothing on screen for that whole wait.
 rem
 rem Asking Windows when the program is ready needs PowerShell. Without it
@@ -106,21 +106,36 @@ if errorlevel 1 goto :handoff
 
 echo Starting %APP%...
 echo.
-echo The first launch is the slow one: Windows checks every file in this
-echo folder before it will run any of them. This window closes by itself as
-echo soon as %APP% is on screen.
+echo The first launch is the slow one: Windows checks every file before it
+echo will run any of them. This window closes by itself as soon as %APP% is
+echo on screen.
 
 rem The path travels in a variable rather than inside the quoted -Command
 rem string, so a folder name containing a space or a quote cannot break the
 rem PowerShell that receives it.
 set "_LAUNCH_TARGET=%EXE%"
+set "_LAUNCH_TIMEOUT=%ORION_LAUNCH_TIMEOUT%"
+if not defined _LAUNCH_TIMEOUT set "_LAUNCH_TIMEOUT=180"
 
-rem WaitForInputIdle returns when the process has finished starting and is
-rem sitting in its message loop waiting for input -- which is the moment its
-rem window is up and this console has nothing left to say. It throws if the
-rem process has already exited, so that is caught and reported rather than
-rem being left to look like a timeout.
-powershell -NoProfile -Command "$p = Start-Process -FilePath ${env:_LAUNCH_TARGET} -PassThru; try { $ready = $p.WaitForInputIdle(180000) } catch { $ready = $false }; if ($p.HasExited) { exit 4 }; if (-not $ready) { exit 3 }; exit 0"
+rem What this waits for is a window, found by polling every process with the
+rem program's image name until one of them has a main window handle.
+rem
+rem It used to call WaitForInputIdle on the process Start-Process returned,
+rem which is the obvious answer and the wrong one. A onefile build is two
+rem processes: the executable that starts is a bootloader that unpacks itself
+rem and re-runs itself, and the copy that opens the window is its child. The
+rem bootloader never has a message loop, so WaitForInputIdle on it waited out
+rem the whole timeout while the program sat there on screen, and the console
+rem then announced that nothing had happened. Reported from a onefile build; a
+rem onedir build is a single process and looked fine, which is how it went
+rem unnoticed.
+rem
+rem Both processes carry the same image name, so watching the name covers
+rem either shape. Death is read from the process Start-Process handed back
+rem rather than from the name disappearing: a onefile bootloader outlives its
+rem child, so that handle going away means the whole thing is gone, and it
+rem cannot race the first poll the way a name lookup can.
+powershell -NoProfile -Command "$target = ${env:_LAUNCH_TARGET}; $name = [IO.Path]::GetFileNameWithoutExtension($target); $p = Start-Process -FilePath $target -PassThru; $deadline = (Get-Date).AddSeconds([int]${env:_LAUNCH_TIMEOUT}); while ((Get-Date) -lt $deadline) { foreach ($proc in @(Get-Process -Name $name -ErrorAction SilentlyContinue)) { if ($proc.MainWindowHandle -ne [IntPtr]::Zero) { exit 0 } }; if ($p.HasExited) { exit 4 }; Start-Sleep -Milliseconds 200 }; exit 3"
 set "STATUS=%ERRORLEVEL%"
 
 rem Past this point the program has been started, whatever PowerShell went on

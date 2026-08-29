@@ -556,13 +556,38 @@ class TestLauncher:
         text = (REPO / "packaging" / "start.cmd").read_text(encoding="utf-8")
         assert "echo Starting %APP%" in text
 
-    def test_the_batch_launcher_waits_for_the_window_before_closing(self):
-        """WaitForInputIdle returns when the process is sitting in its message
-        loop with its window up. Anything else — a fixed sleep, or none —
-        either closes too early or wastes the user's time.
+    def test_the_batch_launcher_waits_for_a_real_window(self):
+        """It waits for a window to exist, by polling every process with the
+        program's image name for a main window handle.
+
+        Not WaitForInputIdle on the process Start-Process returned, which is
+        what it did first and is wrong for a onefile build: the executable
+        that starts is a bootloader that re-runs itself, the child draws the
+        window, and the bootloader never has a message loop. It waited out the
+        whole timeout while the program was on screen.
         """
         text = (REPO / "packaging" / "start.cmd").read_text(encoding="utf-8")
-        assert "WaitForInputIdle" in text
+        command = next(line for line in text.splitlines()
+                       if line.startswith("powershell "))
+        assert "MainWindowHandle" in command
+        assert "WaitForInputIdle" not in command, (
+            "the launcher still waits on the process it started"
+        )
+
+    def test_the_batch_launcher_notices_the_program_stopping(self):
+        """Otherwise a program that dies on startup leaves the console sitting
+        there for the whole timeout saying it is still waiting.
+        """
+        text = (REPO / "packaging" / "start.cmd").read_text(encoding="utf-8")
+        assert "HasExited" in text
+
+    def test_the_batch_launcher_wait_can_be_bounded_for_a_test(self):
+        """The release runs this path with a short timeout. Without the knob
+        it would either hang a job for three minutes or not be run at all,
+        and not being run at all is how the onefile bug shipped.
+        """
+        text = (REPO / "packaging" / "start.cmd").read_text(encoding="utf-8")
+        assert "_LAUNCH_TIMEOUT" in text
 
     def test_the_batch_launcher_starts_the_program_exactly_once(self):
         """The failure to avoid: PowerShell starts the program, then reports
@@ -576,7 +601,7 @@ class TestLauncher:
         starts = [i for i, line in enumerate(lines) if line == 'start "" "%EXE%"']
         assert len(starts) == 1, "more than one place starts the program"
 
-        powershell = next(i for i, line in enumerate(lines) if "WaitForInputIdle" in line)
+        powershell = next(i for i, line in enumerate(lines) if line.startswith("powershell "))
         jumps = [i for i, line in enumerate(lines) if "goto :handoff" in line]
         assert jumps, "nothing checks for PowerShell before relying on it"
         assert all(i < powershell for i in jumps), (
