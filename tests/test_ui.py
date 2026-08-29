@@ -557,8 +557,9 @@ class TestLicenceNotice:
         assert f"mailto:{CONTACT_EMAIL}" in shown, "the address is not clickable"
 
     def test_the_notice_survives_a_transient_message(self, qapp):
-        """Qt hides normal status-bar widgets while a message is showing. The
-        message lasts seconds; the notice has to come back after it.
+        """It steps aside while a message is showing, where the two would
+        otherwise collide. The message lasts seconds; the notice has to come
+        back after it, not be destroyed.
         """
         from PySide6.QtWidgets import QLabel
 
@@ -566,8 +567,71 @@ class TestLicenceNotice:
 
         bar = OrionStatusBar()
         bar.flash("something happened", 1)
+        bar.clearMessage()
         shown = " ".join(label.text() for label in bar.findChildren(QLabel))
         assert "AGPL-3.0" in shown, "the notice was destroyed rather than hidden"
+
+    def test_it_is_centred_on_the_whole_bar(self, qapp):
+        """Not on whatever is left over. A QStatusBar lays normal widgets from
+        the left and permanent ones from the right, so a notice in the layout
+        slides sideways as the page and zoom indicators appear and disappear.
+        The other three products give theirs a strip where nothing competes.
+        """
+        from PySide6.QtWidgets import QMainWindow
+
+        from orion.ui.status_bar import OrionStatusBar
+
+        window = QMainWindow()
+        bar = OrionStatusBar()
+        window.setStatusBar(bar)
+        window.resize(1400, 800)
+        window.show()
+        qapp.processEvents()
+
+        def offset() -> float:
+            box = bar._notice.geometry()
+            return abs((box.x() + box.width() / 2) - bar.width() / 2)
+
+        assert bar._notice.isVisible()
+        assert offset() <= 1, "not centred with an empty bar"
+
+        bar.set_page(0, 10)
+        bar.set_zoom(1.0, "fit_width")
+        bar.set_modified(True)
+        qapp.processEvents()
+        assert offset() <= 1, "the indicators pushed the notice off centre"
+        window.close()
+
+    def test_a_narrow_window_shortens_the_notice_before_dropping_it(self, qapp):
+        """A window too narrow for the whole line is a reason to say less, not
+        a reason to stop carrying the notice: the copyright and the licence
+        are the part AGPL-3.0 section 5 is about.
+        """
+        from PySide6.QtWidgets import QMainWindow
+
+        from orion.ui.status_bar import OrionStatusBar
+
+        window = QMainWindow()
+        bar = OrionStatusBar()
+        window.setStatusBar(bar)
+        window.show()
+
+        # With a document open, which is when the indicators take their share
+        # of the bar and the notice has least room.
+        bar.set_page(0, 10)
+        bar.set_zoom(1.0, "fit_width")
+        bar.set_modified(True)
+
+        window.resize(1400, 800)
+        qapp.processEvents()
+        assert "mailto:" in bar._notice.text(), "the wide window lost the address"
+
+        window.resize(950, 800)
+        qapp.processEvents()
+        assert bar._notice.isVisible(), "the notice vanished before it was shortened"
+        assert "AGPL-3.0" in bar._notice.text()
+        assert "mailto:" not in bar._notice.text(), "nothing was dropped"
+        window.close()
 
     def test_the_notice_names_this_product(self):
         from orion import APP_NAME, LICENSE_NOTICE

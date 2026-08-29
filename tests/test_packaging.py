@@ -259,6 +259,49 @@ class TestApplicationIcon:
         assert white > black, "the icon is mostly dark; the background should be white"
         assert black > len(pixels) // 100, "there is almost no ink; is the letter there?"
 
+    def test_the_small_frames_are_uncompressed(self):
+        """DIB below 256 pixels, PNG only for the 256.
+
+        Windows has accepted PNG-compressed frames since Vista, but the format
+        every icon editor produces — and the one the shell has always read —
+        is an uncompressed DIB at the small sizes. Explorer showing a stale or
+        generic icon for an executable whose resources are demonstrably
+        correct is exactly the shape of problem that convention avoids.
+        """
+        import struct
+
+        data = self.ICO.read_bytes()
+        _, _, count = struct.unpack("<HHH", data[:6])
+        png_magic = b"\x89PNG\r\n\x1a\x0a"
+        for index in range(count):
+            entry = 6 + index * 16
+            width, _h, _c, _r, _p, _b, size, offset = struct.unpack(
+                "<BBBBHHII", data[entry:entry + 16]
+            )
+            width = width or 256
+            is_png = data[offset:offset + 8] == png_magic
+            if width >= 256:
+                assert is_png, "the 256 frame should be PNG; it is the one worth compressing"
+            else:
+                assert not is_png, f"the {width}px frame is PNG-compressed"
+
+    def test_every_frame_reads_back_at_its_declared_size(self):
+        """The .ico is assembled by hand, so a wrong header length or a
+        bottom-up row order would produce a file that still opens and is
+        quietly wrong.
+        """
+        Image = pytest.importorskip("PIL.Image", reason="Pillow reads the icon")
+        with Image.open(self.ICO) as icon:
+            sizes = sorted(icon.info["sizes"])
+            for size in sizes:
+                icon.size = size
+                frame = icon.copy().convert("L")
+                pixels = list(frame.get_flattened_data()
+                              if hasattr(frame, "get_flattened_data") else frame.getdata())
+                assert len(pixels) == size[0] * size[1]
+                assert any(value < 60 for value in pixels), f"{size[0]}px has no ink"
+                assert any(value > 200 for value in pixels), f"{size[0]}px has no ground"
+
     def test_the_generator_is_kept_with_them(self):
         """So the next one can be drawn the same way rather than guessed at."""
         assert (REPO / "tools" / "make_icon.py").is_file()

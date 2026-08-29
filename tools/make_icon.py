@@ -23,9 +23,20 @@ frame that reads as a hairline at 256 pixels is a smear at 16, and the letter
 that has room to breathe at 256 has to fill the square at 16 to be a letter at
 all. Scaling one drawing gives the small sizes -- the ones actually on the
 taskbar -- to whichever end of the range was drawn first.
+
+The .ico is assembled here rather than by Pillow, for one reason: which
+compression each frame uses. Pillow writes every frame as PNG. Windows has
+accepted PNG frames since Vista, but the format every icon editor produces,
+and the one the shell has always read, is an uncompressed DIB below 256 pixels
+and PNG only for the 256 -- which is the size where PNG saves something worth
+saving. Explorer showing a stale or generic icon for an executable whose
+resources are demonstrably correct is exactly the shape of problem that
+convention exists to avoid, so this writes the conventional thing.
 """
 
+import io
 import pathlib
+import struct
 import sys
 
 from PIL import Image, ImageDraw, ImageFont
@@ -104,6 +115,76 @@ def draw(letter: str, target: int) -> Image.Image:
     return image.resize((target, target), Image.LANCZOS)
 
 
+
+def _dib_frame(image: Image.Image) -> bytes:
+    """One icon frame in the uncompressed form Windows has always read.
+
+    A BITMAPINFOHEADER whose height is doubled -- the convention that says
+    "colour rows, then mask rows" -- followed by bottom-up BGRA pixels and a
+    1-bit AND mask. The mask is all zeroes because these icons are fully
+    opaque; it is written out anyway rather than left off, because a header
+    that promises mask rows and a frame that does not carry them is the kind
+    of nearly-valid file that works in one reader and not the next.
+    """
+    width, height = image.size
+    pixels = image.convert("RGBA").tobytes()
+
+    rows = []
+    for y in range(height - 1, -1, -1):          # bottom-up
+        row = bytearray()
+        for x in range(width):
+            r, g, b, a = pixels[(y * width + x) * 4:(y * width + x) * 4 + 4]
+            row += bytes((b, g, r, a))           # BGRA, not RGBA
+        rows.append(bytes(row))
+    xor = b"".join(rows)
+
+    mask_stride = ((width + 31) // 32) * 4       # rows padded to 4 bytes
+    and_mask = b"\x00" * (mask_stride * height)
+
+    header = struct.pack(
+        "<IiiHHIIiiII",
+        40,              # biSize
+        width,
+        height * 2,      # colour rows plus mask rows
+        1,               # biPlanes
+        32,              # biBitCount
+        0,               # biCompression: BI_RGB
+        len(xor) + len(and_mask),
+        0, 0, 0, 0,      # resolution and palette counts
+    )
+    return header + xor + and_mask
+
+
+def build_ico(frames: dict[int, Image.Image]) -> bytes:
+    """Assemble the .ico: DIB below 256 pixels, PNG for the 256."""
+    payloads = []
+    for size in sorted(frames):
+        if size >= 256:
+            buffer = io.BytesIO()
+            frames[size].save(buffer, "png")
+            payloads.append((size, buffer.getvalue(), True))
+        else:
+            payloads.append((size, _dib_frame(frames[size]), False))
+
+    header = struct.pack("<HHH", 0, 1, len(payloads))
+    offset = len(header) + 16 * len(payloads)
+    directory, data = b"", b""
+    for size, blob, _is_png in payloads:
+        directory += struct.pack(
+            "<BBBBHHII",
+            0 if size >= 256 else size,   # 0 means 256
+            0 if size >= 256 else size,
+            0,           # no palette
+            0,           # reserved
+            1,           # planes
+            32,          # bits per pixel
+            len(blob),
+            offset,
+        )
+        data += blob
+        offset += len(blob)
+    return header + directory + data
+
 def main(argv: list[str]) -> int:
     if len(argv) != 3:
         print("usage: make_icon.py <Name> <output directory>", file=sys.stderr)
@@ -115,14 +196,8 @@ def main(argv: list[str]) -> int:
 
     draw(letter, PNG_SIZE).save(out / f"{name.lower()}.png")
 
-    # Largest first: Pillow drops any requested size bigger than the image it
-    # was handed, so leading with 16x16 silently produces a one-frame icon.
-    frames = [draw(letter, size) for size in sorted(ICO_SIZES, reverse=True)]
-    frames[0].save(
-        out / f"{name.lower()}.ico",
-        sizes=[(size, size) for size in ICO_SIZES],
-        append_images=frames[1:],
-    )
+    frames = {size: draw(letter, size) for size in ICO_SIZES}
+    (out / f"{name.lower()}.ico").write_bytes(build_ico(frames))
     print(f"{name}: wrote {name.lower()}.png and {name.lower()}.ico in {out}")
     return 0
 

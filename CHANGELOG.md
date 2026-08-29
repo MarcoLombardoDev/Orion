@@ -174,6 +174,22 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   highlights and images came out identical on all four page rotations.
 
 ### Fixed
+- **The licence notice is centred on the whole status bar.** It was laid out
+  as a normal status-bar widget, which centres it in whatever the page and
+  zoom indicators leave over and slides it sideways as they come and go. It is
+  positioned directly now, so it stays on the centre of the window. A window
+  too narrow for the whole line drops the invitation to write rather than the
+  notice: the copyright and the licence are the part AGPL-3.0 section 5 is
+  about.
+- **The `.ico` used PNG compression at every size.** Windows has accepted
+  PNG-compressed icon frames since Vista, but the format every icon editor
+  produces — and the one the shell has always read — is an uncompressed DIB
+  below 256 pixels, with PNG only for the 256, which is the size where the
+  compression saves something worth saving. Explorer showing a stale or
+  generic icon for an executable whose resources are demonstrably correct is
+  exactly the shape of problem that convention exists to avoid, so
+  `tools/make_icon.py` now assembles the `.ico` itself and writes the
+  conventional thing. `tests/test_packaging.py` pins the format.
 - **The Windows start script waited on the wrong process.** It called
   `WaitForInputIdle` on what `Start-Process` handed back, which is right for
   one process and wrong for two: a onefile build starts a bootloader that

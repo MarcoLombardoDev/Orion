@@ -34,12 +34,71 @@ class OrionStatusBar(QStatusBar):
         for label in (self._page, self._zoom, self._mode, self._modified):
             label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
-        self.addWidget(self._licence_notice())
         self.addPermanentWidget(self._modified)
         self.addPermanentWidget(self._page)
         self.addPermanentWidget(self._zoom)
         self.addPermanentWidget(self._mode)
+
+        # Not added to the layout at all: see _place_notice.
+        self._notice = self._licence_notice()
+        self.messageChanged.connect(lambda _text: self._place_notice())
+
         self.clear_document()
+
+    # -- the licence notice ------------------------------------------------
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt's spelling
+        super().resizeEvent(event)
+        self._place_notice()
+
+    def _place_notice(self) -> None:
+        """Centre the notice on the whole bar, and get out of the way.
+
+        A QStatusBar lays normal widgets from the left and permanent ones from
+        the right, so anything in the layout centres in whatever is left over
+        and slides sideways as the page and zoom indicators appear. Iris,
+        Proteus and Argus give their notice a strip of its own where nothing
+        else competes; this is the same result in the one strip Orion has.
+
+        So the notice is a plain child, positioned here. Hidden rather than
+        overlapped when there is no room for it beside the indicators, and
+        while a transient message is showing, which is where the text would
+        otherwise collide.
+        """
+        notice = self._notice
+        if self.currentMessage():
+            notice.hide()
+            return
+
+        # The permanent widgets are laid out from the right; the leftmost one
+        # that is actually showing is where the space for this ends.
+        occupied = [
+            label.geometry().left()
+            for label in (self._modified, self._page, self._zoom, self._mode)
+            if label.isVisible() and label.text()
+        ]
+        limit = min(occupied) if occupied else self.width()
+
+        # Full text first, then the notice without the invitation to write.
+        # A narrow window is a reason to say less, not a reason to stop
+        # carrying the notice: the copyright and the licence are the part
+        # AGPL-3.0 section 5 is about, and they survive to the last step.
+        for html in (self._notice_full, self._notice_short):
+            notice.setText(html)
+            wanted = notice.sizeHint()
+            left = (self.width() - wanted.width()) // 2
+            if left >= 8 and left + wanted.width() <= limit - 8:
+                notice.setGeometry(
+                    left,
+                    (self.height() - wanted.height()) // 2,
+                    wanted.width(),
+                    wanted.height(),
+                )
+                notice.show()
+                notice.raise_()
+                return
+
+        notice.hide()
 
     def _licence_notice(self) -> QLabel:
         """The copyright and licence line, with the address spelled out.
@@ -53,17 +112,19 @@ class OrionStatusBar(QStatusBar):
         commercial licence, and "available on request" tells them nothing
         about where to ask.
 
-        Added with ``addWidget`` rather than ``addPermanentWidget`` so it sits
-        on the left, where a credit belongs, rather than among the page and
-        zoom indicators. Qt hides normal status-bar widgets while a transient
-        message is showing, which is the accepted cost of that placement: the
-        notice is on screen the rest of the time, and the messages last four
-        seconds.
+        Kept out of the status bar's layout and positioned by hand; the
+        reasoning is in :meth:`_place_notice`.
         """
-        label = QLabel(
-            f'{LICENSE_NOTICE} <a href="mailto:{CONTACT_EMAIL}'
+        link = (
+            f'<a href="mailto:{CONTACT_EMAIL}'
             f'?subject={quote(LICENSING_SUBJECT)}">{CONTACT_EMAIL}</a>'
         )
+        self._notice_full = f"{LICENSE_NOTICE} {link}"
+        # Without the trailing "Commercial licensing:", which is what the
+        # address was introducing.
+        self._notice_short = LICENSE_NOTICE.rsplit("|", 1)[0].strip()
+
+        label = QLabel(self._notice_full, self)
         label.setTextFormat(Qt.TextFormat.RichText)
         label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         # Opened through QDesktopServices rather than setOpenExternalLinks, so
@@ -77,21 +138,25 @@ class OrionStatusBar(QStatusBar):
 
     def set_page(self, index: int, total: int) -> None:
         self._page.setText(f"Page {index + 1} / {total}" if total else "")
+        self._place_notice()
 
     def set_zoom(self, zoom: float, mode: str) -> None:
         self._zoom.setText(f"Zoom {round(zoom * 100)}%")
         self._mode.setText(
             {"fit_width": "Fit Width", "fit_page": "Fit Page"}.get(mode, "Custom Zoom")
         )
+        self._place_notice()
 
     def set_modified(self, modified: bool) -> None:
         self._modified.setText("Modified" if modified else "")
+        self._place_notice()
 
     def clear_document(self) -> None:
         self._page.clear()
         self._zoom.clear()
         self._mode.clear()
         self._modified.clear()
+        self._place_notice()
 
     def flash(self, message: str, milliseconds: int = 4000) -> None:
         self.showMessage(message, milliseconds)
