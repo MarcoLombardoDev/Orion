@@ -1,0 +1,174 @@
+/* Orion — PDF Editor for Desktop
+ * Copyright (C) 2026 Marco Lombardo
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * The same palette Iris and Proteus get from ttkbootstrap's "flatly": a white
+ * ground, near-black text, a dark navy for anything primary, and flat
+ * controls with no bevel. Those two are Tk applications and this one is Qt,
+ * so the library cannot be shared — only the numbers can, and they are the
+ * numbers that matter.
+ *
+ *   ground   #ffffff      text      #212529
+ *   primary  #2c3e50      success   #18bc9c
+ *   warning  #f39c12      danger    #e74c3c
+ *   muted    #95a5a6      rule      #dee2e6
+ *
+ * Deliberately restrained. A stylesheet that repaints every widget fights the
+ * platform everywhere and loses somewhere: this one sets the ground, the
+ * text, the buttons and the rules, and leaves the rest to Qt. The page view
+ * is not touched at all — a PDF has to be shown as it is, not as the theme
+ * would prefer it.
+ */
+
+QMainWindow,
+QDialog,
+QWidget#central {
+    background-color: #ffffff;
+    color: #212529;
+}
+
+/* --- buttons ----------------------------------------------------------- */
+
+QPushButton {
+    background-color: #2c3e50;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 14px;
+    font-weight: 500;
+}
+
+QPushButton:hover    { background-color: #3c5064; }
+QPushButton:pressed  { background-color: #22303e; }
+QPushButton:disabled { background-color: #b9c2cc; color: #eeeeee; }
+
+/* The quiet ones: a bordered button on the ground, the same shape as
+   ttkbootstrap's "outline". */
+QPushButton[flat="true"],
+QDialogButtonBox QPushButton[autoDefault="false"] {
+    background-color: #ffffff;
+    color: #95a5a6;
+    border: 1px solid #ced4da;
+}
+
+QPushButton[flat="true"]:hover {
+    color: #2c3e50;
+    border-color: #2c3e50;
+}
+
+/* --- text entry -------------------------------------------------------- */
+
+QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+    background-color: #ffffff;
+    color: #212529;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    padding: 4px 6px;
+    selection-background-color: #2c3e50;
+    selection-color: #ffffff;
+}
+
+QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus,
+QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
+    border-color: #2c3e50;
+}
+
+QLineEdit:disabled, QSpinBox:disabled, QComboBox:disabled {
+    background-color: #f8f9fa;
+    color: #95a5a6;
+}
+
+/* --- chrome ------------------------------------------------------------ */
+
+QToolBar {
+    background-color: #ffffff;
+    border: none;
+    border-bottom: 1px solid #dee2e6;
+    spacing: 2px;
+    padding: 3px;
+}
+
+QToolButton {
+    background-color: transparent;
+    border: none;
+    border-radius: 4px;
+    padding: 4px;
+}
+
+QToolButton:hover   { background-color: #eceff1; }
+QToolButton:pressed,
+QToolButton:checked { background-color: #d8dee3; }
+
+QMenuBar { background-color: #ffffff; border-bottom: 1px solid #dee2e6; }
+QMenuBar::item { padding: 4px 10px; background: transparent; }
+QMenuBar::item:selected { background-color: #eceff1; border-radius: 4px; }
+
+QMenu {
+    background-color: #ffffff;
+    border: 1px solid #dee2e6;
+    padding: 4px;
+}
+QMenu::item { padding: 5px 22px; border-radius: 4px; }
+QMenu::item:selected { background-color: #2c3e50; color: #ffffff; }
+QMenu::separator { height: 1px; background: #dee2e6; margin: 4px 6px; }
+
+QStatusBar {
+    background-color: #ffffff;
+    border-top: 1px solid #dee2e6;
+}
+QStatusBar::item { border: none; }
+
+QDockWidget {
+    color: #212529;
+    titlebar-close-icon: none;
+}
+QDockWidget::title {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+    padding: 5px 8px;
+}
+
+QSplitter::handle { background-color: #dee2e6; }
+QSplitter::handle:horizontal { width: 1px; }
+QSplitter::handle:vertical   { height: 1px; }
+
+/* --- lists ------------------------------------------------------------- */
+
+QListView, QTreeView, QTableView {
+    background-color: #ffffff;
+    border: 1px solid #dee2e6;
+    selection-background-color: #2c3e50;
+    selection-color: #ffffff;
+    outline: none;
+}
+
+QHeaderView::section {
+    background-color: #f8f9fa;
+    color: #212529;
+    border: none;
+    border-right: 1px solid #dee2e6;
+    border-bottom: 1px solid #dee2e6;
+    padding: 4px 6px;
+}
+
+QProgressBar {
+    background-color: #eceff1;
+    border: none;
+    border-radius: 3px;
+    height: 6px;
+    text-align: center;
+}
+QProgressBar::chunk { background-color: #2c3e50; border-radius: 3px; }
+
+QScrollBar:vertical   { background: transparent; width: 11px; margin: 0; }
+QScrollBar:horizontal { background: transparent; height: 11px; margin: 0; }
+QScrollBar::handle {
+    background: #c4ccd3;
+    border-radius: 5px;
+    min-height: 28px;
+    min-width: 28px;
+}
+QScrollBar::handle:hover { background: #95a5a6; }
+QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
+QScrollBar::add-page, QScrollBar::sub-page { background: none; }

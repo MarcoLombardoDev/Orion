@@ -50,6 +50,26 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(list(argv) if argv is not None else None)
 
 
+def _apply_stylesheet(app) -> None:
+    """Give the interface the palette Iris and Proteus have.
+
+    Those two get theirs from ttkbootstrap's "flatly". This is Qt, so the
+    library cannot be shared -- only the numbers can, and they are the numbers
+    that matter: the same white ground, the same near-black text, the same
+    dark navy on anything primary.
+
+    A missing or unreadable stylesheet leaves the platform's own look, which
+    is a perfectly good interface. It is not worth failing to start over.
+    """
+    from orion.utils.paths import resources_dir
+
+    sheet = resources_dir() / "styles" / "orion.qss"
+    try:
+        app.setStyleSheet(sheet.read_text(encoding="utf-8"))
+    except OSError:
+        log.debug("No stylesheet at %s; using the platform look", sheet)
+
+
 def _set_application_icon(app) -> None:
     """Use the bundled application icon, if it is where we expect it."""
     from PySide6.QtGui import QIcon
@@ -210,6 +230,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     from orion.ui.main_window import MainWindow
 
     app.aboutToQuit.connect(release_system_clipboard)
+
+    _apply_stylesheet(app)
 
     window = MainWindow()
     _install_exception_hook(window)

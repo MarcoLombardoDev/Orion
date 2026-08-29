@@ -8,6 +8,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- **A palette, where Orion had none.** `resources/styles/` held a README and
+  nothing else, so the interface came up in whatever the platform's default
+  was. It now carries the same colours Iris and Proteus get from
+  ttkbootstrap's "flatly": a white ground, near-black text, a dark navy on
+  anything primary, flat controls with no bevel. Those two are Tk and this is
+  Qt, so the library cannot be shared — only the numbers can, and they are the
+  numbers that matter. Deliberately restrained: the ground, the text, the
+  buttons and the rules, and the page view untouched, because a PDF has to be
+  shown as it is rather than as the theme would prefer it.
 - **The copyright and licence notice, along the bottom of the window.** Iris,
   Proteus and Argus have shown one since their first release; Orion shipped
   v1.0.0 without it. AGPL-3.0 section 5 asks the work to carry Appropriate

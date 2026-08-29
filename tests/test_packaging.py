@@ -331,3 +331,70 @@ class TestApplicationIcon:
     def test_the_generator_is_kept_with_them(self):
         """So the next one can be drawn the same way rather than guessed at."""
         assert (REPO / "tools" / "make_icon.py").is_file()
+
+
+class TestLooksLikeTheOthers:
+    """Orion carries the palette Iris and Proteus get from ttkbootstrap.
+
+    Those two are Tk applications and this one is Qt, so the library cannot be
+    shared — only the numbers can, and they are the numbers that matter. If
+    the three drift apart, it will be here, in a hex code nobody thought to
+    change twice.
+    """
+
+    SHEET = REPO / "resources" / "styles" / "orion.qss"
+
+    #: flatly, which is what the other two resolve to. Same values, written
+    #: out rather than imported, because there is nothing to import across a
+    #: repository boundary.
+    PALETTE = {
+        "ground": "#ffffff",
+        "text": "#212529",
+        "primary": "#2c3e50",
+        "muted": "#95a5a6",
+        "rule": "#dee2e6",
+    }
+
+    def test_the_stylesheet_is_in_the_repository(self):
+        assert self.SHEET.is_file(), f"{self.SHEET} is missing"
+
+    def test_it_carries_the_shared_palette(self):
+        sheet = self.SHEET.read_text(encoding="utf-8")
+        for name, colour in self.PALETTE.items():
+            assert colour in sheet, f"the {name} colour ({colour}) is not in the sheet"
+
+    def test_its_braces_balance(self):
+        """Qt discards a stylesheet it cannot parse, silently as far as the
+        interface is concerned: the application simply comes up looking like
+        it did before.
+        """
+        sheet = self.SHEET.read_text(encoding="utf-8")
+        assert sheet.count("{") == sheet.count("}")
+
+    def test_it_is_applied_at_start_up(self):
+        source = (REPO / "orion" / "main.py").read_text(encoding="utf-8")
+        assert "_apply_stylesheet(app)" in source
+
+    def test_it_travels_with_the_build(self):
+        """It lives under resources/, which the spec ships whole. A stylesheet
+        left behind would make the frozen build the odd one out.
+        """
+        spec = (REPO / "orion.spec").read_text(encoding="utf-8")
+        assert 'datas=[(str(BUILD_DIR / "resources"), "resources")]' in spec
+
+    def test_qt_accepts_it(self):
+        """Parsed by Qt itself rather than by eye. A rule Qt rejects takes the
+        whole sheet with it.
+        """
+        pytest.importorskip("PySide6", reason="Qt is not installed here")
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance() or QApplication([])
+        previous = app.styleSheet()
+        try:
+            app.setStyleSheet(self.SHEET.read_text(encoding="utf-8"))
+            assert self.PALETTE["primary"] in app.styleSheet(), (
+                "Qt did not keep the stylesheet"
+            )
+        finally:
+            app.setStyleSheet(previous)
