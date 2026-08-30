@@ -69,6 +69,11 @@ class Page:
     #: instead, so an imported annotation is edited rather than duplicated —
     #: and one that was not imported is left in the file untouched.
     imported_annotations: tuple[int, ...] = ()
+    #: Indices into the *source* page's content objects that the user has
+    #: replaced with a text object of their own. The writer removes exactly
+    #: these before stamping, so the original glyphs are gone from the saved
+    #: file rather than hidden underneath the replacement.
+    replaced_text: tuple[int, ...] = ()
 
     # -- geometry --------------------------------------------------------
     @property
@@ -203,6 +208,7 @@ class Page:
             source_rotation=self.source_rotation,
             label=self.label,
             imported_annotations=self.imported_annotations,
+            replaced_text=self.replaced_text,
         )
 
     # -- serialisation ---------------------------------------------------
@@ -215,6 +221,7 @@ class Page:
             "source_rotation": self.source_rotation,
             "label": self.label,
             "imported_annotations": list(self.imported_annotations),
+            "replaced_text": list(self.replaced_text),
             "objects": [obj.to_dict() for obj in self.objects],
         }
 
@@ -231,6 +238,7 @@ class Page:
             imported_annotations=tuple(
                 int(i) for i in data.get("imported_annotations", ())
             ),
+            replaced_text=tuple(int(i) for i in data.get("replaced_text", ())),
             objects=[create_object(item) for item in data.get("objects", [])],
         )
 

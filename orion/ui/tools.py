@@ -34,6 +34,7 @@ class Tool(str, Enum):
     FREEHAND = "freehand"
     COMMENT = "comment"
     STICKY_NOTE = "sticky_note"
+    PAGE_TEXT = "page_text"
 
     @property
     def is_drawing(self) -> bool:
@@ -95,6 +96,12 @@ TOOL_INFO: dict[Tool, ToolInfo] = {
     Tool.FREEHAND: ToolInfo("Freehand", "freehand", "P", "Draw freely with the mouse"),
     Tool.COMMENT: ToolInfo("Comment", "comment", "", "Click to attach a comment"),
     Tool.STICKY_NOTE: ToolInfo("Sticky Note", "sticky_note", "N", "Click to place a note"),
+    Tool.PAGE_TEXT: ToolInfo(
+        "Edit Page Text",
+        "edit_page_text",
+        "E",
+        "Click a line of the document's own text to rewrite it",
+    ),
 }
 
 

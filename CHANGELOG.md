@@ -8,6 +8,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- **Editing the text that is already in the PDF.** Until now Orion could put a
+  box of new text on top of a page and nothing else: correcting a figure in a
+  contract meant covering it with a white rectangle and retyping beside it.
+  The **Edit Page Text** tool turns a line of the document's own text into an
+  editable text box — same position, same size, same colour, the baseline
+  landing where the original's did — and the original glyphs are removed from
+  the saved file rather than hidden underneath. It works on documents whose
+  font is only inside the file, which is most of them. Three consequences the
+  user guide and the status bar both spell out: the line is redrawn in one of
+  Orion's fonts, so it changes appearance when the document's font is not
+  installed here; a line of mixed styles becomes one style; and the replaced
+  line is drawn last, so a screen reader meets it at the end of the page.
 - **Every font on the machine, not just three.** Orion wrote with the base-14
   PDF fonts and offered nothing else, so a text box could be Helvetica, Times
   or Courier and that was the whole list. Any installed family Orion can embed

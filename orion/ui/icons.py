@@ -272,6 +272,14 @@ ICONS: dict[str, tuple[Shape, ...]] = {
     "bring_front": (Box(0.10, 0.10, 0.52, 0.52), Box(0.34, 0.34, 0.56, 0.56, filled=True, radius=0.04)),
     "send_back": (Box(0.34, 0.34, 0.56, 0.56), Box(0.10, 0.10, 0.52, 0.52, filled=True, radius=0.04)),
     "info": (Oval(0.12, 0.12, 0.76, 0.76), Dot(0.50, 0.30, 0.07), Line(0.50, 0.44, 0.50, 0.76)),
+    # A serif T with a pencil across it: the page's own text, being rewritten.
+    "edit_page_text": (
+        Line(0.08, 0.22, 0.56, 0.22),
+        Line(0.32, 0.22, 0.32, 0.74),
+        Line(0.20, 0.74, 0.44, 0.74),
+        Line(0.60, 0.78, 0.90, 0.48),
+        Poly(((0.90, 0.48), (0.86, 0.62), (0.76, 0.62)), closed=True, filled=True),
+    ),
 }
 
 _theme: Theme | None = None

@@ -105,6 +105,30 @@ is kept and the panel says Helvetica is standing in for it. A family that has
 no italic, or no bold, is shown upright or regular on the canvas too, so the
 screen does not promise something the saved file will not have.
 
+### Editing the document's own text
+
+**Edit Page Text** rewrites text that is already in the PDF, rather than adding
+a box on top of it. Click a line and it becomes an editable text box holding
+that line, in the same place, at the same size and colour; type over it and
+save, and the original is gone from the file rather than covered up.
+
+Three things follow from how it works, and they are worth knowing before you
+rely on it:
+
+* The line is **replaced, not edited**. Orion redraws it with its own fonts, so
+  if the document's font is not installed on this computer the replacement is
+  drawn in Helvetica and the line changes appearance. The panel says so when it
+  happens.
+* A line with **more than one style** — a bold label followed by a plain figure
+  — becomes one style, the one most of the line already used. Replace the two
+  halves separately if you need to keep both.
+* The replaced line is drawn last, so a program that reads the page in order —
+  a screen reader, or copying the whole page — finds it at the end rather than
+  in its place on the page.
+
+If there is no text where you click, the status bar says so and nothing
+changes. Scanned pages have no text to edit; use a text box on top instead.
+
 ### Highlight, underline and strikeout
 
 Drag across the words you want. Orion finds the document's actual text lines

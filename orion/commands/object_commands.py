@@ -27,6 +27,7 @@ __all__ = [
     "PasteObjectsCommand",
     "RaiseObjectCommand",
     "ReorderObjectCommand",
+    "ReplacePageTextCommand",
 ]
 
 
@@ -75,6 +76,52 @@ class AddObjectCommand(_ObjectCommand):
 
     def undo(self) -> None:
         self._page.remove_object(self._object.id)
+        self._notify(self._object.id)
+
+
+class ReplacePageTextCommand(_ObjectCommand):
+    """Take a line of the page's own text over as an editable text object.
+
+    Two things happen together and have to be undone together: the object
+    appears, and the page records which of the source's content objects it now
+    stands for. Undoing only the first would leave the original text deleted
+    from the next save with nothing drawn in its place — a line of the
+    document silently gone.
+    """
+
+    def __init__(
+        self,
+        document: Document,
+        page_index: int,
+        obj: PageObject,
+        indices: Sequence[int],
+        *,
+        text: str = "Edit Page Text",
+    ) -> None:
+        super().__init__(document, page_index)
+        self._object = obj
+        self._indices = tuple(indices)
+        self._previous: tuple[int, ...] = ()
+        self.text = text
+
+    @property
+    def object(self) -> PageObject:
+        return self._object
+
+    def execute(self) -> None:
+        page = self._page
+        self._previous = page.replaced_text
+        # A set union rather than a concatenation: the same line can be taken
+        # over twice if the first replacement is deleted and the user clicks
+        # it again, and the writer must not be asked to remove it twice.
+        page.replaced_text = tuple(sorted(set(self._previous) | set(self._indices)))
+        page.add_object(self._object)
+        self._notify(self._object.id)
+
+    def undo(self) -> None:
+        page = self._page
+        page.remove_object(self._object.id)
+        page.replaced_text = self._previous
         self._notify(self._object.id)
 
 

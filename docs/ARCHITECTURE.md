@@ -165,6 +165,7 @@ Orion/
 │   │   ├── coordinates.py     base-space <-> PDF-content-space conversions
 │   │   ├── annotation_import.py  /Annots -> AnnotationObject, and who owns what
 │   │   ├── fonts.py           base-14 + installed system fonts, and embedding
+│   │   ├── text_edit.py       the page's own text: reading it back to replace it
 │   │   ├── text_layout.py     line breaking, shared by the canvas and the writer
 │   │   ├── writer.py          Document -> PDF (atomic write)
 │   │   └── operations.py      merge / split / extract / import (file level)
@@ -219,7 +220,7 @@ Orion/
 |---|---|
 | `PdfReader` | Opens a file, handles encryption/corruption, produces a `Document`. Imports the annotations it can model (`annotation_import`), recording per page which `/Annots` entries the model now owns. |
 | `PageRenderer` | `render(source, index, rotation, scale) -> RenderedPage` (raw RGB). Size-bounded LRU cache, one lock per opened document (pdfium is not safe for concurrent access to one document). |
-| `PdfWriter` | Assembles the output: copies source page runs, appends blank pages, applies rotation, stamps objects, adds annotations, writes atomically. Drops exactly the `/Annots` entries the reader took ownership of, so an imported annotation is rewritten from the model rather than duplicated, and everything else rides through untouched. |
+| `PdfWriter` | Assembles the output: copies source page runs, appends blank pages, applies rotation, stamps objects, adds annotations, writes atomically. Drops exactly the `/Annots` entries the reader took ownership of, so an imported annotation is rewritten from the model rather than duplicated, and everything else rides through untouched. Text the user replaced is removed by a pdfium pass over the assembled document, before anything is stamped: pypdf cannot edit a content stream, and doing it per output page rather than per source keeps a duplicated page's copies independent. |
 | `operations` | `merge_files`, `split_by_ranges`, `split_every`, `extract_pages` — file-level, reusable by both the UI and (future) a CLI. |
 
 ### Commands

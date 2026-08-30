@@ -135,6 +135,7 @@ class ToolPalette(QToolBar):
         Tool.HAND,
         None,
         Tool.TEXT,
+        Tool.PAGE_TEXT,
         Tool.IMAGE,
         None,
         Tool.RECTANGLE,

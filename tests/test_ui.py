@@ -1258,3 +1258,91 @@ class TestTheFontPicker:
         self._select_text(window, qapp, sample_pdf, font_family=extras[0])
         note = window._properties._font_note
         assert note.isVisible() and "embedded" in note.text()
+
+
+class TestEditingThePagesOwnText:
+    """Clicking a line of the document's text and rewriting it.
+
+    The model-level tests live in ``tests/test_page_text_editing.py``; what
+    these check is the part only the window can answer — that the click lands
+    on the right line, that the box arrives ready to type in, and that undo
+    puts the page back.
+    """
+
+    @staticmethod
+    def _click_line(window, qapp, base: tuple[float, float]) -> None:
+        _drag(window, Tool.PAGE_TEXT, base, base)
+        pump(qapp)
+
+    def test_clicking_a_line_turns_it_into_an_editable_box(
+        self, window, qapp, sample_pdf
+    ):
+        from orion.document.objects import TextObject
+
+        window.open_path(sample_pdf)
+        pump(qapp)
+        # The fixture draws "PAGE 1 NEEDLE" with its baseline 100pt down.
+        self._click_line(window, qapp, (90.0, 95.0))
+
+        objects = window.session.document[0].objects
+        assert len(objects) == 1, "the click did not produce a text object"
+        obj = objects[0]
+        assert isinstance(obj, TextObject)
+        assert obj.text == "PAGE 1 NEEDLE"
+        assert obj.font_size == pytest.approx(18.0, abs=0.5)
+        assert window.session.document[0].replaced_text, "the original was not claimed"
+
+        item = window._canvas._item_index[obj.id]
+        assert item.is_editing, "the box should be ready to type in"
+
+    def test_the_box_sits_where_the_line_did(self, window, qapp, sample_pdf):
+        """Not a coordinate check: the text must not jump up or down the page.
+
+        Orion puts a box's first baseline at ``top + ascender * size``, so the
+        top has to be that far above the original baseline.
+        """
+        window.open_path(sample_pdf)
+        pump(qapp)
+        self._click_line(window, qapp, (90.0, 95.0))
+        obj = window.session.document[0].objects[0]
+
+        from orion.pdf.fonts import FontRequest, resolve
+        from orion.pdf.text_layout import layout_text
+
+        layout = layout_text(
+            obj.text,
+            obj.rect,
+            font=FontRequest(obj.font_family, obj.bold, obj.italic),
+            font_size=obj.font_size,
+        )
+        assert resolve(FontRequest(obj.font_family)).ascender > 0
+        # The fixture's baseline is 100pt from the top of a 600pt page.
+        assert layout.lines[0].baseline == pytest.approx(100.0, abs=1.0)
+
+    def test_clicking_where_there_is_no_text_says_so(self, window, qapp, sample_pdf):
+        window.open_path(sample_pdf)
+        pump(qapp)
+        self._click_line(window, qapp, (200.0, 500.0))
+        assert window.session.document[0].objects == []
+        assert window.session.document[0].replaced_text == ()
+
+    def test_undo_restores_the_page(self, window, qapp, sample_pdf):
+        """Both halves, or a line of the document disappears on the next save."""
+        window.open_path(sample_pdf)
+        pump(qapp)
+        self._click_line(window, qapp, (90.0, 95.0))
+        item = window._canvas._item_index[window.session.document[0].objects[0].id]
+        item.end_editing(commit=True)
+        pump(qapp)
+
+        window._actions["edit.undo"].trigger()
+        pump(qapp)
+        page = window.session.document[0]
+        assert page.objects == []
+        assert page.replaced_text == ()
+
+    def test_the_tool_hands_back_to_select(self, window, qapp, sample_pdf):
+        window.open_path(sample_pdf)
+        pump(qapp)
+        self._click_line(window, qapp, (90.0, 95.0))
+        assert window._canvas.tool is Tool.SELECT

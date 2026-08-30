@@ -28,6 +28,7 @@ from orion.document.page import Page
 from orion.pdf.coordinates import from_pdf_rect, to_pdf_rect
 from orion.pdf.errors import PdfReadError
 from orion.pdf.reader import OpenedPdf, open_pdf
+from orion.pdf.text_edit import SourceTextLine, read_text_lines
 from orion.utils.geometry import Rect, Size
 
 log = logging.getLogger(__name__)
@@ -364,6 +365,30 @@ class PageRenderer:
             for candidate in candidates
             if _overlaps(candidate, selection)
         ]
+
+    def source_text_lines(self, page: Page) -> list[SourceTextLine]:
+        """The lines of *page*'s own text, ready to be replaced by the user.
+
+        The page and its text page are held in locals for the whole read and
+        released together. Asking pdfium for the same page twice hands out two
+        wrappers over one handle, and whichever is collected first frees it for
+        both — a crash that arrives later, somewhere else, usually when the
+        document is closed. It is worth the two variables.
+        """
+        opened = self._text_source(page)
+        if opened is None or page.source is None:
+            return []
+
+        index = page.source.index
+        geometry = opened.geometry(index)
+        with opened.lock:
+            try:
+                pdf_page = opened.doc[index]
+                textpage = pdf_page.get_textpage()
+                return read_text_lines(pdf_page.raw, textpage.raw, geometry)
+            except Exception:
+                log.warning("Could not read the text of page %d", index, exc_info=True)
+                return []
 
     def __del__(self) -> None:  # pragma: no cover - best-effort cleanup
         with suppress(Exception):

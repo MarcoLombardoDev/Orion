@@ -34,6 +34,7 @@ should ever see a base-space coordinate that has not been through
 
 from __future__ import annotations
 
+import gc
 import io
 import logging
 from collections.abc import Iterator, Sequence
@@ -43,6 +44,7 @@ from pathlib import Path
 
 import pypdf
 import pypdfium2 as pdfium
+import pypdfium2.raw as pdfium_raw
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import (
     ArrayObject,
@@ -189,6 +191,88 @@ def _assemble(document: Document, pool: _SourcePool) -> PdfWriter:
             "Internal error while assembling the document (page count mismatch)."
         )
     return out
+
+
+def _strip_replaced_text(out: PdfWriter, document: Document) -> PdfWriter:
+    """Remove the page text the user replaced, before anything is stamped.
+
+    Editing a PDF's own text means taking drawing operations out of a content
+    stream, which pypdf does not do and pdfium does. So the assembled document
+    makes a round trip: written out, edited by pdfium, and read back for the
+    rest of the save.
+
+    It happens **after assembly** rather than to the source files, because a
+    page can be in the document more than once. Duplicate a page, replace a
+    line on one copy, and patching the source would take that line out of both;
+    output pages are one-to-one with the document's, so there is no ambiguity
+    about which copy was edited. It happens **before stamping** because the
+    recorded indices are positions in the source page's content, and merging
+    the overlay in adds objects that would shift them.
+
+    The whole pass is skipped when nothing was replaced, which is almost
+    always: it costs a serialise and a parse of the entire document, and there
+    is no reason to pay that for a highlight.
+    """
+    targets = {
+        index: page.replaced_text
+        for index, page in enumerate(document.pages)
+        if page.replaced_text
+    }
+    if not targets:
+        return out
+
+    buffer = io.BytesIO()
+    out.write(buffer)
+    edited = _remove_page_objects(buffer.getvalue(), targets)
+    if edited is None:
+        return out
+    return PdfWriter(clone_from=io.BytesIO(edited))
+
+
+def _remove_page_objects(data: bytes, targets: dict[int, Sequence[int]]) -> bytes | None:
+    """Delete content objects from pages of *data*, returning the new bytes.
+
+    Every page handle is taken **once** and held in a local until the document
+    is closed. pypdfium2's page wrapper frees its handle when it is collected,
+    so asking the document for the same page a second time hands out a wrapper
+    over a handle another object already owns, and whichever goes first frees
+    it for both. The result is a segmentation fault later on, usually at close,
+    with nothing to connect it to the line that caused it — found the hard way
+    while building this.
+    """
+    document = pdfium.PdfDocument(data)
+    try:
+        for page_index, indices in targets.items():
+            if not 0 <= page_index < len(document):
+                continue  # pragma: no cover - defensive
+            page = document[page_index]
+            try:
+                count = int(pdfium_raw.FPDFPage_CountObjects(page.raw))
+                # Highest first: removing an object renumbers the ones after it.
+                for index in sorted(indices, reverse=True):
+                    if not 0 <= index < count:
+                        log.warning(
+                            "Replaced text %d is no longer on page %d", index, page_index
+                        )
+                        continue
+                    obj = pdfium_raw.FPDFPage_GetObject(page.raw, index)
+                    if obj and pdfium_raw.FPDFPage_RemoveObject(page.raw, obj):
+                        pdfium_raw.FPDFPageObj_Destroy(obj)
+                pdfium_raw.FPDFPage_GenerateContent(page.raw)
+            finally:
+                del page
+        result = io.BytesIO()
+        document.save(result)
+    except Exception:
+        # A save that keeps the original text is wrong, but a save that fails
+        # loses the user's work. The replacement is drawn either way; what is
+        # lost is only the removal of what is under it.
+        log.exception("Could not remove the replaced page text")
+        return None
+    finally:
+        gc.collect()  # drop any page wrapper before the document goes
+        document.close()
+    return result.getvalue()
 
 
 def _page_geometry(pdf_page: pypdf.PageObject) -> tuple[PageGeometry, float, float]:
@@ -619,7 +703,7 @@ def build_pdf_bytes(document: Document, *, garbage: int = 3, deflate: bool = Tru
     compression, and both are applied when asked for.
     """
     with _source_pool(document) as pool:
-        out = _assemble(document, pool)
+        out = _strip_replaced_text(_assemble(document, pool), document)
         for index, page in enumerate(document.pages):
             _stamp_page(out, index, page)
             total = int(page.total_rotation) % 360
