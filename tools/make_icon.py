@@ -237,23 +237,33 @@ def build_icns(letter: str) -> bytes:
     return b"icns" + struct.pack(">I", len(chunks) + 8) + chunks
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 3:
-        print("usage: make_icon.py <Name> <output directory>", file=sys.stderr)
+    if not 3 <= len(argv) <= 4:
+        print(
+            "usage: make_icon.py <Name> <output directory> [file stem]\n"
+            "  Name       the product; its initial is the letter drawn\n"
+            "  file stem  what the three files are called, when that is not\n"
+            "             the product name in lower case",
+            file=sys.stderr,
+        )
         return 2
 
     name, out = argv[1], pathlib.Path(argv[2])
+    # The letter and the file name are separate arguments because in two of
+    # these products they are separate things: the icon of Iris is an I and
+    # the file is called app_icon. Deriving both from one argument meant the
+    # only way to write the right file name was to pass the wrong letter,
+    # which is exactly what happened -- `make_icon.py app_icon assets`
+    # regenerated Iris's icons with an A on them.
+    stem = argv[3] if len(argv) == 4 else name.lower()
     out.mkdir(parents=True, exist_ok=True)
     letter = name[0].upper()
 
-    draw(letter, PNG_SIZE).save(out / f"{name.lower()}.png")
+    draw(letter, PNG_SIZE).save(out / f"{stem}.png")
 
     frames = {size: draw(letter, size) for size in ICO_SIZES}
-    (out / f"{name.lower()}.ico").write_bytes(build_ico(frames))
-    (out / f"{name.lower()}.icns").write_bytes(build_icns(letter))
-    print(
-        f"{name}: wrote {name.lower()}.png, {name.lower()}.ico "
-        f"and {name.lower()}.icns in {out}"
-    )
+    (out / f"{stem}.ico").write_bytes(build_ico(frames))
+    (out / f"{stem}.icns").write_bytes(build_icns(letter))
+    print(f"{name}: wrote {stem}.png, {stem}.ico and {stem}.icns in {out}")
     return 0
 
 

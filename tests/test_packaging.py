@@ -19,6 +19,7 @@ it would arrive again the moment the filter in orion.spec is edited without
 this test noticing.
 """
 
+import pathlib
 from pathlib import Path
 
 import pytest
@@ -327,6 +328,52 @@ class TestApplicationIcon:
                 assert len(pixels) == size[0] * size[1]
                 assert any(value < 60 for value in pixels), f"{size[0]}px has no ink"
                 assert any(value > 200 for value in pixels), f"{size[0]}px has no ground"
+
+    def test_regenerating_them_reproduces_what_is_committed(self, tmp_path):
+        """The committed files are the generator's output, and stay that way.
+
+        This is the check that makes "regenerate and diff" a usable answer to
+        "is the icon still the one the script draws". It is also the check that
+        would have caught the way the arguments used to work: the letter and
+        the file name came from one argument, so the only way to write the
+        right file name here was to pass the wrong letter, and doing exactly
+        that redrew this product's icons with someone else's initial on them.
+
+        Skipped where the serif face is not installed: the drawing depends on
+        it, so on a machine without it the comparison would be measuring the
+        font rather than the generator.
+        """
+        import subprocess
+        import sys
+
+        pytest.importorskip("PIL", reason="Pillow draws the icons")
+        sys.path.insert(0, str(REPO / "tools"))
+        try:
+            import make_icon
+        finally:
+            sys.path.pop(0)
+        if not any(pathlib.Path(p).exists() for p in make_icon.FONT_CANDIDATES):
+            pytest.skip("no serif font installed; the drawing would differ")
+
+        run = subprocess.run(
+            [sys.executable, str(REPO / "tools" / "make_icon.py"),
+             "Orion", str(tmp_path), "orion"],
+            capture_output=True, text=True,
+        )
+        assert run.returncode == 0, run.stderr
+
+        for suffix in (".png", ".ico", ".icns"):
+            committed = REPO / "resources/icons" / f"orion{suffix}"
+            if not committed.exists():
+                # The generator writes all three for everybody; only the
+                # products that build a macOS application bundle have any
+                # use for the .icns, and the rest do not carry one.
+                assert suffix == ".icns", f"{committed.name} is missing"
+                continue
+            fresh = (tmp_path / "orion").with_suffix(suffix)
+            assert fresh.read_bytes() == committed.read_bytes(), (
+                f"{committed.name} is not what tools/make_icon.py draws today"
+            )
 
     def test_the_generator_is_kept_with_them(self):
         """So the next one can be drawn the same way rather than guessed at."""
