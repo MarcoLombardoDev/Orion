@@ -193,6 +193,49 @@ def build_ico(frames: dict[int, Image.Image]) -> bytes:
         offset += len(blob)
     return header + directory + data
 
+
+#: The ``.icns`` entries macOS reads, as (four-character type, pixel size).
+#:
+#: Each is a PNG, which every macOS since 10.7 accepts and which keeps the file
+#: a tenth the size of the old raw-ARGB-plus-mask encoding. The pairs are the
+#: retina ones: ``ic11`` is 16pt at 2x and ``ic12`` is 32pt at 2x, so a Finder
+#: showing 16-point icons on a retina display has a real 32-pixel drawing to
+#: use instead of a scaled 16.
+ICNS_TYPES = (
+    (b"icp4", 16),
+    (b"icp5", 32),
+    (b"ic11", 32),
+    (b"ic12", 64),
+    (b"ic07", 128),
+    (b"ic13", 256),
+    (b"ic08", 256),
+    (b"ic14", 512),
+    (b"ic09", 512),
+)
+
+
+def build_icns(letter: str) -> bytes:
+    """Assemble the ``.icns`` macOS wants for an application bundle.
+
+    Written out here rather than left to PyInstaller. PyInstaller will convert
+    a PNG on the fly, but only if Pillow happens to be installed in the build
+    environment — and when it is not, the macOS job dies at BUNDLE() with
+    "not in the correct format" after the whole build has succeeded. That is
+    exactly what happened to the first release of the product that has no
+    Pillow. An icon committed as a file cannot fail that way.
+
+    The container is as simple as the .ico: an 8-byte header carrying the
+    magic and the total length, then one chunk per entry, each with its own
+    four-character type and a length that counts its own 8 bytes.
+    """
+    chunks = b""
+    for kind, size in ICNS_TYPES:
+        buffer = io.BytesIO()
+        draw(letter, size).save(buffer, "png")
+        blob = buffer.getvalue()
+        chunks += kind + struct.pack(">I", len(blob) + 8) + blob
+    return b"icns" + struct.pack(">I", len(chunks) + 8) + chunks
+
 def main(argv: list[str]) -> int:
     if len(argv) != 3:
         print("usage: make_icon.py <Name> <output directory>", file=sys.stderr)
@@ -206,7 +249,11 @@ def main(argv: list[str]) -> int:
 
     frames = {size: draw(letter, size) for size in ICO_SIZES}
     (out / f"{name.lower()}.ico").write_bytes(build_ico(frames))
-    print(f"{name}: wrote {name.lower()}.png and {name.lower()}.ico in {out}")
+    (out / f"{name.lower()}.icns").write_bytes(build_icns(letter))
+    print(
+        f"{name}: wrote {name.lower()}.png, {name.lower()}.ico "
+        f"and {name.lower()}.icns in {out}"
+    )
     return 0
 
 

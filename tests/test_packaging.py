@@ -398,3 +398,112 @@ class TestLooksLikeTheOthers:
             )
         finally:
             app.setStyleSheet(previous)
+
+
+class TestMacOSIcon:
+    """The container macOS will accept, and nothing else.
+
+    PyInstaller's BUNDLE() takes an .icns and only an .icns. Handed a PNG it
+    converts on the fly *if* Pillow is installed in the build environment, and
+    raises "not in the correct format" if it is not — after the whole build has
+    already succeeded, on the last line of the spec. The v1.0.0 macOS job of
+    the product that does not depend on Pillow failed exactly there, with
+    Windows and Linux already published.
+
+    An icon committed as a file cannot fail that way, so the .icns is drawn by
+    tools/make_icon.py alongside the .ico and the .png, and these check that
+    what was committed is a real one.
+    """
+
+    ICNS = REPO / "resources" / "icons" / "orion.icns"
+
+    def test_it_is_in_the_repository(self):
+        assert self.ICNS.is_file(), f"{self.ICNS} is missing"
+
+    def test_it_is_a_real_icns_container(self):
+        """Parsed rather than trusted: the header carries the total length, so
+        a truncated or mis-assembled file says so at the first chunk.
+        """
+        import struct
+
+        raw = self.ICNS.read_bytes()
+        assert raw[:4] == b"icns", f"wrong magic: {raw[:4]!r}"
+        declared = struct.unpack(">I", raw[4:8])[0]
+        assert declared == len(raw), f"header says {declared}, file is {len(raw)}"
+
+        position, seen = 8, []
+        while position < len(raw):
+            kind = raw[position:position + 4]
+            length = struct.unpack(">I", raw[position + 4:position + 8])[0]
+            assert length >= 8, f"{kind!r} declares {length} bytes"
+            assert position + length <= len(raw), f"{kind!r} runs past the end"
+            seen.append(kind)
+            position += length
+        assert position == len(raw), "the chunks do not add up to the file"
+        assert len(seen) >= 5, f"only {len(seen)} entries"
+
+    def test_it_carries_the_sizes_the_finder_asks_for(self):
+        """Including the retina pairs: without ic11 and ic12 a retina Finder
+        scales a 16-pixel drawing instead of using a 32-pixel one.
+        """
+        import struct
+
+        raw = self.ICNS.read_bytes()
+        position, kinds = 8, set()
+        while position < len(raw):
+            kinds.add(raw[position:position + 4])
+            position += struct.unpack(">I", raw[position + 4:position + 8])[0]
+        for required in (b"ic07", b"ic08", b"ic09", b"ic11", b"ic12"):
+            assert required in kinds, f"no {required.decode()} entry"
+
+    def test_every_entry_decodes_to_the_size_it_claims(self):
+        """A chunk type is a promise about pixel dimensions, and nothing in the
+        container enforces it.
+        """
+        import io
+        import struct
+
+        Image = pytest.importorskip("PIL.Image", reason="Pillow reads the entries")
+        expected = {
+            b"icp4": 16, b"icp5": 32, b"ic11": 32, b"ic12": 64,
+            b"ic07": 128, b"ic13": 256, b"ic08": 256, b"ic14": 512, b"ic09": 512,
+        }
+        raw = self.ICNS.read_bytes()
+        position = 8
+        while position < len(raw):
+            kind = raw[position:position + 4]
+            length = struct.unpack(">I", raw[position + 4:position + 8])[0]
+            blob = raw[position + 8:position + length]
+            with Image.open(io.BytesIO(blob)) as frame:
+                assert frame.format == "PNG", f"{kind.decode()} is {frame.format}"
+                if kind in expected:
+                    assert frame.size == (expected[kind], expected[kind]), (
+                        f"{kind.decode()} holds {frame.size}"
+                    )
+            position += length
+
+    def test_macos_is_given_the_icns_and_not_the_png(self):
+        """The spec line that failed. A PNG here builds everything and then
+        raises on the last statement of the file.
+
+        Checked in two places because the two products resolve the icon
+        differently: one maps the platform to a file name, the other picks a
+        constant. What both have to be true of is that macOS gets the .icns
+        and that the bundle is never handed the PNG.
+        """
+        spec = (REPO / "orion.spec").read_text(encoding="utf-8")
+        mapped = [
+            line for line in spec.splitlines()
+            if "darwin" in line and "icns" in line.lower()
+        ]
+        assert mapped, "nothing in the spec maps macOS to the .icns"
+
+        # Anchored on the assignment, not on the word: the comment above it
+        # mentions BUNDLE() by name, and a search for that found the comment
+        # and then read the EXE's icon line instead. The first version of this
+        # test passed against a spec with the PNG put back.
+        bundle = spec[spec.index("= BUNDLE("):]
+        icon_line = next(
+            line for line in bundle.splitlines() if line.strip().startswith("icon=")
+        )
+        assert "PNG" not in icon_line and ".png" not in icon_line, icon_line

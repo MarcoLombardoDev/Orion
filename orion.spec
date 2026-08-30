@@ -198,12 +198,20 @@ analysis.datas += [
 
 pyz = PYZ(analysis.pure)  # noqa: F821
 
-# Windows embeds an .ico in the executable's resources and will not take a
-# PNG; everywhere else the PNG is what PyInstaller wants. Both are drawn by
-# tools/make_icon.py and committed, so a build never depends on which fonts
-# the runner happens to have.
+# One drawing, three containers, because each platform will take only its own.
+# Windows embeds an .ico in the executable's resources and will not take a PNG;
+# macOS will take only an .icns in an application bundle; everywhere else the
+# PNG is what PyInstaller wants. All three are drawn by tools/make_icon.py and
+# committed, so a build never depends on which fonts the runner happens to
+# have -- nor, for the .icns, on whether Pillow happens to be installed in the
+# build environment. PyInstaller will convert a PNG on the fly when it is, and
+# dies at BUNDLE() with "not in the correct format" when it is not: a whole
+# macOS build succeeding and then failing on its last line. That is not a
+# hypothetical, it is what the first release of the sibling product with no
+# Pillow did.
 _icons = BUILD_DIR / "resources" / "icons"
-icon_path = _icons / ("orion.ico" if sys.platform == "win32" else "orion.png")
+_icon_file = {"win32": "orion.ico", "darwin": "orion.icns"}.get(sys.platform, "orion.png")
+icon_path = _icons / _icon_file
 icon = str(icon_path) if icon_path.exists() else None
 
 executable = EXE(  # noqa: F821
