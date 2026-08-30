@@ -18,6 +18,10 @@ from PySide6.QtWidgets import QLabel, QStatusBar, QWidget
 
 from orion import CONTACT_EMAIL, LICENSE_NOTICE, LICENSING_SUBJECT
 
+#: Breathing room kept between the notice and the edges it must not touch:
+#: the left of the bar, and the leftmost indicator.
+MARGIN = 8
+
 __all__ = ["OrionStatusBar"]
 
 
@@ -60,10 +64,17 @@ class OrionStatusBar(QStatusBar):
         Proteus and Argus give their notice a strip of its own where nothing
         else competes; this is the same result in the one strip Orion has.
 
-        So the notice is a plain child, positioned here. Hidden rather than
-        overlapped when there is no room for it beside the indicators, and
-        while a transient message is showing, which is where the text would
-        otherwise collide.
+        So the notice is a plain child, positioned here.
+
+        Centred on the bar when that clears the indicators, and nudged left
+        just enough when it does not -- not dropped. Requiring the *centred*
+        rectangle to fit was the first attempt, and it hid the address on a
+        1400-pixel window on Windows, where Segoe UI makes both the notice and
+        the indicators wider than the font this was written against. Staying
+        visible matters more than staying exactly centred.
+
+        Hidden only while a transient message is showing, where the two would
+        overlap, and when even the short form has nowhere to go.
         """
         notice = self._notice
         if self.currentMessage():
@@ -86,17 +97,26 @@ class OrionStatusBar(QStatusBar):
         for html in (self._notice_full, self._notice_short):
             notice.setText(html)
             wanted = notice.sizeHint()
+            if wanted.width() > limit - 2 * MARGIN:
+                continue          # this form does not fit at all; try the next
+
+            # Centred on the bar, then pulled back inside the free strip if
+            # that would run under the indicators. The pull is the smallest
+            # one that clears them, so it stays as close to centred as the
+            # window allows.
             left = (self.width() - wanted.width()) // 2
-            if left >= 8 and left + wanted.width() <= limit - 8:
-                notice.setGeometry(
-                    left,
-                    (self.height() - wanted.height()) // 2,
-                    wanted.width(),
-                    wanted.height(),
-                )
-                notice.show()
-                notice.raise_()
-                return
+            left = min(left, limit - MARGIN - wanted.width())
+            left = max(left, MARGIN)
+
+            notice.setGeometry(
+                left,
+                (self.height() - wanted.height()) // 2,
+                wanted.width(),
+                wanted.height(),
+            )
+            notice.show()
+            notice.raise_()
+            return
 
         notice.hide()
 

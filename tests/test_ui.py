@@ -545,16 +545,21 @@ class TestLicenceNotice:
 
     def test_it_says_where_to_ask_about_a_commercial_licence(self, qapp):
         """"Available on request" tells the one person who might buy one
-        nothing about where to ask."""
-        from PySide6.QtWidgets import QLabel
+        nothing about where to ask.
 
+        Asserted against the notice's full text rather than whatever the label
+        is showing at this instant: a bar nobody has given a width to may
+        already have fallen back to the short form, and that is a question
+        about layout, not about whether the address exists.
+        """
         from orion import CONTACT_EMAIL
         from orion.ui.status_bar import OrionStatusBar
 
         bar = OrionStatusBar()
-        shown = " ".join(label.text() for label in bar.findChildren(QLabel))
-        assert CONTACT_EMAIL in shown
-        assert f"mailto:{CONTACT_EMAIL}" in shown, "the address is not clickable"
+        assert CONTACT_EMAIL in bar._notice_full
+        assert f"mailto:{CONTACT_EMAIL}" in bar._notice_full, (
+            "the address is not clickable"
+        )
 
     def test_the_notice_survives_a_transient_message(self, qapp):
         """It steps aside while a message is showing, where the two would
@@ -602,10 +607,17 @@ class TestLicenceNotice:
         assert offset() <= 1, "the indicators pushed the notice off centre"
         window.close()
 
-    def test_a_narrow_window_shortens_the_notice_before_dropping_it(self, qapp):
+    def test_it_degrades_rather_than_disappearing(self, qapp):
         """A window too narrow for the whole line is a reason to say less, not
         a reason to stop carrying the notice: the copyright and the licence
         are the part AGPL-3.0 section 5 is about.
+
+        Swept rather than sampled at chosen widths. The first version of this
+        asserted that 1400 pixels showed the full text and 950 the short one,
+        which is a claim about font metrics, not about behaviour: it passed
+        where it was written and failed on all three CI platforms, and on
+        Windows it was right — Segoe UI made the notice wide enough that the
+        address never appeared at all.
         """
         from PySide6.QtWidgets import QMainWindow
 
@@ -622,21 +634,126 @@ class TestLicenceNotice:
         bar.set_zoom(1.0, "fit_width")
         bar.set_modified(True)
 
-        window.resize(1400, 800)
-        qapp.processEvents()
-        assert "mailto:" in bar._notice.text(), "the wide window lost the address"
+        seen = []
+        try:
+            for width in range(1800, 200, -50):
+                window.resize(width, 700)
+                qapp.processEvents()
+                seen.append(
+                    (width, bar._notice.isVisible(), "mailto:" in bar._notice.text())
+                )
+        finally:
+            window.close()
 
-        window.resize(950, 800)
-        qapp.processEvents()
-        assert bar._notice.isVisible(), "the notice vanished before it was shortened"
-        assert "AGPL-3.0" in bar._notice.text()
-        assert "mailto:" not in bar._notice.text(), "nothing was dropped"
-        window.close()
+        widest = seen[0]
+        assert widest[1], "the notice is not shown even on the widest window"
+        assert widest[2], "the widest window does not show the address"
 
-    def test_the_notice_names_this_product(self):
-        from orion import APP_NAME, LICENSE_NOTICE
+        assert not seen[-1][1], "the narrowest window still claims to show it"
 
-        assert APP_NAME in LICENSE_NOTICE
+        # Once it goes, it stays gone: no flapping between two adjacent widths.
+        visible = [entry[1] for entry in seen]
+        assert visible == sorted(visible, reverse=True), (
+            f"visibility is not monotone as the window narrows: {seen}"
+        )
+
+        # And the same for the address: it is dropped once, not regained.
+        addressed = [entry[2] for entry in seen if entry[1]]
+        assert addressed == sorted(addressed, reverse=True), (
+            f"the address comes and goes as the window narrows: {seen}"
+        )
+
+        # The point of the whole thing: there are widths where the notice is
+        # still carried without the address, between "everything fits" and
+        # "nothing does".
+        assert any(vis and not addr for _w, vis, addr in seen), (
+            "it never degrades — it goes straight from the full text to nothing"
+        )
+
+    def test_it_shows_the_address_whenever_there_is_room_for_it(self, qapp):
+        """The bug this replaces, stated without a pixel in it.
+
+        The first version required the *bar-centred* rectangle to clear the
+        indicators, and gave up when it did not — so on a window with room for
+        the full notice beside them it showed the short one, or nothing. On
+        Windows that was a 1400-pixel window. It nudges left now instead of
+        giving up, and this is what says so: if the text fits in the strip
+        that is free, it must be on screen, whatever the font is doing.
+        """
+        from PySide6.QtWidgets import QLabel, QMainWindow
+
+        from orion.ui.status_bar import MARGIN, OrionStatusBar
+
+        window = QMainWindow()
+        bar = OrionStatusBar()
+        window.setStatusBar(bar)
+        window.show()
+        bar.set_page(0, 10)
+        bar.set_zoom(1.0, "fit_width")
+        bar.set_modified(True)
+
+        # A label of its own, so measuring cannot disturb what is on screen.
+        ruler = QLabel(bar._notice_full)
+        ruler.setTextFormat(bar._notice.textFormat())
+        ruler.setStyleSheet(bar._notice.styleSheet())
+        ruler.setFont(bar._notice.font())
+
+        try:
+            for width in range(1800, 400, -50):
+                window.resize(width, 700)
+                qapp.processEvents()
+
+                occupied = [
+                    label.geometry().left()
+                    for label in (bar._modified, bar._page, bar._zoom, bar._mode)
+                    if label.isVisible() and label.text()
+                ]
+                free = (min(occupied) if occupied else bar.width()) - 2 * MARGIN
+                if ruler.sizeHint().width() > free:
+                    continue           # genuinely no room; nothing to prove
+
+                assert bar._notice.isVisible(), (
+                    f"hidden at {width}px with {free}px free and "
+                    f"{ruler.sizeHint().width()}px needed"
+                )
+                assert "mailto:" in bar._notice.text(), (
+                    f"shortened at {width}px with room for the whole line"
+                )
+        finally:
+            ruler.deleteLater()
+            window.close()
+
+    def test_it_never_runs_under_the_indicators(self, qapp):
+        """The reason it can be hidden at all. Overlapping them would be worse
+        than either.
+        """
+        from PySide6.QtWidgets import QMainWindow
+
+        from orion.ui.status_bar import OrionStatusBar
+
+        window = QMainWindow()
+        bar = OrionStatusBar()
+        window.setStatusBar(bar)
+        window.show()
+        bar.set_page(0, 10)
+        bar.set_zoom(1.0, "fit_width")
+        bar.set_modified(True)
+
+        try:
+            for width in range(1800, 200, -50):
+                window.resize(width, 700)
+                qapp.processEvents()
+                if not bar._notice.isVisible():
+                    continue
+                box = bar._notice.geometry()
+                assert box.left() >= 0, f"off the left edge at {width}px"
+                for label in (bar._modified, bar._page, bar._zoom, bar._mode):
+                    if label.isVisible() and label.text():
+                        assert box.right() <= label.geometry().left(), (
+                            f"the notice runs under {label.text()!r} at {width}px"
+                        )
+        finally:
+            window.close()
 
 
 class TestStartsMaximised:

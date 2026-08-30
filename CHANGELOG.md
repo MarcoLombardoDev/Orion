@@ -193,6 +193,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   highlights and images came out identical on all four page rotations.
 
 ### Fixed
+- **The licence notice disappeared from a window with room for it.** Placing
+  it required the *bar-centred* rectangle to clear the page and zoom
+  indicators, and gave up when it did not — so a window wide enough for the
+  whole line beside them showed the short form, or nothing. On Windows, where
+  Segoe UI makes both the notice and the indicators wider than the font this
+  was written against, that was a 1400-pixel window: the commercial licensing
+  address never appeared at all. It is nudged left to clear them now, by the
+  smallest amount that does, and only shortened or dropped when there is
+  genuinely no room.
 - **A dark icon on an active button.** A checked toolbar button is filled with
   the accent, and the icon stayed the text colour: a dark line drawing on a
   dark fill, which is the same as no icon at all. `icons.py` draws a second
