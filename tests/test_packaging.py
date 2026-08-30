@@ -554,3 +554,55 @@ class TestMacOSIcon:
             line for line in bundle.splitlines() if line.strip().startswith("icon=")
         )
         assert "PNG" not in icon_line and ".png" not in icon_line, icon_line
+
+
+class TestLicenceHeader:
+    """Every source file opens with the same seven lines.
+
+    A file copied out of this repository has to say what it is and what may be
+    done with it, which is the whole reason the header exists. That it is
+    *present* was checked when it was added; that it is still one unbroken
+    block at the top was not — and in one of these products an automated edit
+    inserted an import between the product name and the copyright line, where
+    it sat unnoticed because every check only looked for the SPDX line
+    somewhere in the file.
+    """
+
+    #: The shape, not the wording: the product line differs per repository and
+    #: the year will move.
+    SHAPE = (
+        "# Orion",
+        "# Copyright (C)",
+        "#",
+        "# SPDX-License-Identifier: AGPL-3.0-or-later",
+        "# Distributed WITHOUT ANY WARRANTY; see LICENSE for the full terms.",
+        "# A commercial licence, without the AGPL's obligations, is available for use",
+        "# in proprietary or closed-source products — see COMMERCIAL-LICENSE.md.",
+    )
+
+    def sources(self):
+        for root in ("orion", "tests", "tools"):
+            for path in sorted((REPO / root).rglob("*.py")):
+                if "__pycache__" in path.parts or ".venv" in path.parts:
+                    continue
+                yield path
+
+    def test_there_is_something_to_check(self):
+        assert list(self.sources()), "no source files found; the roots are wrong"
+
+    def test_every_file_opens_with_the_unbroken_header(self):
+        wrong = []
+        for path in self.sources():
+            lines = path.read_text(encoding="utf-8").splitlines()
+            # A shebang, where a file has one, stays on the first line.
+            if lines and lines[0].startswith("#!"):
+                lines = lines[1:]
+            for offset, expected in enumerate(self.SHAPE):
+                if offset >= len(lines) or not lines[offset].startswith(expected):
+                    got = lines[offset] if offset < len(lines) else "<end of file>"
+                    wrong.append(
+                        f"{path.relative_to(REPO)} line {offset + 1}: "
+                        f"expected {expected!r}, found {got!r}"
+                    )
+                    break
+        assert not wrong, "the licence header is broken in:\n  " + "\n  ".join(wrong)
