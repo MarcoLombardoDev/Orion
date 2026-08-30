@@ -260,6 +260,63 @@ jobs:
               ;;
           esac
 
+      # The archive carries the licence *texts*; this is the other half —
+      # which binary in it belongs to which project, and what licenses that
+      # project. Iris, Proteus and Argus have shipped it inside the archive
+      # since their first aligned release; Orion published its inventory only
+      # in the repository, which is a file a downloader never opens.
+      #
+      # It is produced here, on the runner, against the bundle that is about to
+      # be packaged, because that is the only machine whose answer is the
+      # download's own: PyInstaller collects whatever this image's linker
+      # resolved, so a copy generated anywhere else describes a different
+      # build.
+      #
+      # A binary the inventory cannot attribute exits 2 (not 1 — an uncaught
+      # exception exits 1 too, and a caller unable to tell those apart treats a
+      # script that died as one that merely found something). That is a
+      # warning: an unattributed library is a gap to look at, not a reason to
+      # publish nothing. Anything else means the script did not finish and the
+      # archive would ship without the inventory it is supposed to carry, which
+      # is exactly how the v1 release published two archives with nothing in
+      # them while the log said "warning".
+      - name: Inventory what the bundle ships
+        shell: bash
+        env:
+          PAYLOAD: ${{ steps.built.outputs.payload }}
+        run: |
+          # Filed beside the licence texts, wherever COLLECT put them — which
+          # is _internal/ on Windows and Linux and somewhere inside Contents/
+          # on macOS, so it is found rather than assumed.
+          home=$(python - "$PAYLOAD" <<'PY'
+          import pathlib
+          import sys
+
+          payload = pathlib.Path(sys.argv[1])
+          homes = [p.parent for p in payload.rglob("Orion-LICENSE.txt")]
+          if not homes:
+              raise SystemExit("no licence directory in the bundle to file the inventory in")
+          print(homes[0])
+          PY
+          )
+          echo "filing the inventory in $home"
+
+          set +e
+          python tools/licence_inventory.py \
+            --bundle "${{ matrix.asset }}=$PAYLOAD" \
+            --markdown "$home/THIRD-PARTY-LICENSES-${{ matrix.asset }}.md" \
+            --licences "$home"
+          status=$?
+          set -e
+
+          case "$status" in
+            0) ;;
+            2) echo "::warning::some binaries could not be attributed; see the report" ;;
+            *) echo "::error::the inventory script exited $status without writing a report"
+               exit "$status" ;;
+          esac
+          ls -la "$home"
+
       # What the user asked for, and the reason it is done here rather than in
       # orion.spec: PyInstaller 6 puts everything a spec declares as `datas`
       # under _internal/, which is exactly where a launcher must not be. The

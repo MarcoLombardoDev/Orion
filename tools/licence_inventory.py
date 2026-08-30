@@ -69,6 +69,8 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 
+APP_NAME = "Orion"
+
 #: Exit code for "the report was written, and some rows in it need a human".
 #: Deliberately not 1: an uncaught exception exits 1 too, and a caller that
 #: cannot tell the two apart treats a script that *died* as a script that
@@ -257,6 +259,67 @@ class Inventory:
 FRAMEWORK_BINARY = re.compile(r"(?:^|/)(?P<name>[^/]+)\.framework/Versions/[^/]+/(?P=name)$")
 
 
+def _distribution_owners() -> dict[str, str]:
+    """Top-level import name -> the distribution that installed it.
+
+    The named rules above cover the packages this product was built around.
+    They cannot cover the ones that arrive underneath those: pypdf imports
+    ``cryptography`` for AES-encrypted files, so its Rust extension is in every
+    archive, and a classifier that only knows the names someone wrote down
+    reported it as a system library with no owning package — unresolved, in an
+    inventory whose whole job is to have no such rows.
+
+    Asking the environment which distribution owns a top-level package answers
+    that for anything, including the next dependency nobody thought to list.
+    """
+    try:
+        from importlib.metadata import distributions, packages_distributions
+    except ImportError:  # pragma: no cover - Python < 3.10
+        return {}
+    index: dict[str, str] = {}
+    try:
+        for package, owning in packages_distributions().items():
+            for name in owning:
+                index.setdefault(package.lower(), name)
+    except Exception:  # pragma: no cover - a broken environment, not our bug
+        return index
+    for dist in distributions():
+        name = (dist.metadata["Name"] or "").strip()
+        if name:
+            index.setdefault(name.lower(), name)
+    return index
+
+
+#: Built once: walking every installed distribution per binary would make the
+#: inventory quadratic in the size of the environment.
+OWNERS = _distribution_owners()
+
+
+def _declared_licence(name: str) -> str | None:
+    """What a wheel's own metadata says licenses it.
+
+    Read rather than remembered. WHEEL_LICENCES above is for the components a
+    human has looked at and written a sentence about; this is for everything
+    else, and it is the distribution's own claim, which is the right source
+    for a row nobody has reviewed.
+    """
+    try:
+        from importlib.metadata import distribution
+    except ImportError:  # pragma: no cover - Python < 3.8
+        return None
+    try:
+        metadata = distribution(name).metadata
+    except Exception:
+        return None
+    declared = metadata.get("License-Expression") or metadata.get("License")
+    if declared and len(declared.splitlines()) == 1:
+        return declared.strip()
+    for classifier in metadata.get_all("Classifier") or ():
+        if classifier.startswith("License :: OSI Approved :: "):
+            return classifier.rsplit("::", 1)[-1].strip()
+    return None
+
+
 def is_native(rel: str) -> bool:
     """True for anything the loader maps as machine code at run time."""
     name = os.path.basename(rel)
@@ -310,6 +373,14 @@ def classify(rel: str) -> tuple[str, str] | None:
         or lower.startswith("python.framework/")
     ):
         return "cpython", "CPython"
+
+    # A binary inside a package directory belongs to whatever installed that
+    # package. Tried after CPython, because a stdlib extension module sits in a
+    # path no distribution owns and calling it unknown would leave the largest
+    # single group in the bundle unattributed.
+    owner = OWNERS.get(lower.split("/")[0].removesuffix(".libs"))
+    if owner:
+        return "wheel", owner
     return "system", ""
 
 
@@ -422,7 +493,7 @@ def take_inventory(platform: str, root: str) -> Inventory:
                 if origin == "cpython":
                     licence = "PSF-2.0"
                 else:
-                    licence = WHEEL_LICENCES.get(component)
+                    licence = WHEEL_LICENCES.get(component) or _declared_licence(component)
                 inventory.entries.append(
                     Entry(rel, origin, component, licence, ORIGIN_SOURCES[origin])
                 )
@@ -430,18 +501,23 @@ def take_inventory(platform: str, root: str) -> Inventory:
     return inventory
 
 
+def grouped(inventory: Inventory) -> dict[tuple[str, str], list[Entry]]:
+    groups: dict[tuple[str, str], list[Entry]] = {}
+    for entry in inventory.entries:
+        groups.setdefault((entry.origin, entry.component), []).append(entry)
+    return dict(sorted(groups.items(), key=lambda item: (item[0][0], item[0][1].lower())))
+
+
 def summarise(inventory: Inventory) -> None:
     by_origin: dict[str, int] = {}
-    components: dict[tuple[str, str], list[Entry]] = {}
     for entry in inventory.entries:
         by_origin[entry.origin] = by_origin.get(entry.origin, 0) + 1
-        components.setdefault((entry.origin, entry.component), []).append(entry)
 
     print(f"# {inventory.platform}: {len(inventory.entries)} native binaries")
     for origin, count in sorted(by_origin.items()):
         print(f"  {origin:8} {count}")
     print()
-    for (origin, component), entries in sorted(components.items()):
+    for (origin, component), entries in grouped(inventory).items():
         licences = sorted({e.licence or "UNRESOLVED" for e in entries})
         print(f"{origin:8} {component:24} {len(entries):3}  {', '.join(licences)}")
     flagged = sorted({(e.component, e.flag) for e in inventory.entries if e.flag})
@@ -455,6 +531,73 @@ def summarise(inventory: Inventory) -> None:
             print(f"  {entry.path}  ({entry.component})  {entry.evidence}")
 
 
+def missing_notices(inventory: Inventory, licences: str) -> list[str]:
+    """Distributions that put a binary in the bundle and no licence text in it.
+
+    Only the ones the *owner lookup* named, never the curated labels above:
+    "PySide6 / Qt 6" is a heading a human wrote and not a directory name, so
+    comparing it against the tree would report a gap on every build. What the
+    lookup returns is a real distribution name, which is exactly what
+    collect_licences.py writes its directories under — and those are the
+    dependencies nobody listed, which is the only way this gap opens.
+
+    The failure it is here to catch: a dependency starts shipping a native
+    extension, the inventory attributes it happily, and its notice travels
+    nowhere because RUNTIME_DISTRIBUTIONS never heard of it. The inventory
+    alone cannot see that; it only reports rows it could not attribute.
+    """
+    root = os.path.join(licences, "python")
+    if not os.path.isdir(root):
+        return []
+    shipped = {name.lower() for name in os.listdir(root)}
+    known = {name.lower() for name in OWNERS.values()}
+    named = {
+        entry.component
+        for entry in inventory.entries
+        if entry.origin == "wheel" and entry.component.lower() in known
+    }
+    return sorted(name for name in named if name.lower() not in shipped)
+
+
+def as_markdown(inventories: list[Inventory]) -> str:
+    """The table that goes into the archive, one section per platform.
+
+    Written on the runner, against the bundle it is about to package, because
+    that is the only machine whose answer is the download's own: PyInstaller
+    collects whatever this image's linker resolved. The copy in the repository
+    describes a build of the same source somewhere else, and says so.
+    """
+    lines = [
+        f"# What this {APP_NAME} build contains",
+        "",
+        "Generated by `tools/licence_inventory.py` from the build itself, not",
+        "written by hand. Every row names the evidence it rests on so it can be",
+        "re-checked. None of it is a legal opinion.",
+        "",
+    ]
+    for inventory in inventories:
+        lines += [
+            f"## {inventory.platform} — {len(inventory.entries)} native binaries",
+            "",
+            "| Component | Files | Licence | Evidence |",
+            "|---|---|---|---|",
+        ]
+        for (origin, component), entries in grouped(inventory).items():
+            licences = sorted({e.licence or "**unresolved**" for e in entries})
+            evidence = sorted({e.evidence or "" for e in entries})
+            lines.append(
+                f"| `{component or 'unknown'}` ({origin}) | {len(entries)} | "
+                f"{', '.join(licences)} | {'; '.join(evidence)} |"
+            )
+        lines.append("")
+        flagged = sorted({(e.component, e.flag) for e in inventory.entries if e.flag})
+        if flagged:
+            lines += ["**Flagged for review**", ""]
+            lines += [f"- `{component}` — {note}" for component, note in flagged]
+            lines.append("")
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -465,6 +608,11 @@ def main(argv: list[str] | None = None) -> int:
         help="an extracted release bundle, e.g. linux=/tmp/Orion",
     )
     parser.add_argument("--json", help="write the full inventory here")
+    parser.add_argument("--markdown", help="write the per-platform table here")
+    parser.add_argument(
+        "--licences",
+        help="the licence tree in the bundle, checked for a notice per distribution",
+    )
     args = parser.parse_args(argv)
 
     inventories = []
@@ -479,6 +627,11 @@ def main(argv: list[str] | None = None) -> int:
         print()
         inventories.append(inventory)
 
+    if args.markdown:
+        with open(args.markdown, "w", encoding="utf-8") as handle:
+            handle.write(as_markdown(inventories))
+        print(f"wrote {args.markdown}")
+
     if args.json:
         payload = {
             inv.platform: [vars(e) for e in inv.entries] for inv in inventories
@@ -487,7 +640,17 @@ def main(argv: list[str] | None = None) -> int:
             json.dump(payload, handle, indent=1, sort_keys=True)
         print(f"scritto {args.json}")
 
-    return UNRESOLVED_EXIT if any(inv.unresolved for inv in inventories) else 0
+    gaps = []
+    if args.licences:
+        for inv in inventories:
+            for name in missing_notices(inv, args.licences):
+                gaps.append(f"{inv.platform}: {name} ships a binary and no licence text")
+        for gap in gaps:
+            print(f"no notice: {gap}")
+
+    if any(inv.unresolved for inv in inventories) or gaps:
+        return UNRESOLVED_EXIT
+    return 0
 
 
 if __name__ == "__main__":

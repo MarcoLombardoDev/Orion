@@ -42,14 +42,16 @@ machine's linker resolved, so the contents change when the runner image
 changes, not when someone edits this repository. A hand-maintained list would
 be stale within one CI image bump and nobody would notice.
 
-One caveat on this table specifically: it comes from a build of the tagged
-source made on Ubuntu 24.04, the same family as the release runner, rather
-than from the runner itself. Iris, Proteus and Argus generate their inventory
-during the release and ship it inside the archive, which is strictly better —
-their published numbers are the runner's own. Orion does not yet do that, and
-the same source built on the runner resolves a different number of files into
-the same set of projects, so treat the counts here as the shape of the bundle
-rather than as a checksum of the download.
+The release workflow runs the same script on the runner, against the bundle it
+is about to package, and files the result inside the archive as
+`licenses/THIRD-PARTY-LICENSES-<platform>.md`. Those numbers are the
+download's own, and they are the ones to trust for any particular archive.
+
+One caveat on the table below specifically: it comes from a build of the same
+source made on Ubuntu 24.04 — the same family as the release runner, not the
+runner itself — which resolves a different number of files into the same set
+of projects. Treat the counts here as the shape of the bundle rather than as a
+checksum of the download.
 
 Every entry traces to a machine-readable source:
 

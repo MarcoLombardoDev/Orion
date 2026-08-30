@@ -252,6 +252,76 @@ def test_the_release_body_points_at_the_licence_and_the_commercial_terms():
     assert "COMMERCIAL-LICENSE.md" in body
 
 
+def test_the_bundle_is_inventoried_on_the_machine_that_built_it():
+    """A hand-written list of a PyInstaller bundle is wrong the day after.
+
+    The contents change when the runner image changes, not when anyone edits
+    the repository, so the inventory has to be generated per build and travel
+    with the archive. THIRD-PARTY-LICENSES.md in the repository describes a
+    build of the same source somewhere else, which is a different claim.
+    """
+    steps = build_steps(load_workflow())
+    inventory = step_named(steps, "Inventory what the bundle ships")
+    assert inventory is not None, "nothing inventories the bundle"
+    assert "tools/licence_inventory.py" in inventory["run"]
+    assert "THIRD-PARTY-LICENSES-" in inventory["run"]
+    assert "Orion-LICENSE.txt" in inventory["run"], (
+        "the report is filed by a fixed path rather than beside the licence "
+        "texts, so a layout change puts it somewhere the archive does not carry"
+    )
+
+
+def test_the_inventory_runs_against_the_bundle_that_ships():
+    """Not against the source tree, and not against a build made earlier."""
+    steps = build_steps(load_workflow())
+    names = [step.get("name") for step in steps]
+    assert names.index("Build") < names.index("Inventory what the bundle ships")
+    assert names.index("Inventory what the bundle ships") < names.index("Package")
+    step = step_named(steps, "Inventory what the bundle ships")
+    assert "steps.built.outputs.payload" in step["env"].get("PAYLOAD", "")
+
+
+def test_an_unattributed_binary_warns_rather_than_failing_the_release():
+    """Blocking a release on an unresolved row would only encourage guessing.
+
+    The report already says "unresolved", which is the honest answer; what is
+    needed is that somebody sees it.
+    """
+    step = step_named(build_steps(load_workflow()), "Inventory what the bundle ships")
+    assert "::warning::" in step["run"]
+
+
+def test_a_crashing_inventory_fails_the_step_rather_than_warning():
+    """A release run once shipped two archives with no inventory in them.
+
+    The script raised on every machine without dpkg — which is every Windows
+    and macOS runner — and `|| echo "::warning::"` turned the crash into a
+    warning nobody reads. Exit 1 cannot be the signal for "some rows need a
+    human", because an uncaught Python exception exits 1 as well; the script
+    uses 2 for that, and anything else has to fail the step.
+    """
+    step = step_named(build_steps(load_workflow()), "Inventory what the bundle ships")
+    assert "::error::" in step["run"], (
+        "nothing distinguishes a crash from an unattributed binary, so a crash "
+        "publishes an archive with no inventory in it"
+    )
+    assert "2)" in step["run"], "the warning is not tied to the script's own exit code"
+    assert 'exit "$status"' in step["run"]
+
+
+def test_the_inventory_also_checks_that_every_wheel_got_its_notice():
+    """The two halves of the licence work have to agree with each other.
+
+    The inventory says which distributions put a binary in the archive; the
+    collector says whose terms travel with it, from a list kept by hand. A
+    dependency that starts shipping a native extension is attributed happily by
+    the first and missed entirely by the second, and nothing compared them.
+    """
+    step = step_named(build_steps(load_workflow()), "Inventory what the bundle ships")
+    assert "--licences" in step["run"], (
+        "nothing checks that a binary's licence text is in the archive with it"
+    )
+
 class TestSelfCheck:
     """The flag the smoke test relies on.
 
