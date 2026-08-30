@@ -25,7 +25,15 @@ guard against has already been shipped once, in one of these four projects:
 
 from pathlib import Path
 
-import pytest
+# A hard import, not pytest.importorskip. The skip was there from when PyYAML
+# was an optional convenience, and it outlived that: PyYAML is declared in this
+# repository's development dependencies, so a run without it is a broken
+# environment, not a lighter one. Meanwhile the skip was doing real damage --
+# 35 of the checks below parse the release workflow, and on a runner that had
+# not installed PyYAML they reported nothing at all and the suite finished
+# green. Guards on the file that publishes the releases were the guards not
+# being run, and nothing said so. Missing now fails at collection.
+import yaml
 
 REPO = Path(__file__).resolve().parent.parent
 WORKFLOW_PATH = REPO / ".github" / "workflows" / "release.yml"
@@ -44,7 +52,6 @@ PLATFORMS = {
 
 
 def load_workflow():
-    yaml = pytest.importorskip("yaml", reason="pyyaml is needed to check workflow files")
     return yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
 
 
@@ -72,7 +79,6 @@ def test_every_workflow_file_in_the_repository_parses():
     run. Catching the syntax error here is much cheaper than noticing its
     absence on the Actions tab.
     """
-    yaml = pytest.importorskip("yaml")
     for path in (REPO / ".github" / "workflows").iterdir():
         if path.suffix in (".yml", ".yaml"):
             assert yaml.safe_load(path.read_text(encoding="utf-8")), path.name

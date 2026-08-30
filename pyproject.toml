@@ -34,7 +34,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-qt>=4.4", "ruff>=0.5"]
+dev = [
+  "pytest>=8.0",
+  "pytest-qt>=4.4",
+  "ruff>=0.5",
+  # tests/test_release_workflow.py parses .github/workflows/*.yml. The CI
+  # job installs this extra and nothing else, so leaving PyYAML out of it
+  # meant 35 of those checks never ran on a runner.
+  "pyyaml>=6",
+]
 
 [project.urls]
 Homepage = "https://github.com/MarcoLombardoDev/Orion"
