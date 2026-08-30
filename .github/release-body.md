@@ -50,6 +50,11 @@ with the file it describes can only tell you the file is undamaged.
 On **macOS**, Gatekeeper refuses an unidentified developer the same way: right-click the
 app and choose **Open**, or run `xattr -dr com.apple.quarantine Orion.app`.
 
+Each archive unpacks to a folder holding the executable and a `licenses/` directory: the
+terms of everything Orion is built on, plus an inventory of every native library in the
+build and where each licence determination came from. That inventory is generated on the
+machine that produced the archive, so it describes what you actually downloaded.
+
 Running from source instead is described in the
 [README](https://github.com/MarcoLombardoDev/Orion/blob/{{TAG}}/README.md).
 
