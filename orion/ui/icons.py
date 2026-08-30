@@ -303,7 +303,7 @@ def icon(name: str, size: int = 20, color: QColor | None = None) -> QIcon:
 
     result = QIcon()
     for scale in (1, 2):
-        result.addPixmap(_render(shapes, size * scale, tint, scale))
+        result.addPixmap(_render(shapes, size, tint, scale))
 
     # A second drawing, in the colour that reads on the accent, for the states
     # Qt paints with the accent behind them: a checked toolbar button, and a
@@ -315,7 +315,7 @@ def icon(name: str, size: int = 20, color: QColor | None = None) -> QIcon:
     # adding these takes nothing away.
     on_tint = _theme.color("accent_text") if _theme else QColor("#ffffff")
     for scale in (1, 2):
-        pixmap = _render(shapes, size * scale, on_tint, scale)
+        pixmap = _render(shapes, size, on_tint, scale)
         result.addPixmap(pixmap, QIcon.Mode.Normal, QIcon.State.On)
         result.addPixmap(pixmap, QIcon.Mode.Active, QIcon.State.On)
         result.addPixmap(pixmap, QIcon.Mode.Selected, QIcon.State.On)
@@ -325,21 +325,36 @@ def icon(name: str, size: int = 20, color: QColor | None = None) -> QIcon:
     return result
 
 
-def _render(shapes: Sequence[Shape], pixels: int, color: QColor, scale: int) -> QPixmap:
-    pixmap = QPixmap(QSize(pixels, pixels))
+def _render(shapes: Sequence[Shape], size: int, color: QColor, scale: int) -> QPixmap:
+    """Draw the shapes into a pixmap *size* logical points square.
+
+    ``scale`` is the device pixel ratio the pixmap is for: the buffer holds
+    ``size * scale`` real pixels, so the drawing has the resolution a HiDPI
+    screen wants, and Qt reports the pixmap as ``size`` points either way.
+
+    Everything below draws in **logical** units, which is the one thing worth
+    being careful about here. A QPainter on a pixmap that carries a device
+    pixel ratio already applies it: its coordinate space is ``size`` wide, not
+    ``size * scale``. Multiplying the normalised shapes by the pixel count as
+    well scaled every icon by the ratio a second time, so on a HiDPI screen —
+    where Qt picks the ratio-2 pixmap — each icon came out twice as big as its
+    button and the button showed the corner of it. It looked like the toolbar
+    had been zoomed into.
+    """
+    pixmap = QPixmap(QSize(size * scale, size * scale))
     pixmap.setDevicePixelRatio(float(scale))
     pixmap.fill(Qt.GlobalColor.transparent)
 
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     pen = QPen(color)
-    pen.setWidthF(max(1.0, pixels * 0.085))
+    pen.setWidthF(max(1.0, size * 0.085))
     pen.setCapStyle(Qt.PenCapStyle.RoundCap)
     pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
     painter.setPen(pen)
 
     for shape in shapes:
-        _paint(painter, shape, pixels, color)
+        _paint(painter, shape, size, color)
     painter.end()
     return pixmap
 

@@ -843,3 +843,114 @@ class TestIconsOnAnActiveButton:
                  / "resources" / "styles" / "orion.qss").read_text(encoding="utf-8")
         block = sheet.split("QToolButton:pressed", 1)[1].split("}", 1)[0]
         assert "#2c3e50" in block, "the checked fill is not the dark primary"
+
+
+class TestIconsAreNotScaledTwice:
+    """The icons must be the same size on a HiDPI screen as anywhere else.
+
+    Regression test for a reported bug: every toolbar icon appeared blown up
+    and cropped, "as if there were a zoom on it". A ``QPainter`` drawing on a
+    ``QPixmap`` that carries a device pixel ratio already works in *logical*
+    units — its coordinate space is the pixmap's device size divided by the
+    ratio — but the renderer was multiplying the normalised (0..1) shapes by
+    the device pixel count. So the ratio was applied twice, and the ratio-2
+    pixmap, the one Qt picks on a HiDPI display, was drawn at 4x instead of
+    2x: an icon twice the size of its button, of which the button showed one
+    corner.
+
+    Comparing the two ratios against each other is what makes this stick. An
+    absolute assertion about pixel positions would have to be rewritten every
+    time a glyph is redrawn; that the same icon covers the same fraction of
+    the button whatever the screen is a property that should never change.
+    """
+
+    @staticmethod
+    def _ink_bounds(pixmap):
+        """The drawn area, in *logical* units, or ``None`` if nothing drew."""
+        image = pixmap.toImage()
+        ratio = pixmap.devicePixelRatio()
+        xs = [
+            (x, y)
+            for y in range(image.height())
+            for x in range(image.width())
+            if image.pixelColor(x, y).alpha() > 20
+        ]
+        if not xs:
+            return None
+        left = min(x for x, _ in xs) / ratio
+        right = (max(x for x, _ in xs) + 1) / ratio
+        top = min(y for _, y in xs) / ratio
+        bottom = (max(y for _, y in xs) + 1) / ratio
+        return left, top, right, bottom
+
+    @pytest.mark.parametrize("scale", [1, 2])
+    def test_the_pixmap_reports_the_size_that_was_asked_for(self, qapp, scale):
+        from PySide6.QtGui import QColor
+
+        from orion.ui.icons import ICONS, _render
+
+        pixmap = _render(ICONS["close"], 20, QColor("#000000"), scale)
+        assert pixmap.width() == 20 * scale, "the buffer is not at the device resolution"
+        assert pixmap.devicePixelRatio() == float(scale)
+        # Qt lays the icon out from this, so it is what the button sees.
+        assert pixmap.deviceIndependentSize().toSize().width() == 20
+
+    def test_every_icon_covers_the_same_area_at_both_ratios(self, qapp):
+        from PySide6.QtGui import QColor
+
+        from orion.ui.icons import ICONS, _render
+
+        black = QColor("#000000")
+        for name, shapes in ICONS.items():
+            at_one = self._ink_bounds(_render(shapes, 20, black, 1))
+            at_two = self._ink_bounds(_render(shapes, 20, black, 2))
+            assert at_one is not None, f"“{name}” drew nothing at ratio 1"
+            assert at_two is not None, f"“{name}” drew nothing at ratio 2"
+            for logical_one, logical_two, edge in zip(
+                at_one, at_two, ("left", "top", "right", "bottom"), strict=True
+            ):
+                assert logical_two == pytest.approx(logical_one, abs=1.5), (
+                    f"“{name}” is drawn at a different size on a HiDPI screen: "
+                    f"its {edge} edge is at {logical_one} at ratio 1 and "
+                    f"{logical_two} at ratio 2"
+                )
+
+    def test_every_icon_stays_centred_in_its_button(self, qapp):
+        """The visible half of the bug: what the user actually saw.
+
+        Where the drawing sits is a separate question from how big it is, and
+        it is the one that made the report look like a zoom: an icon drawn at
+        twice its size is clipped by the pixmap, so the surviving ink is the
+        top-left corner of the glyph and its centre of mass slides towards the
+        bottom right. Several of these glyphs legitimately reach the border —
+        the open-folder is 0.98 wide by design — so the edges cannot be
+        asserted directly, but a balanced drawing has its ink near the middle
+        whatever the screen.
+        """
+        from PySide6.QtGui import QColor
+
+        from orion.ui.icons import ICONS, _render
+
+        black = QColor("#000000")
+        for name, shapes in ICONS.items():
+            for scale in (1, 2):
+                pixmap = _render(shapes, 20, black, scale)
+                image = pixmap.toImage()
+                ratio = pixmap.devicePixelRatio()
+                ink = [
+                    (x, y)
+                    for y in range(image.height())
+                    for x in range(image.width())
+                    if image.pixelColor(x, y).alpha() > 20
+                ]
+                assert ink, f"“{name}” drew nothing at ratio {scale}"
+                centre_x = sum(x for x, _ in ink) / len(ink) / ratio
+                centre_y = sum(y for _, y in ink) / len(ink) / ratio
+                assert centre_x == pytest.approx(10.0, abs=3.0), (
+                    f"“{name}” sits off to one side at ratio {scale}: "
+                    f"its ink is centred at x={centre_x:.1f} of 20"
+                )
+                assert centre_y == pytest.approx(10.0, abs=3.0), (
+                    f"“{name}” sits high or low at ratio {scale}: "
+                    f"its ink is centred at y={centre_y:.1f} of 20"
+                )
