@@ -23,7 +23,7 @@ import logging
 from collections.abc import Iterable
 from enum import Enum
 
-from PySide6.QtCore import QPointF, QRectF, QSizeF, Qt, Signal
+from PySide6.QtCore import QPoint, QPointF, QRectF, QSizeF, Qt, Signal
 from PySide6.QtGui import (
     QBrush,
     QColor,
@@ -97,6 +97,9 @@ class PdfCanvas(QGraphicsView):
     status_message = Signal(str)
     tool_finished = Signal()
     files_dropped = Signal(list, int, object)  # (paths, page_index, base Point)
+    #: Right-click on the page area, with the position to open the menu at.
+    #: The canvas has already settled what is selected by the time it fires.
+    context_menu_requested = Signal(QPoint)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -628,6 +631,44 @@ class PdfCanvas(QGraphicsView):
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt naming
         super().mouseDoubleClickEvent(event)
 
+    def contextMenuEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        """Right-click: settle the selection, then ask for a menu.
+
+        Deciding *what* the click is about belongs here, because only the
+        canvas knows what is under the cursor; deciding what can be done to it
+        belongs to the window, which owns the actions. So this sets the
+        selection and emits, and builds nothing.
+
+        Right-clicking an object that is not already selected selects it —
+        which is what every editor does, and what makes the menu that follows
+        about the thing the user pointed at rather than about whatever was
+        selected beforehand. Right-clicking inside an existing multiple
+        selection leaves it alone, so "delete these six" still works.
+        """
+        if self._document is None:
+            return
+        scene_pos = self.mapToScene(event.pos())
+        item = self._object_item_at(scene_pos)
+        if item is None:
+            self.clear_selection()
+        elif not item.isSelected():
+            # Bypasses the item flags on purpose: a right-click offers the menu
+            # whatever tool is active, and outside Select the items are not
+            # accepting mouse buttons at all.
+            self.select_objects([item.object.id])
+        page_item = self.page_item_at(scene_pos)
+        if page_item is not None:
+            self._set_current_page(page_item.index)
+        self.context_menu_requested.emit(event.globalPos())
+        event.accept()
+
+    def _object_item_at(self, scene_pos: QPointF) -> ObjectItem | None:
+        """The topmost object under *scene_pos*, ignoring the page beneath."""
+        for candidate in self._scene.items(scene_pos):
+            if isinstance(candidate, ObjectItem):
+                return candidate
+        return None
+
     # -- panning ----------------------------------------------------------
     def _begin_pan(self, event: QMouseEvent) -> None:
         self._panning = True
@@ -873,6 +914,14 @@ class PdfCanvas(QGraphicsView):
         for item in self.selected_items():
             if isinstance(item, TextObjectItem):
                 item.begin_editing()
+                return True
+        return False
+
+    def edit_selected_note(self) -> bool:
+        """Open the note dialog for the selected annotation, if there is one."""
+        for item in self.selected_items():
+            if isinstance(item.object, AnnotationObject):
+                self.request_note_edit(item)
                 return True
         return False
 

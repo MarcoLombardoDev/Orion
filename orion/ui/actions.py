@@ -106,6 +106,7 @@ ACTIONS: tuple[ActionSpec, ...] = (
     # -- Tools -----------------------------------------------------------
     ActionSpec("tools.insert_image", "Insert &Image…", "image", "Ctrl+Shift+I", "Place an image on the page"),
     ActionSpec("tools.edit_text", "&Edit Text Object", "text", "F2", "Edit the selected text object"),
+    ActionSpec("tools.edit_note", "Edit &Comment…", "comment", "", "Edit the selected annotation's comment"),
     # -- Help ------------------------------------------------------------
     ActionSpec("help.shortcuts", "&Keyboard Shortcuts", "", "", "List the keyboard shortcuts", needs_document=False),
     ActionSpec("help.log", "Open &Log Folder", "", "", "Open the folder containing Orion's log file", needs_document=False),

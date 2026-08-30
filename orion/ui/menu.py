@@ -104,7 +104,7 @@ _STRUCTURE: tuple[tuple[str, tuple[str | None, ...]], ...] = (
             "pages.split",
         ),
     ),
-    ("&Tools", ("@tools", SEPARATOR, "tools.insert_image", "tools.edit_text")),
+    ("&Tools", ("@tools", SEPARATOR, "tools.insert_image", "tools.edit_text", "tools.edit_note")),
     ("&Help", ("help.shortcuts", "help.log", SEPARATOR, "help.about")),
 )
 

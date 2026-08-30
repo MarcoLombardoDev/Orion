@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QVBoxLayout,
     QWidget,
@@ -204,6 +205,7 @@ class MainWindow(QMainWindow):
         self._canvas.image_requested.connect(self._insert_image_at)
         self._canvas.status_message.connect(self._status.flash)
         self._canvas.tool_finished.connect(self._return_to_select_tool)
+        self._canvas.context_menu_requested.connect(self._show_canvas_menu)
         self._canvas.files_dropped.connect(self._on_files_dropped)
 
         self._thumbnails.page_activated.connect(self._canvas.go_to_page)
@@ -283,6 +285,7 @@ class MainWindow(QMainWindow):
         # Tools
         connect("tools.insert_image", self.insert_image)
         connect("tools.edit_text", lambda: self._canvas.edit_selected_text())
+        connect("tools.edit_note", lambda: self._canvas.edit_selected_note())
         # Help
         connect("help.shortcuts", self.show_shortcuts)
         connect("help.log", self.open_log_folder)
@@ -980,6 +983,74 @@ class MainWindow(QMainWindow):
         if info_hint:
             self._status.flash(info_hint, 3000)
 
+    #: The canvas context menu, as action keys. ``None`` is a separator, and a
+    #: key whose action is disabled is left out rather than shown greyed: a
+    #: menu opened on one object should be short and about that object, which
+    #: is the difference between it and the menu bar.
+    OBJECT_MENU: tuple[str | None, ...] = (
+        "tools.edit_text",
+        "tools.edit_note",
+        None,
+        "edit.cut",
+        "edit.copy",
+        "edit.duplicate",
+        None,
+        "edit.bring_front",
+        "edit.send_back",
+        None,
+        "edit.delete",
+    )
+    PAGE_MENU: tuple[str | None, ...] = (
+        "edit.paste",
+        "edit.select_all",
+        None,
+        "pages.rotate_left",
+        "pages.rotate_right",
+        None,
+        "pages.insert",
+        "pages.duplicate",
+        "pages.delete",
+    )
+
+    def canvas_menu(self) -> QMenu | None:
+        """Build the right-click menu for the canvas's current selection.
+
+        This is the gesture people reach for to recolour or delete a mark they
+        made, and it was the one thing the canvas did not answer: right-click
+        did nothing anywhere on the page. The entries are the window's own
+        actions rather than copies, so each one carries its shortcut and its
+        enabled state, and a change to the menu bar cannot drift away from a
+        change here.
+
+        Building and showing are separate because showing blocks until the
+        user chooses something, which makes the menu untestable from the same
+        call — and the part worth testing is which entries it offers.
+        """
+        if self._session is None:
+            return None
+        self._update_ui_state()
+        keys = self.OBJECT_MENU if self._canvas.selected_objects() else self.PAGE_MENU
+
+        menu = QMenu(self._canvas)
+        pending_separator = False
+        for key in keys:
+            if key is None:
+                pending_separator = bool(menu.actions())
+                continue
+            action = self._actions[key]
+            if not action.isEnabled():
+                continue
+            if pending_separator:
+                menu.addSeparator()
+                pending_separator = False
+            menu.addAction(action)
+        return menu if menu.actions() else None
+
+    def _show_canvas_menu(self, position) -> None:
+        menu = self.canvas_menu()
+        if menu is not None:
+            menu.exec(position)
+
     def _return_to_select_tool(self) -> None:
         """Most tools are one-shot; go back to Select once the object exists."""
         if self._canvas.tool in (Tool.SELECT, Tool.HAND, Tool.FREEHAND):
@@ -1079,8 +1150,12 @@ class MainWindow(QMainWindow):
                     "edit.bring_front", "edit.send_back"):
             self._actions[key].setEnabled(has_selection)
         self._actions["edit.paste"].setEnabled(not self._clipboard.is_empty)
+        selection = self._canvas.selected_objects()
         self._actions["tools.edit_text"].setEnabled(
-            any(isinstance(obj, TextObject) for obj in self._canvas.selected_objects())
+            any(isinstance(obj, TextObject) for obj in selection)
+        )
+        self._actions["tools.edit_note"].setEnabled(
+            any(isinstance(obj, AnnotationObject) for obj in selection)
         )
 
         index, total = self._canvas.current_page, self._canvas.page_count

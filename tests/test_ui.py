@@ -1023,3 +1023,167 @@ def _click_at(window, base: tuple[float, float]) -> None:
                 Qt.KeyboardModifier.NoModifier,
             ),
         )
+
+
+class TestTheCanvasContextMenu:
+    """Right-click on the page, which used to do nothing at all.
+
+    It is the gesture people reach for to recolour or delete a mark they made
+    — and the reason the reported "I can't click my highlight any more" had a
+    second half to it, beyond annotations not surviving a reopen.
+
+    The menu is opened with ``QMenu.exec``, which blocks until the user picks
+    something, and PySide6 resolves that call through the C++ slot so it
+    cannot be replaced from Python. So the window's handler is unhooked for
+    the duration and the two halves are checked separately: that the canvas
+    settles the selection and emits, and that the window offers the right
+    entries for that selection. The connection between them has a test of its
+    own below.
+    """
+
+    @pytest.fixture
+    def emitted(self, window):
+        """Records the menu requests, with the window's own handler unhooked."""
+        window._canvas.context_menu_requested.disconnect(window._show_canvas_menu)
+        positions: list[object] = []
+        window._canvas.context_menu_requested.connect(positions.append)
+        yield positions
+        window._canvas.context_menu_requested.disconnect(positions.append)
+        window._canvas.context_menu_requested.connect(window._show_canvas_menu)
+
+    @staticmethod
+    def _right_click(window, base: tuple[float, float]) -> None:
+        from PySide6.QtCore import QPoint
+        from PySide6.QtGui import QContextMenuEvent
+
+        view = window._canvas
+        view.set_zoom(1.0)
+        content = view._page_items[0].content
+        point = QPointF(view.mapFromScene(content.mapToScene(QPointF(*base))))
+        position = QPoint(int(point.x()), int(point.y()))
+        view.contextMenuEvent(
+            QContextMenuEvent(
+                QContextMenuEvent.Reason.Mouse,
+                position,
+                view.viewport().mapToGlobal(position),
+            )
+        )
+
+    @staticmethod
+    def _entries(window) -> list[str]:
+        """The menu the window would open now, by action key.
+
+        Keys rather than labels: every action carries its registry key in
+        ``data()``, and a label is free to be reworded.
+        """
+        menu = window.canvas_menu()
+        assert menu is not None, "no menu was offered"
+        return [a.data() for a in menu.actions() if not a.isSeparator()]
+
+    def test_right_clicking_an_object_selects_it_and_offers_object_actions(
+        self, window, qapp, sample_pdf, emitted
+    ):
+        window.open_path(sample_pdf)
+        pump(qapp)
+        _drag(window, Tool.RECTANGLE, (40.0, 200.0), (180.0, 280.0))
+        pump(qapp)
+        window._canvas.clear_selection()
+        pump(qapp)
+
+        self._right_click(window, (110.0, 240.0))
+        pump(qapp)
+
+        shape = window.session.document[0].objects[0]
+        assert [o.id for o in window._canvas.selected_objects()] == [shape.id]
+        assert len(emitted) == 1, "the canvas did not ask for a menu"
+        entries = self._entries(window)
+        assert "edit.delete" in entries
+        assert "pages.rotate_right" not in entries
+
+    def test_right_clicking_empty_space_offers_the_page_actions(
+        self, window, qapp, sample_pdf, emitted
+    ):
+        window.open_path(sample_pdf)
+        pump(qapp)
+        _drag(window, Tool.RECTANGLE, (40.0, 200.0), (180.0, 280.0))
+        pump(qapp)
+
+        self._right_click(window, (330.0, 520.0))
+        pump(qapp)
+
+        assert window._canvas.selected_objects() == [], "the click was not on the object"
+        entries = self._entries(window)
+        assert "pages.rotate_right" in entries
+        assert "edit.delete" not in entries, "the page menu must not offer object actions"
+
+    def test_a_multiple_selection_is_kept(self, window, qapp, sample_pdf, emitted):
+        """Right-clicking inside a selection must not shrink it to one object.
+
+        Otherwise "delete these six" quietly becomes "delete this one".
+        """
+        window.open_path(sample_pdf)
+        pump(qapp)
+        _drag(window, Tool.RECTANGLE, (40.0, 200.0), (180.0, 280.0))
+        pump(qapp)
+        _drag(window, Tool.ELLIPSE, (40.0, 320.0), (180.0, 400.0))
+        pump(qapp)
+        window._canvas.select_objects([o.id for o in window.session.document[0].objects])
+        pump(qapp)
+
+        self._right_click(window, (110.0, 240.0))
+        pump(qapp)
+        assert len(window._canvas.selected_objects()) == 2
+
+    def test_an_annotation_offers_its_comment_and_delete(
+        self, window, qapp, sample_pdf, emitted
+    ):
+        """The user's actual errand, reached entirely with the right button."""
+        window.open_path(sample_pdf)
+        pump(qapp)
+        _drag(window, Tool.HIGHLIGHT, (45.0, 78.0), (200.0, 106.0))
+        pump(qapp)
+        window._canvas.clear_selection()
+        pump(qapp)
+
+        annotation = window.session.document[0].objects[0]
+        centre = annotation.rect.center
+        self._right_click(window, (centre.x, centre.y))
+        pump(qapp)
+
+        entries = self._entries(window)
+        assert "tools.edit_note" in entries, "no way to edit the comment"
+        assert "edit.delete" in entries
+        assert "tools.edit_text" not in entries, "an annotation is not a text box"
+
+        window._actions["edit.delete"].trigger()
+        pump(qapp)
+        assert window.session.document[0].objects == []
+
+    def test_a_text_box_offers_editing_and_an_annotation_does_not(
+        self, window, qapp, sample_pdf, emitted
+    ):
+        window.open_path(sample_pdf)
+        pump(qapp)
+        _drag(window, Tool.TEXT, (40.0, 300.0), (260.0, 350.0))
+        pump(qapp)
+        text = window.session.document[0].objects[0]
+        window._canvas._item_index[text.id].end_editing(commit=True)
+        pump(qapp)
+
+        self._right_click(window, (150.0, 325.0))
+        pump(qapp)
+        entries = self._entries(window)
+        assert "tools.edit_text" in entries
+        assert "tools.edit_note" not in entries
+
+    def test_the_window_is_listening_to_the_canvas(self, window):
+        """The one line the tests above unhook, checked without opening a menu.
+
+        ``disconnect`` raises if the slot is not connected, which is the whole
+        assertion; it is put straight back.
+        """
+        window._canvas.context_menu_requested.disconnect(window._show_canvas_menu)
+        window._canvas.context_menu_requested.connect(window._show_canvas_menu)
+
+    def test_nothing_is_offered_without_a_document(self, window):
+        assert window.canvas_menu() is None

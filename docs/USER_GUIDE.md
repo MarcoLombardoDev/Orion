@@ -117,6 +117,13 @@ them.
 Click to select. **Ctrl/Cmd+click** adds to the selection. Dragging on empty
 space with the Select tool draws a rubber band.
 
+**Right-click** anything on the page for a menu of what can be done to it:
+edit its text or its comment, cut, copy, duplicate, change its stacking, or
+delete it. Right-clicking an object that is not selected selects it first;
+right-clicking inside a selection of several leaves that selection alone.
+Right-click empty space instead and the menu is about the page — paste, select
+everything on it, rotate it, duplicate it, delete it.
+
 A selected object shows a bounding box, eight resize handles and a round
 rotation handle above it.
 

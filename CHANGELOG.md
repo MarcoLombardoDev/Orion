@@ -8,6 +8,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- **A right-click menu on the page.** The canvas answered nothing at all to
+  the right button, anywhere, which is the gesture people reach for to
+  recolour or remove a mark they have just made — the other half of the
+  report that a highlight could not be modified. Right-clicking an object
+  offers what can be done to it, right-clicking the page offers what can be
+  done to the page, and the entries are the window's own actions rather than
+  copies of them, so each carries its shortcut and its enabled state and
+  cannot drift away from the menu bar. Includes **Edit Comment…**, which is
+  new: a comment could be written when a note was placed, and after that only
+  reached by double-clicking the note itself.
 - **The annotations already in a PDF are read back, and are editable.** Orion
   wrote highlights, underlines, strikeouts, ink and notes as standard PDF
   annotations from the start, and never read one. So marking up a document
