@@ -343,6 +343,7 @@ class TestApplicationIcon:
         it, so on a machine without it the comparison would be measuring the
         font rather than the generator.
         """
+        import hashlib
         import subprocess
         import sys
 
@@ -352,8 +353,15 @@ class TestApplicationIcon:
             import make_icon
         finally:
             sys.path.pop(0)
-        if not any(pathlib.Path(p).exists() for p in make_icon.FONT_CANDIDATES):
-            pytest.skip("no serif font installed; the drawing would differ")
+        # Not "some candidate exists": the committed files were drawn with
+        # Liberation Serif, and a Windows runner resolves the next candidate --
+        # real Times New Roman -- which is metric-compatible but not the same
+        # outlines. The comparison would then be measuring the font.
+        chosen = next(
+            (p for p in make_icon.FONT_CANDIDATES if pathlib.Path(p).exists()), None
+        )
+        if chosen is None or "Liberation" not in chosen:
+            pytest.skip(f"drawn with {chosen or 'no serif font'}, not Liberation Serif")
 
         run = subprocess.run(
             [sys.executable, str(REPO / "tools" / "make_icon.py"),
@@ -371,9 +379,13 @@ class TestApplicationIcon:
                 assert suffix == ".icns", f"{committed.name} is missing"
                 continue
             fresh = (tmp_path / "orion").with_suffix(suffix)
-            assert fresh.read_bytes() == committed.read_bytes(), (
-                f"{committed.name} is not what tools/make_icon.py draws today"
-            )
+            # Compared by digest, not by bytes: an assertion on the
+            # contents printed a hundred lines of PNG into the CI log
+            # and said nothing a reader could act on.
+            assert (
+                hashlib.sha256(fresh.read_bytes()).hexdigest()
+                == hashlib.sha256(committed.read_bytes()).hexdigest()
+            ), f"{committed.name} is not what tools/make_icon.py draws today"
 
     def test_the_generator_is_kept_with_them(self):
         """So the next one can be drawn the same way rather than guessed at."""
