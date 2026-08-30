@@ -213,6 +213,32 @@ def _page_geometry(pdf_page: pypdf.PageObject) -> tuple[PageGeometry, float, flo
 # --------------------------------------------------------------------------
 # Object stamping
 # --------------------------------------------------------------------------
+def _drop_imported_annotations(pdf_page: pypdf.PageObject, page: Page) -> None:
+    """Remove the annotations the model now owns from the copied page.
+
+    They were read into :class:`AnnotationObject`s when the file was opened
+    and are about to be written back from those, so leaving the originals in
+    place would double every one of them — and would quietly resurrect any the
+    user had deleted, which is worse.
+
+    Only the recorded indices go. An annotation Orion did not import — a link,
+    a form field, a markup kind it has no tool for, one too damaged to read —
+    is not in that list and rides through the save untouched. The indices
+    survive the copy because pypdf preserves ``/Annots`` order, which
+    ``tests/test_annotation_import.py`` checks rather than assumes.
+    """
+    if not page.imported_annotations:
+        return
+    annots = pdf_page.get("/Annots")
+    if not annots:
+        return
+    for position in sorted(page.imported_annotations, reverse=True):
+        if 0 <= position < len(annots):
+            del annots[position]
+        else:  # pragma: no cover - the source changed under the document
+            log.warning("Imported annotation %d is no longer in the page", position)
+
+
 def _stamp_page(writer: PdfWriter, index: int, page: Page) -> None:
     """Write every Orion object of *page* onto the corresponding PDF page.
 
@@ -222,6 +248,7 @@ def _stamp_page(writer: PdfWriter, index: int, page: Page) -> None:
     """
     pdf_page = writer.pages[index]
     geometry, origin_x, origin_y = _page_geometry(pdf_page)
+    _drop_imported_annotations(pdf_page, page)
 
     drawables = [obj for obj in page.objects if not isinstance(obj, AnnotationObject)]
     annotations = [obj for obj in page.objects if isinstance(obj, AnnotationObject)]
@@ -555,6 +582,31 @@ def _annotation_dict(
     return entry
 
 
+def _compress(out: PdfWriter) -> None:
+    """Deduplicate objects and drop orphans — in that order, deliberately.
+
+    pypdf's one-shot ``compress_identical_objects()`` does both in a single
+    pass, and the pass marks an object as referenced under its *old* number
+    before redirecting the reference to the survivor. So when a live object is
+    merged onto an unreferenced twin, the survivor looks unreferenced, gets
+    dropped, and the file is written with a reference to an object that is not
+    in it. Readers then see the annotation as missing.
+
+    That combination is not hypothetical here: dropping an imported annotation
+    from a copied page leaves the original behind as an orphan, and the copy
+    Orion writes from the model is frequently identical to it — most of the
+    time nothing about the annotation was edited, which is exactly when the
+    two hash the same.
+
+    Removing the orphans first, with deduplication off, means nothing can be
+    merged onto a dead object; deduplicating afterwards, with orphan removal
+    off, has nothing left to strand. Same output as the one-shot call was
+    meant to produce, in two passes that cannot interact.
+    """
+    out.compress_identical_objects(remove_duplicates=False, remove_unreferenced=True)
+    out.compress_identical_objects(remove_duplicates=True, remove_unreferenced=False)
+
+
 # --------------------------------------------------------------------------
 # Public API
 # --------------------------------------------------------------------------
@@ -586,7 +638,7 @@ def build_pdf_bytes(document: Document, *, garbage: int = 3, deflate: bool = Tru
 
         if garbage:
             with suppress(Exception):
-                out.compress_identical_objects()
+                _compress(out)
         if deflate:
             for pdf_page in out.pages:
                 with suppress(Exception):

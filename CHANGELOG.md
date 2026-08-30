@@ -8,6 +8,21 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- **The annotations already in a PDF are read back, and are editable.** Orion
+  wrote highlights, underlines, strikeouts, ink and notes as standard PDF
+  annotations from the start, and never read one. So marking up a document
+  worked until it was closed: reopen it and the highlight was still drawn —
+  pdfium draws annotations — with nothing behind it to select, recolour or
+  delete. Deleting one somebody else had put in a contract was impossible in a
+  PDF *editor*, and a highlight of your own became permanent the moment you
+  saved. They now arrive as ordinary objects, from any program's file, and the
+  writer drops the originals it took ownership of so an edit replaces rather
+  than duplicates. Ownership is recorded as the `/Annots` indices the model
+  took, not guessed from the subtype at save time: an annotation Orion cannot
+  model — a link, a form field, a markup kind it has no tool for, one too
+  damaged to read — is neither imported nor touched. Pages imported from
+  another PDF come in the same way, so inserting somebody's page no longer
+  flattens their markup.
 - **A palette, where Orion had none.** `resources/styles/` held a README and
   nothing else, so the interface came up in whatever the platform's default
   was. It now carries the same colours Iris and Proteus get from
@@ -193,6 +208,24 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   highlights and images came out identical on all four page rotations.
 
 ### Fixed
+- **Icons were drawn twice as large as their buttons on a HiDPI screen.** The
+  renderer allocated the pixmap at `size × ratio` device pixels, set its device
+  pixel ratio, and then handed that same device pixel count to the shape
+  painter — but a `QPainter` on a pixmap carrying a ratio already works in
+  logical units. The normalised shapes were multiplied by the ratio a second
+  time, so the ratio-2 pixmap, the one Qt picks on a HiDPI display, came out at
+  4× instead of 2×: an icon twice the size of its button, of which the button
+  showed one corner. It looked like the toolbar had been zoomed into.
+- **Saving could write a reference to an annotation that was not in the
+  file.** pypdf's `compress_identical_objects()` deduplicates and drops
+  orphans in one pass, and that pass marks an object as referenced under its
+  *old* number before redirecting the reference to the survivor — so a live
+  object merged onto an unreferenced twin left the survivor looking
+  unreferenced, dropped, and referenced from the page anyway. Dropping an
+  imported annotation from a copied page creates exactly that pair, since the
+  copy Orion writes from the model is usually identical to the original. The
+  two jobs are now done in separate passes that cannot interact, for the same
+  output size.
 - **The licence notice disappeared from a window with room for it.** Placing
   it required the *bar-centred* rectangle to clear the page and zoom
   indicators, and gave up when it did not — so a window wide enough for the

@@ -63,6 +63,12 @@ class Page:
     #: base-space coordinates into PDF content space.
     source_rotation: int = 0
     label: str = ""
+    #: Indices into the *source* page's ``/Annots`` that Orion imported as
+    #: :class:`~orion.document.annotations.AnnotationObject`. The writer drops
+    #: exactly these from the copied page and writes the model's version
+    #: instead, so an imported annotation is edited rather than duplicated —
+    #: and one that was not imported is left in the file untouched.
+    imported_annotations: tuple[int, ...] = ()
 
     # -- geometry --------------------------------------------------------
     @property
@@ -196,6 +202,7 @@ class Page:
             objects=[obj.clone() for obj in self.objects],
             source_rotation=self.source_rotation,
             label=self.label,
+            imported_annotations=self.imported_annotations,
         )
 
     # -- serialisation ---------------------------------------------------
@@ -207,6 +214,7 @@ class Page:
             "rotation": self.rotation,
             "source_rotation": self.source_rotation,
             "label": self.label,
+            "imported_annotations": list(self.imported_annotations),
             "objects": [obj.to_dict() for obj in self.objects],
         }
 
@@ -220,6 +228,9 @@ class Page:
             rotation=normalise_rotation(int(data.get("rotation", 0))),
             source_rotation=normalise_rotation(int(data.get("source_rotation", 0))),
             label=data.get("label", ""),
+            imported_annotations=tuple(
+                int(i) for i in data.get("imported_annotations", ())
+            ),
             objects=[create_object(item) for item in data.get("objects", [])],
         )
 

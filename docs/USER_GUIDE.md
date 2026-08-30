@@ -101,6 +101,17 @@ page, for example — the status bar says so and nothing is added.
 Click to place one; a dialog asks for the text. Double-click it later to edit.
 Both become standard PDF text annotations, so other readers show them.
 
+### Annotations already in the file
+
+Highlights, underlines, strikeouts, freehand ink and notes are read back when
+you open a document, whether Orion wrote them or another program did. Click one
+to select it, change its colour or its comment, or press Delete to remove it —
+and it is gone from the file you save, not just hidden.
+
+Annotations Orion has no tool for — links, form fields, stamps — are left
+exactly as they are. They are not editable here, and saving does not disturb
+them.
+
 ## Working with objects
 
 Click to select. **Ctrl/Cmd+click** adds to the selection. Dragging on empty

@@ -208,15 +208,15 @@ Orion/
 | `TextObject` | text, font family/size/bold/italic/underline, colour, alignment, line spacing. Rendered as **real PDF text** (base-14 fonts) → stays selectable and searchable in the output. |
 | `ImageObject` | Encoded source bytes (PNG/JPEG/WEBP), natural size, `keep_aspect`. Bytes live in the model so clipboard/autosave are self-contained. |
 | `ShapeObject` | `RECT` / `ELLIPSE` / `LINE` / `ARROW`, stroke colour+width, fill, line endpoints as normalised fractions of the rect (so a line supports every direction while still using generic rect resize/rotate). |
-| `AnnotationObject` | `HIGHLIGHT` / `UNDERLINE` / `STRIKEOUT` / `INK` / `COMMENT` / `STICKY_NOTE`. Written as **standard PDF annotations**, so other readers see them natively. |
+| `AnnotationObject` | `HIGHLIGHT` / `UNDERLINE` / `STRIKEOUT` / `INK` / `COMMENT` / `STICKY_NOTE`. Written as **standard PDF annotations**, so other readers see them natively — and read back the same way when a file is opened, so an annotation is editable in the session after the one that made it. |
 
 ### PDF engine
 
 | Class | Responsibility |
 |---|---|
-| `PdfReader` | Opens a file, handles encryption/corruption, produces a `Document`. |
+| `PdfReader` | Opens a file, handles encryption/corruption, produces a `Document`. Imports the annotations it can model (`annotation_import`), recording per page which `/Annots` entries the model now owns. |
 | `PageRenderer` | `render(source, index, rotation, scale) -> RenderedPage` (raw RGB). Size-bounded LRU cache, one lock per opened document (pdfium is not safe for concurrent access to one document). |
-| `PdfWriter` | Assembles the output: copies source page runs, appends blank pages, applies rotation, stamps objects, adds annotations, writes atomically. |
+| `PdfWriter` | Assembles the output: copies source page runs, appends blank pages, applies rotation, stamps objects, adds annotations, writes atomically. Drops exactly the `/Annots` entries the reader took ownership of, so an imported annotation is rewritten from the model rather than duplicated, and everything else rides through untouched. |
 | `operations` | `merge_files`, `split_by_ranges`, `split_every`, `extract_pages` — file-level, reusable by both the UI and (future) a CLI. |
 
 ### Commands

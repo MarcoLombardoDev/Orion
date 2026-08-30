@@ -17,10 +17,10 @@ from pathlib import Path
 
 from orion.commands.history import History
 from orion.document.document import Document, DocumentSource
-from orion.document.page import Page, PageSource
+from orion.document.page import Page
 from orion.pdf import reader as pdf_reader
 from orion.pdf import writer as pdf_writer
-from orion.pdf.errors import PdfReadError, PdfWriteError
+from orion.pdf.errors import PdfWriteError
 from orion.pdf.renderer import PageRenderer
 from orion.services.autosave import AutosaveService
 from orion.utils.events import Event
@@ -127,20 +127,7 @@ class FileService:
         opened = pdf_reader.open_pdf(path)
         try:
             source = DocumentSource.for_path(Path(path))
-            sizes = pdf_reader.page_sizes(opened)
-            wanted = indices if indices is not None else list(range(len(sizes)))
-            pages: list[Page] = []
-            for index in wanted:
-                if not 0 <= index < len(sizes):
-                    raise PdfReadError(f"The document has no page {index + 1}.")
-                size, rotation = sizes[index]
-                pages.append(
-                    Page(
-                        base_size=size,
-                        source=PageSource(source.key, index),
-                        source_rotation=rotation,
-                    )
-                )
+            pages = pdf_reader.build_pages(opened, source.key, indices)
             session.renderer.register_source(source, opened)
             return source, pages
         except Exception:

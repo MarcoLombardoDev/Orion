@@ -954,3 +954,72 @@ class TestIconsAreNotScaledTwice:
                     f"“{name}” sits high or low at ratio {scale}: "
                     f"its ink is centred at y={centre_y:.1f} of 20"
                 )
+
+
+class TestMarkingUpSurvivesReopening:
+    """The user's report: a highlight could not be clicked after reopening.
+
+    In one session it always worked — the annotation was an object on the
+    canvas like anything else. What broke was the file: nothing read `/Annots`
+    back, so a saved highlight came back as part of the page picture. This
+    drives the whole path, because the model-level tests in
+    ``tests/test_annotation_import.py`` cannot say whether the canvas ends up
+    with something to click.
+    """
+
+    def test_a_reopened_highlight_can_be_selected_and_deleted(
+        self, window, qapp, sample_pdf, tmp_path
+    ):
+        from orion.document.annotations import AnnotationObject
+
+        window.open_path(sample_pdf)
+        pump(qapp)
+        _drag(window, Tool.HIGHLIGHT, (45.0, 78.0), (200.0, 106.0))
+        pump(qapp)
+
+        saved = tmp_path / "marked.pdf"
+        assert window._write(window.session, saved)
+        assert window.open_path(saved)
+        pump(qapp)
+
+        objects = window.session.document[0].objects
+        assert len(objects) == 1, "the saved highlight did not come back as an object"
+        annotation = objects[0]
+        assert isinstance(annotation, AnnotationObject)
+
+        # It is on the canvas, and clicking it selects it.
+        canvas = window._canvas
+        assert annotation.id in canvas._item_index
+        centre = annotation.rect.center
+        _click_at(window, (centre.x, centre.y))
+        pump(qapp)
+        assert [o.id for o in canvas.selected_objects()] == [annotation.id]
+
+        # And Delete now reaches it, which is what the user was after.
+        window._actions["edit.delete"].trigger()
+        pump(qapp)
+        assert window.session.document[0].objects == []
+
+
+def _click_at(window, base: tuple[float, float]) -> None:
+    """Click once on the canvas, in base page coordinates of the first page."""
+    from PySide6.QtCore import QEvent, QPoint
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtWidgets import QApplication
+
+    view = window._canvas
+    view.set_zoom(1.0)
+    content = view._page_items[0].content
+    point = QPointF(view.mapFromScene(content.mapToScene(QPointF(*base))))
+    globals_ = view.viewport().mapToGlobal(QPoint(int(point.x()), int(point.y())))
+    for event_type, buttons in (
+        (QEvent.Type.MouseButtonPress, Qt.MouseButton.LeftButton),
+        (QEvent.Type.MouseButtonRelease, Qt.MouseButton.NoButton),
+    ):
+        QApplication.sendEvent(
+            view.viewport(),
+            QMouseEvent(
+                event_type, point, globals_, Qt.MouseButton.LeftButton, buttons,
+                Qt.KeyboardModifier.NoModifier,
+            ),
+        )
