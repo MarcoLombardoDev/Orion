@@ -21,6 +21,16 @@
  * would prefer it.
  */
 
+/* The interface font, named rather than left to whichever default the
+ * toolkit picks. The same list the other three products resolve from: Segoe
+ * UI is what Windows uses for its own interface, and the rest are the
+ * equivalent elsewhere. Qt walks the list itself and takes the first the
+ * machine has, which is what a Tk application has to do by hand. */
+QWidget {
+    font-family: "Segoe UI", "SF Pro Text", "Helvetica Neue",
+                 "Noto Sans", "DejaVu Sans", sans-serif;
+}
+
 QMainWindow,
 QDialog,
 QWidget#central {
@@ -96,9 +106,18 @@ QToolButton {
     padding: 4px;
 }
 
-QToolButton:hover   { background-color: #eceff1; }
+QToolButton:hover { background-color: #eceff1; }
+
+/* Held down or switched on, the button takes the primary colour — and the
+ * icon inside it has to stop being a dark line drawing, or it disappears into
+ * the fill. icons.py draws a second copy in the accent's text colour and
+ * hangs it on Qt's "On" state, which is what a checkable button asks for. */
 QToolButton:pressed,
-QToolButton:checked { background-color: #d8dee3; }
+QToolButton:checked,
+QPushButton:checked {
+    background-color: #2c3e50;
+    color: #ffffff;
+}
 
 QMenuBar { background-color: #ffffff; border-bottom: 1px solid #dee2e6; }
 QMenuBar::item { padding: 4px 10px; background: transparent; }

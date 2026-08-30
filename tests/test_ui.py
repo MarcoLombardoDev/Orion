@@ -666,3 +666,63 @@ class TestStartsMaximised:
         assert window.isMaximized()
         assert window.normalGeometry().width() > 0
         window.close()
+
+
+class TestIconsOnAnActiveButton:
+    """A checked toolbar button is filled with the accent. The icon inside it
+    has to stop being a dark line drawing at that point, or it disappears into
+    the fill — which is what was reported: the button turned blue and the icon
+    went with it.
+    """
+
+    def test_the_on_state_is_a_light_icon(self, qapp):
+        from PySide6.QtGui import QIcon
+
+        from orion.ui.icons import available_icons, icon
+
+        def mean_lightness(pixmap):
+            image = pixmap.toImage()
+            ink = [
+                image.pixelColor(x, y)
+                for x in range(image.width())
+                for y in range(image.height())
+                if image.pixelColor(x, y).alpha() > 128
+            ]
+            assert ink, "the icon drew nothing at all"
+            return sum(colour.lightness() for colour in ink) / len(ink)
+
+        drawn = icon(available_icons()[0], 20)
+        off = mean_lightness(drawn.pixmap(20, 20, QIcon.Mode.Normal, QIcon.State.Off))
+        on = mean_lightness(drawn.pixmap(20, 20, QIcon.Mode.Normal, QIcon.State.On))
+
+        assert off < 100, "the ordinary icon is not dark"
+        assert on > 200, "the icon on an active button is not light"
+
+    def test_a_selected_row_gets_the_light_icon_too(self, qapp):
+        """Same problem, same fill: a selected item is painted with the accent
+        behind it.
+        """
+        from PySide6.QtGui import QIcon
+
+        from orion.ui.icons import available_icons, icon
+
+        drawn = icon(available_icons()[0], 20)
+        selected = drawn.pixmap(20, 20, QIcon.Mode.Selected, QIcon.State.Off).toImage()
+        ink = [
+            selected.pixelColor(x, y)
+            for x in range(selected.width())
+            for y in range(selected.height())
+            if selected.pixelColor(x, y).alpha() > 128
+        ]
+        assert ink and sum(c.lightness() for c in ink) / len(ink) > 200
+
+    def test_an_active_button_is_dark_enough_for_a_white_icon(self, qapp):
+        """The other half of it. A light icon on a light fill is the same bug
+        the other way round, and the stylesheet is where that would happen.
+        """
+        from pathlib import Path
+
+        sheet = (Path(__file__).resolve().parent.parent
+                 / "resources" / "styles" / "orion.qss").read_text(encoding="utf-8")
+        block = sheet.split("QToolButton:pressed", 1)[1].split("}", 1)[0]
+        assert "#2c3e50" in block, "the checked fill is not the dark primary"

@@ -304,6 +304,23 @@ def icon(name: str, size: int = 20, color: QColor | None = None) -> QIcon:
     result = QIcon()
     for scale in (1, 2):
         result.addPixmap(_render(shapes, size * scale, tint, scale))
+
+    # A second drawing, in the colour that reads on the accent, for the states
+    # Qt paints with the accent behind them: a checked toolbar button, and a
+    # selected row. Without it the icon stays the text colour -- a dark line
+    # drawing on a dark blue fill, which is the same as no icon at all.
+    #
+    # Qt asks for State.On on anything checkable and Mode.Selected on a
+    # selected item, and falls back to the pixmaps above everywhere else, so
+    # adding these takes nothing away.
+    on_tint = _theme.color("accent_text") if _theme else QColor("#ffffff")
+    for scale in (1, 2):
+        pixmap = _render(shapes, size * scale, on_tint, scale)
+        result.addPixmap(pixmap, QIcon.Mode.Normal, QIcon.State.On)
+        result.addPixmap(pixmap, QIcon.Mode.Active, QIcon.State.On)
+        result.addPixmap(pixmap, QIcon.Mode.Selected, QIcon.State.On)
+        result.addPixmap(pixmap, QIcon.Mode.Selected, QIcon.State.Off)
+
     _cache[key] = result
     return result
 

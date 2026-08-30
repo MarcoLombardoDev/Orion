@@ -106,6 +106,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   the annual rate of the same tier.
 
 ### Changed
+- **One interface font across the four, named rather than left to a
+  default.** Segoe UI where the machine has it, with the equivalent on macOS
+  and Linux behind it, resolved once from a list the four products share.
+  Nothing depends any more on which family the toolkit happened to pick.
 - **The window opens maximised.** All four now fill the screen at start-up
   rather than opening at a fixed size in the corner. Deliberately maximised
   and not true full screen: that hides the title bar and the way out of it,
@@ -189,6 +193,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   highlights and images came out identical on all four page rotations.
 
 ### Fixed
+- **A dark icon on an active button.** A checked toolbar button is filled with
+  the accent, and the icon stayed the text colour: a dark line drawing on a
+  dark fill, which is the same as no icon at all. `icons.py` draws a second
+  copy in the accent's text colour and hangs it on the states Qt paints that
+  way — `State.On` for anything checkable, `Mode.Selected` for a selected row.
+  Measured rather than eyeballed: the ordinary icon comes out at a mean
+  lightness of about 30, the one on an active button at 255.
 - **The icon lost its frame below 32 pixels, so the four did not match.** The
   frame was dropped at the small sizes on the reasoning that it costs more in
   contrast than it returns in shape — a judgement about one icon rather than
