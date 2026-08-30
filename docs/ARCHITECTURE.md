@@ -163,6 +163,9 @@ Orion/
 │   │   ├── reader.py          open/validate/decrypt, build Document from a file
 │   │   ├── renderer.py        page rasterisation + LRU cache + thread safety
 │   │   ├── coordinates.py     base-space <-> PDF-content-space conversions
+│   │   ├── annotation_import.py  /Annots -> AnnotationObject, and who owns what
+│   │   ├── fonts.py           base-14 + installed system fonts, and embedding
+│   │   ├── text_layout.py     line breaking, shared by the canvas and the writer
 │   │   ├── writer.py          Document -> PDF (atomic write)
 │   │   └── operations.py      merge / split / extract / import (file level)
 │   │
@@ -205,7 +208,7 @@ Orion/
 | `DocumentSource` | A source PDF referenced by pages (`key`, `path`, `bytes`). Allows pages imported from other PDFs to keep their provenance until save. |
 | `Page` | `source` (or blank), `base_size`, Orion `rotation`, ordered `objects`. Objects are stored in base page space. |
 | `PageObject` | Base: `id`, `rect`, `rotation`, `opacity`, `locked`, `z`. Provides `clone()`, `to_dict()`, `from_dict()`. |
-| `TextObject` | text, font family/size/bold/italic/underline, colour, alignment, line spacing. Rendered as **real PDF text** (base-14 fonts) → stays selectable and searchable in the output. |
+| `TextObject` | text, font family/size/bold/italic/underline, colour, alignment, line spacing. Rendered as **real PDF text** → stays selectable and searchable in the output. The three base-14 families need no embedding; any other installed family is embedded as a subset by `orion/pdf/fonts.py`. |
 | `ImageObject` | Encoded source bytes (PNG/JPEG/WEBP), natural size, `keep_aspect`. Bytes live in the model so clipboard/autosave are self-contained. |
 | `ShapeObject` | `RECT` / `ELLIPSE` / `LINE` / `ARROW`, stroke colour+width, fill, line endpoints as normalised fractions of the rect (so a line supports every direction while still using generic rect resize/rotate). |
 | `AnnotationObject` | `HIGHLIGHT` / `UNDERLINE` / `STRIKEOUT` / `INK` / `COMMENT` / `STICKY_NOTE`. Written as **standard PDF annotations**, so other readers see them natively — and read back the same way when a file is opened, so an annotation is editable in the session after the one that made it. |

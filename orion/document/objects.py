@@ -167,11 +167,15 @@ class PageObject:
 #: The 14 fonts every PDF reader is required to provide.  Restricting V1 to
 #: these guarantees the on-screen text and the written PDF text agree without
 #: embedding font files.  TTF embedding is a documented follow-up.
+#: The three families that need no embedding. Kept here as well as in
+#: :mod:`orion.pdf.fonts` because the model must not depend on the PDF layer,
+#: and because "which families are built in" is a fact about the file format
+#: rather than about this machine's fonts.
 BASE14_FAMILIES: tuple[str, ...] = ("Helvetica", "Times", "Courier")
 
 #: family -> (regular, bold, italic, bold-italic) base-14 font identifiers.
 #: These are stored in saved documents, so they are part of the file format and
-#: cannot be renamed; orion/pdf/text_layout.py maps them to the names the writer
+#: cannot be renamed; orion/pdf/fonts.py maps them to the names the writer
 #: draws with.
 BASE14_MAP: dict[str, tuple[str, str, str, str]] = {
     "Helvetica": ("helv", "hebo", "heit", "hebi"),

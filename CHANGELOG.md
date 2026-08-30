@@ -8,6 +8,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- **Every font on the machine, not just three.** Orion wrote with the base-14
+  PDF fonts and offered nothing else, so a text box could be Helvetica, Times
+  or Courier and that was the whole list. Any installed family Orion can embed
+  is now offered too, subset into the file so the document travels. The three
+  built-ins still lead the list and are still the default — they add nothing
+  to the file and carry no licence to check — and the panel says when a font
+  is being embedded, when the document names a family this machine does not
+  have, and when a family has no italic or bold face of its own. Fonts that
+  cannot be embedded, PostScript-outline OpenType and colour emoji among them,
+  are left out of the list rather than offered and then failing at save time.
+  Finding the installed families costs about fifteen milliseconds, because it
+  reads the name table out of each file and nothing else.
 - **A right-click menu on the page.** The canvas answered nothing at all to
   the right button, anywhere, which is the gesture people reach for to
   recolour or remove a mark they have just made — the other half of the

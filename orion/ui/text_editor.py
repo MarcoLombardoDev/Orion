@@ -95,14 +95,16 @@ class InlineTextEditor:
 
     @staticmethod
     def _font(owner: TextObjectItem) -> QFont:
+        """The same font the item paints with, so nothing shifts on edit.
+
+        Scene units are PDF points, and a QGraphicsTextItem resolves point
+        sizes against 72 dpi in scene space, so the size maps one to one here
+        — which is the only difference from the painted case.
+        """
+        from orion.ui.object_items import qt_font
+
         obj = owner.text_object
-        family = {"Helvetica": "Helvetica", "Times": "Times New Roman", "Courier": "Courier New"}
-        font = QFont(family.get(obj.font_family, obj.font_family))
-        # Scene units are PDF points; a QGraphicsTextItem resolves point sizes
-        # against 72 dpi in scene space, so the value maps one to one here.
-        font.setPointSizeF(max(0.5, obj.font_size))
-        font.setBold(obj.bold)
-        font.setItalic(obj.italic)
+        font = qt_font(obj, obj.font_size)
         font.setUnderline(obj.underline)
         return font
 

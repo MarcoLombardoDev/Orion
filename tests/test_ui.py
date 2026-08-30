@@ -1187,3 +1187,74 @@ class TestTheCanvasContextMenu:
 
     def test_nothing_is_offered_without_a_document(self, window):
         assert window.canvas_menu() is None
+
+
+class TestTheFontPicker:
+    """The font list, and what it says when the file will not match the screen."""
+
+    def _select_text(self, window, qapp, sample_pdf, **fields):
+        from orion.document.objects import TextObject
+
+        window.open_path(sample_pdf)
+        pump(qapp)
+        obj = TextObject(
+            rect=Rect.from_xywh(40.0, 60.0, 200.0, 60.0), text="Hello", **fields
+        )
+        window.session.document[0].add_object(obj)
+        window._canvas.rebuild()
+        window._properties.show_selection([obj], 0)
+        pump(qapp)
+        return obj
+
+    def test_the_list_starts_with_the_built_in_families(self, window, qapp):
+        combo = window._properties._font_family
+        assert [combo.itemText(i) for i in range(3)] == ["Helvetica", "Times", "Courier"]
+
+    def test_installed_families_are_offered_too(self, window, qapp):
+        """The whole point: three fonts was the complaint."""
+        from orion.document.objects import BASE14_MAP
+        from orion.pdf.fonts import available_families
+
+        if len(available_families()) <= len(BASE14_MAP):
+            pytest.skip("no embeddable system fonts are installed")
+        combo = window._properties._font_family
+        assert combo.count() > 3
+
+    def test_the_list_can_be_typed_into(self, window, qapp):
+        """A machine with three hundred fonts makes a plain drop-down useless."""
+        combo = window._properties._font_family
+        assert combo.isEditable()
+        completer = combo.completer()
+        assert completer is not None
+        assert completer.filterMode() == Qt.MatchFlag.MatchContains
+
+    def test_a_font_this_machine_lacks_is_kept_and_flagged(
+        self, window, qapp, sample_pdf
+    ):
+        """Opening somebody else's document must not silently rename its font.
+
+        Dropping the family from the picker would lose the name the moment
+        anything else about the object was edited, and saying nothing would
+        leave the user with a file that does not look like the screen.
+        """
+        self._select_text(window, qapp, sample_pdf, font_family="Nowhere Sans")
+        panel = window._properties
+        assert panel._font_family.currentText() == "Nowhere Sans"
+        assert panel._font_note.isVisible()
+        assert "not installed" in panel._font_note.text()
+
+    def test_a_built_in_font_says_nothing(self, window, qapp, sample_pdf):
+        self._select_text(window, qapp, sample_pdf, font_family="Helvetica")
+        assert not window._properties._font_note.isVisible()
+
+    def test_an_embedded_font_says_so(self, window, qapp, sample_pdf):
+        """Embedding is a consequence worth mentioning: the file gets bigger."""
+        from orion.document.objects import BASE14_MAP
+        from orion.pdf.fonts import available_families
+
+        extras = [f for f in available_families() if f not in BASE14_MAP]
+        if not extras:
+            pytest.skip("no embeddable system fonts are installed")
+        self._select_text(window, qapp, sample_pdf, font_family=extras[0])
+        note = window._properties._font_note
+        assert note.isVisible() and "embedded" in note.text()

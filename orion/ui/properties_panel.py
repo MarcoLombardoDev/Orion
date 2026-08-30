@@ -44,13 +44,13 @@ from orion.commands.object_commands import ModifyObjectCommand, TransformObjects
 from orion.document.annotations import AnnotationKind, AnnotationObject
 from orion.document.document import Document
 from orion.document.objects import (
-    BASE14_FAMILIES,
     Align,
     ImageObject,
     PageObject,
     ShapeObject,
     TextObject,
 )
+from orion.pdf.fonts import FontRequest, available_families, resolve
 from orion.ui.widgets import ColorButton
 from orion.utils.events import Blocker
 from orion.utils.geometry import Rect
@@ -161,12 +161,33 @@ class PropertiesPanel(QWidget):
         )
         form.addRow(self._text_edit)
 
+        # Editable so a long list can be typed into rather than scrolled: a
+        # machine with three hundred fonts makes a plain drop-down useless.
+        # Insertion is off, so typing a name that does not exist selects
+        # nothing rather than inventing a family.
         self._font_family = QComboBox()
-        self._font_family.addItems(BASE14_FAMILIES)
-        self._font_family.currentTextChanged.connect(
-            lambda value: self._apply({"font_family": value}, "Change Font")
+        self._font_family.setEditable(True)
+        self._font_family.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._font_family.addItems(available_families())
+        completer = self._font_family.completer()
+        if completer is not None:
+            completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+            completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self._font_family.activated.connect(
+            lambda _index: self._apply(
+                {"font_family": self._font_family.currentText()}, "Change Font"
+            )
         )
         form.addRow("Font", self._font_family)
+
+        #: Says when the family a document names is not on this machine, or
+        #: when the style it asks for is not one the family ships. Silence is
+        #: the wrong answer to either: the saved file will not look like the
+        #: screen, and nothing else would say so.
+        self._font_note = QLabel()
+        self._font_note.setWordWrap(True)
+        self._font_note.setVisible(False)
+        form.addRow("", self._font_note)
 
         self._font_size = _spin(1.0, 999.0, 1.0, 1, " pt")
         self._font_size.valueChanged.connect(
@@ -390,7 +411,13 @@ class PropertiesPanel(QWidget):
         self._text_group.setVisible(True)
         if self._text_edit.toPlainText() != obj.text:
             self._text_edit.setPlainText(obj.text)
+        # A document can name a font this machine does not have. Adding it to
+        # the list keeps the panel truthful about what the object says, and
+        # keeps the name from being lost the moment anything else is edited.
+        if self._font_family.findText(obj.font_family) < 0:
+            self._font_family.addItem(obj.font_family)
         self._font_family.setCurrentText(obj.font_family)
+        self._show_font_note(obj)
         self._font_size.setValue(obj.font_size)
         self._bold.setChecked(obj.bold)
         self._italic.setChecked(obj.italic)
@@ -399,6 +426,34 @@ class PropertiesPanel(QWidget):
         index = self._align.findData(obj.align)
         self._align.setCurrentIndex(max(0, index))
         self._line_spacing.setValue(obj.line_spacing)
+
+    def _show_font_note(self, obj: TextObject) -> None:
+        """Warn when the file will not look like the screen, and why."""
+        resolved = resolve(FontRequest(obj.font_family, obj.bold, obj.italic))
+        if resolved.substituted:
+            message = (
+                f"“{obj.font_family}” is not installed here. "
+                "Helvetica is being used instead."
+            )
+        elif resolved.embedded and (obj.bold, obj.italic) != (
+            resolved.bold,
+            resolved.italic,
+        ):
+            missing = " ".join(
+                word
+                for word, wanted, got in (
+                    ("bold", obj.bold, resolved.bold),
+                    ("italic", obj.italic, resolved.italic),
+                )
+                if wanted and not got
+            )
+            message = f"“{obj.font_family}” has no {missing} face; the plain one is used."
+        elif resolved.embedded:
+            message = "This font is embedded in the saved file."
+        else:
+            message = ""
+        self._font_note.setText(message)
+        self._font_note.setVisible(bool(message))
 
     def _show_image(self, obj: ImageObject) -> None:
         self._image_group.setVisible(True)

@@ -52,6 +52,7 @@ from orion.document.objects import (
     ShapeObject,
     TextObject,
 )
+from orion.pdf.fonts import FontRequest, resolve
 from orion.pdf.text_layout import layout_text
 from orion.utils.geometry import Point, Rect, rotate_point
 
@@ -95,6 +96,44 @@ _HANDLE_CURSORS = {
     Handle.LEFT: Qt.CursorShape.SizeHorCursor,
     Handle.ROTATE: Qt.CursorShape.CrossCursor,
 }
+
+
+#: The Qt families that stand in for the base-14 ones on screen. Those names
+#: are PDF's rather than the desktop's, and asking Qt for "Helvetica" gets
+#: whatever substitution the platform happens to make. Arial and Times New
+#: Roman are the metric-compatible ones, so a line wraps on screen where it
+#: wraps in the file.
+BASE14_ON_SCREEN = {
+    "Helvetica": "Arial",
+    "Times": "Times New Roman",
+    "Courier": "Courier New",
+}
+
+
+def qt_font(obj: TextObject, point_size: float) -> QFont:
+    """The ``QFont`` that matches what the writer will put in the file.
+
+    Bold and italic come from the **resolved** font rather than straight off
+    the object, so the canvas slants text only when the saved file will. A
+    family that ships no italic hands its upright face to the writer, and Qt
+    would cheerfully fake the slant on screen — a difference nobody sees until
+    the document is opened somewhere else.
+
+    Shared with the inline editor, which has to agree with the painted text
+    exactly: the editor is what replaces it while the user types, and any
+    disagreement shows up as the text jumping when editing starts or ends.
+    """
+    resolved = resolve(FontRequest(obj.font_family, obj.bold, obj.italic))
+    font = QFont(BASE14_ON_SCREEN.get(obj.font_family, obj.font_family))
+    font.setStyleHint(
+        QFont.StyleHint.Courier if obj.font_family == "Courier" else
+        QFont.StyleHint.Serif if obj.font_family == "Times" else
+        QFont.StyleHint.SansSerif
+    )
+    font.setPointSizeF(max(0.5, point_size))
+    font.setBold(resolved.bold)
+    font.setItalic(resolved.italic)
+    return font
 
 
 class ObjectItem(QGraphicsItem):
@@ -523,7 +562,7 @@ class TextObjectItem(ObjectItem):
         layout = layout_text(
             obj.text,
             Rect(0.0, 0.0, rect.width(), rect.height()),
-            fontname=obj.base14_name,
+            font=FontRequest(obj.font_family, obj.bold, obj.italic),
             font_size=obj.font_size,
             align=obj.align,
             line_spacing=obj.line_spacing,
@@ -554,20 +593,10 @@ class TextObjectItem(ObjectItem):
         Qt resolves point sizes against the paint device's logical DPI, but one
         scene unit here is one PDF point, so the point size is converted back.
         """
-        obj = self.text_object
-        family = {"Helvetica": "Helvetica", "Times": "Times New Roman", "Courier": "Courier New"}
-        font = QFont(family.get(obj.font_family, obj.font_family))
-        font.setStyleHint(
-            QFont.StyleHint.Courier if obj.font_family == "Courier" else
-            QFont.StyleHint.Serif if obj.font_family == "Times" else
-            QFont.StyleHint.SansSerif
-        )
         device = painter.device()
         dpi = float(device.logicalDpiY()) if device is not None else 72.0
-        font.setPointSizeF(max(0.5, obj.font_size * 72.0 / max(dpi, 1.0)))
-        font.setBold(obj.bold)
-        font.setItalic(obj.italic)
-        return font
+        obj = self.text_object
+        return qt_font(obj, obj.font_size * 72.0 / max(dpi, 1.0))
 
     def _paint_empty_hint(self, painter: QPainter, rect: QRectF) -> None:
         theme = self._canvas.theme

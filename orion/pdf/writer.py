@@ -74,7 +74,8 @@ from orion.pdf.coordinates import (
     to_pdf_rect,
 )
 from orion.pdf.errors import PdfWriteError
-from orion.pdf.text_layout import layout_text, reportlab_name
+from orion.pdf.fonts import FontRequest, resolve
+from orion.pdf.text_layout import layout_text
 from orion.utils.fileio import atomic_write_bytes
 from orion.utils.geometry import Point
 
@@ -338,15 +339,15 @@ def _rotated(canvas, obj: PageObject, geometry: PageGeometry) -> Iterator[None]:
 def _draw_text(canvas, obj: TextObject, geometry: PageGeometry) -> None:
     if not obj.text.strip():
         return
+    font = FontRequest(obj.font_family, obj.bold, obj.italic)
     layout = layout_text(
         obj.text,
         obj.rect,
-        fontname=obj.base14_name,
+        font=font,
         font_size=obj.font_size,
         align=obj.align,
         line_spacing=obj.line_spacing,
     )
-    font = reportlab_name(obj.base14_name)
     red, green, blue = obj.color
 
     with _rotated(canvas, obj, geometry):
@@ -354,7 +355,7 @@ def _draw_text(canvas, obj: TextObject, geometry: PageGeometry) -> None:
         canvas.setStrokeColorRGB(red, green, blue)
         canvas.setFillAlpha(obj.opacity)
         canvas.setStrokeAlpha(obj.opacity)
-        canvas.setFont(font, obj.font_size)
+        canvas.setFont(resolve(font).name, obj.font_size)
 
         for line in layout.lines:
             for segment in line.segments:

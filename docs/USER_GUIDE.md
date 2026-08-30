@@ -85,9 +85,25 @@ commits.
 A small red corner mark means the text does not fit its box: it would be
 clipped in the saved file too. Make the box bigger or the text smaller.
 
-Orion 1.0 uses the base-14 PDF fonts (Helvetica, Times, Courier). They need no
-embedding, exist in every reader, and mean the text you see is the text that is
-written — as *real* text, so it stays selectable and searchable in the result.
+The font list starts with **Helvetica, Times and Courier** — the fonts built
+into every PDF reader. They add nothing to the file, there is no licence to
+think about, and they are what a text box uses unless you choose otherwise.
+
+Below them is **every font installed on this computer** that Orion can embed.
+Pick one and a subset of it is written into the file, so the document looks the
+same on a machine that does not have it. Two things follow from that, and the
+panel says both when they apply: the file gets bigger, and distributing it
+means the font's licence is yours to check. Fonts Orion cannot embed —
+PostScript-outline OpenType, colour emoji fonts — are left out of the list
+rather than offered and then failing when you save.
+
+Either way the result is *real* text: selectable, searchable, and wrapped
+where the canvas wrapped it.
+
+If you open a document that names a font this machine does not have, the name
+is kept and the panel says Helvetica is standing in for it. A family that has
+no italic, or no bold, is shown upright or regular on the canvas too, so the
+screen does not promise something the saved file will not have.
 
 ### Highlight, underline and strikeout
 
