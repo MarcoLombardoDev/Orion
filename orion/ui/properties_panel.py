@@ -51,6 +51,7 @@ from orion.document.objects import (
     TextObject,
 )
 from orion.pdf.fonts import FontRequest, available_families, resolve
+from orion.ui.icons import icon
 from orion.ui.widgets import ColorButton
 from orion.utils.events import Blocker
 from orion.utils.geometry import Rect
@@ -136,6 +137,7 @@ class PropertiesPanel(QWidget):
         self._note_group = self._build_note_section()
         self._geometry_group = self._build_geometry_section()
         self._arrange_group = self._build_arrange_section()
+        self._delete_group = self._build_delete_section()
 
         for group in (
             self._text_group,
@@ -144,6 +146,7 @@ class PropertiesPanel(QWidget):
             self._note_group,
             self._geometry_group,
             self._arrange_group,
+            self._delete_group,
         ):
             self._layout.addWidget(group)
 
@@ -336,7 +339,25 @@ class PropertiesPanel(QWidget):
         layout.addWidget(self._back)
         return group
 
+    def _build_delete_section(self) -> QGroupBox:
+        """Delete, where the properties of the thing being deleted already are.
+
+        It was reachable by the Del key and the right-click menu and nowhere a
+        user would look while working in this panel, which is exactly when
+        they have decided the object is wrong.
+        """
+        group = QGroupBox("")
+        group.setFlat(True)
+        layout = QHBoxLayout(group)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self._delete = QPushButton(icon("delete"), "Delete")
+        self._delete.setToolTip("Remove the selected objects from the page")
+        self._delete.clicked.connect(self.delete_requested.emit)
+        layout.addWidget(self._delete)
+        return group
+
     arrange_requested = Signal(bool)
+    delete_requested = Signal()
 
     @staticmethod
     def _wrap_focus_out(original: Callable, commit: Callable) -> Callable:
@@ -377,10 +398,14 @@ class PropertiesPanel(QWidget):
             self._note_group,
             self._geometry_group,
             self._arrange_group,
+            self._delete_group,
         ):
             group.setVisible(False)
         if not has_selection:
             return
+        # Shown for one object or six: deleting several at once is as ordinary
+        # as deleting one, which is what makes this different from Arrange.
+        self._delete_group.setVisible(True)
 
         if single is None:
             self._heading.setText(f"{len(self._objects)} objects selected")

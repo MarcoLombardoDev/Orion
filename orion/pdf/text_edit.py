@@ -46,12 +46,13 @@ from __future__ import annotations
 import ctypes
 import logging
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 import pypdfium2.raw as pdfium_raw
 
 from orion.pdf.coordinates import PageGeometry, from_pdf_point, from_pdf_rect
-from orion.pdf.fonts import BASE14_MAP, available_families
+from orion.pdf.fonts import BASE14_MAP, FontRequest, available_families, resolve
 from orion.utils.geometry import Point, Rect
 
 log = logging.getLogger(__name__)
@@ -124,6 +125,35 @@ class SourceTextLine:
     def font_size(self) -> float:
         """The largest size on the line: the one that sets its height."""
         return max(run.font_size for run in self.runs)
+
+    @property
+    def hit_box(self) -> Rect:
+        """The line as a reader sees it, which is what a click has to find.
+
+        The ink alone is too small a target and, worse, the wrong shape: a
+        line with no descenders stops at the baseline, so clicking just under
+        the words — where the line plainly still is — misses it. On an 18pt
+        line the ink is under 14pt tall, and at a normal zoom that is a few
+        pixels of slack in each direction.
+
+        The box is the one the replacement will occupy, from the font's own
+        ascender to its descender about the baseline, united with the ink so a
+        tall glyph is never left outside. Bands of neighbouring lines can
+        overlap slightly at close leading; :func:`line_at` breaks the tie by
+        baseline, which is the line the eye would pick too.
+        """
+        run = self.dominant_run
+        font = resolve(FontRequest(run.family, run.bold, run.italic))
+        size = self.font_size
+        base = self.baseline
+        return self.rect.united(
+            Rect(
+                self.rect.x0,
+                base - font.ascender * size,
+                self.rect.x1,
+                base - font.descender * size,
+            )
+        )
 
     @property
     def dominant_run(self) -> SourceTextRun:
@@ -312,23 +342,66 @@ def _shares_a_line(first: Rect, second: Rect) -> bool:
     return shorter > 0 and overlap >= shorter * _LINE_OVERLAP
 
 
-def line_at(lines: list[SourceTextLine], point: Point) -> SourceTextLine | None:
+def _bands(lines: Sequence[SourceTextLine]) -> list[tuple[SourceTextLine, float, float]]:
+    """``(line, top, bottom)`` for each line, covering the whole row it owns.
+
+    The em box is the floor, and each band then reaches toward its neighbours
+    as far as the midpoint between the two baselines — which is what a reader
+    means by "this line" and includes the leading that the glyphs do not. The
+    bands cannot overlap, because two of them stop at the same midpoint, and
+    they cannot shrink below the em box either, so the first and last lines
+    keep theirs.
+
+    A two-column page interleaves the columns by baseline, which makes some
+    midpoints fall inside an em box; taking the wider of the two is why that
+    costs nothing, and the horizontal test in :func:`line_at` is what tells
+    the columns apart.
+    """
+    ordered = sorted(lines, key=lambda line: line.baseline)
+    bands: list[tuple[SourceTextLine, float, float]] = []
+    for index, line in enumerate(ordered):
+        box = line.hit_box
+        top, bottom = box.y0, box.y1
+        if index:
+            top = min(top, (ordered[index - 1].baseline + line.baseline) / 2.0)
+        if index + 1 < len(ordered):
+            bottom = max(bottom, (ordered[index + 1].baseline + line.baseline) / 2.0)
+        bands.append((line, top, bottom))
+    return bands
+
+
+def line_at(lines: Sequence[SourceTextLine], point: Point) -> SourceTextLine | None:
     """The line under *point*, or the nearest one on the same row.
 
-    Clicking in the gap between two words has to find the line, or the feature
-    reads as unreliable — so a click within a line's vertical band counts even
-    when it is past the end of the text.
+    Three things in order, because each is a way the obvious version feels
+    unreliable. The row is the band from :func:`_bands` rather than the ink,
+    so a click in the space between the lines belongs to one of them instead
+    of to nothing — matching the ink was the reported "I can't edit the text",
+    since on an 18pt line it is under 14pt tall and, without descenders, stops
+    dead at the baseline. A click past the end of the text counts, because the
+    line is plainly still there. And where bands still overlap, the nearest
+    baseline wins, which is the line the eye was pointing at.
     """
-    on_the_row = [line for line in lines if line.rect.y0 <= point.y <= line.rect.y1]
+    on_the_row = [
+        (line, top, bottom)
+        for line, top, bottom in _bands(lines)
+        if top <= point.y <= bottom
+    ]
     if not on_the_row:
         return None
-    inside = [line for line in on_the_row if line.rect.x0 <= point.x <= line.rect.x1]
-    if inside:
-        return min(inside, key=lambda line: line.rect.width)
+    inside = [
+        entry
+        for entry in on_the_row
+        if entry[0].hit_box.x0 <= point.x <= entry[0].hit_box.x1
+    ]
+    candidates = [entry[0] for entry in (inside or on_the_row)]
+    if len(candidates) == 1:
+        return candidates[0]
     return min(
-        on_the_row,
-        key=lambda line: min(
-            abs(point.x - line.rect.x0), abs(point.x - line.rect.x1)
+        candidates,
+        key=lambda line: (
+            abs(point.y - line.baseline),
+            min(abs(point.x - line.rect.x0), abs(point.x - line.rect.x1)),
         ),
     )
 

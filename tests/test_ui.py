@@ -1346,3 +1346,55 @@ class TestEditingThePagesOwnText:
         pump(qapp)
         self._click_line(window, qapp, (90.0, 95.0))
         assert window._canvas.tool is Tool.SELECT
+
+
+class TestDeleteFromThePropertiesPanel:
+    """Delete, where the properties of the thing being deleted already are.
+
+    It was on the Del key and in the right-click menu and nowhere in the panel
+    a user is looking while they work on an object — which is exactly the
+    moment they decide it is wrong.
+    """
+
+    def _select(self, window, qapp, sample_pdf, count: int = 1):
+        window.open_path(sample_pdf)
+        pump(qapp)
+        for index in range(count):
+            _drag(window, Tool.RECTANGLE, (40.0, 100.0 + index * 90), (180.0, 160.0 + index * 90))
+            pump(qapp)
+        objects = window.session.document[0].objects
+        window._canvas.select_objects([o.id for o in objects])
+        pump(qapp)
+        return objects
+
+    def test_the_button_deletes_the_selection(self, window, qapp, sample_pdf):
+        self._select(window, qapp, sample_pdf)
+        assert window._properties._delete_group.isVisible()
+        window._properties._delete.click()
+        pump(qapp)
+        assert window.session.document[0].objects == []
+
+    def test_it_deletes_several_at_once(self, window, qapp, sample_pdf):
+        """Unlike Arrange, which is single-object, this is not."""
+        self._select(window, qapp, sample_pdf, count=2)
+        assert window._properties._delete_group.isVisible()
+        assert not window._properties._arrange_group.isVisible()
+        window._properties._delete.click()
+        pump(qapp)
+        assert window.session.document[0].objects == []
+
+    def test_it_is_hidden_with_nothing_selected(self, window, qapp, sample_pdf):
+        window.open_path(sample_pdf)
+        pump(qapp)
+        window._properties.show_selection([], 0)
+        pump(qapp)
+        assert not window._properties._delete_group.isVisible()
+
+    def test_the_deletion_can_be_undone(self, window, qapp, sample_pdf):
+        """It goes through the same command as the key and the menu."""
+        self._select(window, qapp, sample_pdf)
+        window._properties._delete.click()
+        pump(qapp)
+        window._actions["edit.undo"].trigger()
+        pump(qapp)
+        assert len(window.session.document[0].objects) == 1

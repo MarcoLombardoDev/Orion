@@ -37,6 +37,10 @@ number.
   are left out of the list rather than offered and then failing at save time.
   Finding the installed families costs about fifteen milliseconds, because it
   reads the name table out of each file and nothing else.
+- **A Delete button in the properties panel.** Deleting was on the Del key and
+  in the right-click menu and nowhere in the panel a user is looking while
+  they work on an object, which is the moment they decide it is wrong. It
+  takes a selection of several as readily as one.
 - **A right-click menu on the page.** The canvas answered nothing at all to
   the right button, anywhere, which is the gesture people reach for to
   recolour or remove a mark they have just made — the other half of the

@@ -430,3 +430,93 @@ def test_ink_bounds_include_the_stroke_width(tmp_path):
     obj = _open(_source_with(tmp_path, entry))[0].objects[0]
     assert obj.rect.width == pytest.approx(40.0 + 12.0)
     assert obj.rect.contains_point(Point(120.0, 100.0))
+
+
+# -- what the page raster is allowed to draw -----------------------------
+def test_an_imported_annotation_is_not_drawn_twice(tmp_path):
+    """The reported bug: Delete appeared to do nothing.
+
+    Pages are rasterised with ``draw_annots=True``. Once an annotation is also
+    an object on the canvas it is drawn twice — by pdfium into the page image,
+    and by Orion over the top — and the two are indistinguishable until the
+    user deletes it. Then the object goes, the page image keeps drawing it,
+    and the only visible effect is that the thing can no longer be selected.
+
+    Rendering through the renderer is what catches it: the model was right
+    all along, so no assertion about objects would have noticed.
+    """
+    from orion.pdf.renderer import PageRenderer
+
+    source = _source_with(tmp_path, _highlight())
+    document, opened = pdf_reader.load_document(source)
+    renderer = PageRenderer()
+    renderer.register_source(document.sources[document[0].source.source_key], opened)
+    try:
+        assert document[0].imported_annotations == (0,), "nothing was imported"
+        page = renderer.render(renderer.request_for(document[0], 1.0))
+        assert not _has_yellow(page), (
+            "the page image still draws an annotation the model owns"
+        )
+    finally:
+        renderer.close_all()
+
+
+def test_an_annotation_orion_does_not_own_is_still_drawn(tmp_path):
+    """The other half. Hiding all of them would be its own bug.
+
+    A stamp, a form field, a markup kind Orion has no tool for: none of those
+    become objects, so the page image is the only thing drawing them.
+    """
+    from orion.pdf.renderer import PageRenderer
+
+    square = _annotation(
+        "/Square",
+        Rect=_floats([50.0, 400.0, 250.0, 500.0]),
+        IC=_floats([1.0, 0.9, 0.2]),
+        C=_floats([1.0, 0.9, 0.2]),
+    )
+    document, opened = pdf_reader.load_document(_source_with(tmp_path, square))
+    renderer = PageRenderer()
+    renderer.register_source(document.sources[document[0].source.source_key], opened)
+    try:
+        assert document[0].objects == [], "a /Square must not be imported"
+        page = renderer.render(renderer.request_for(document[0], 1.0))
+        assert _has_yellow(page), "the page image stopped drawing an unowned annotation"
+    finally:
+        renderer.close_all()
+
+
+def _has_yellow(page) -> bool:
+    """Whether the rendered page contains any of the fixtures' yellow."""
+    data, stride = page.samples, page.stride
+    for y in range(0, page.height, 2):
+        row = y * stride
+        for x in range(0, page.width, 2):
+            red, green, blue = data[row + x * 3 : row + x * 3 + 3]
+            if red > 200 and green > 180 and blue < 150:
+                return True
+    return False
+
+
+def test_hiding_an_annotation_does_not_reach_the_file(tmp_path):
+    """It is done to the copy pdfium holds for the screen, and only that.
+
+    If the flag ever reached the disk, every annotation Orion had ever opened
+    would come back invisible in other readers.
+    """
+    from orion.pdf.renderer import PageRenderer
+
+    source = _source_with(tmp_path, _highlight())
+    document, opened = pdf_reader.load_document(source)
+    renderer = PageRenderer()
+    renderer.register_source(document.sources[document[0].source.source_key], opened)
+    try:
+        renderer.render(renderer.request_for(document[0], 1.0))
+        out = tmp_path / "saved.pdf"
+        pdf_writer.save_document(document, out)
+    finally:
+        renderer.close_all()
+
+    entry = PdfReader(str(out)).pages[0]["/Annots"][0].get_object()
+    assert int(entry.get("/F", 0)) & 2 == 0, "the hidden flag was written to the file"
+    assert _subtypes(out) == ["/Highlight"]

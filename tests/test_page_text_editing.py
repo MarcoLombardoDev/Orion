@@ -533,3 +533,70 @@ def test_an_index_that_is_no_longer_there_is_survived(tmp_path):
         assert "Dear Mr Rossi," in reopened[0].get_textpage().get_text_range()
     finally:
         reopened.close()
+
+
+# -- what counts as clicking on a line -----------------------------------
+def test_a_click_just_off_the_ink_still_finds_the_line(tmp_path, opened):
+    """Reported as "I can't edit the text": the target was too small.
+
+    The first version matched against the ink, which on an 18pt line is under
+    14pt tall and — for a line with no descenders — stops dead at the
+    baseline. Clicking just under the words, where the line plainly still is,
+    found nothing and the status bar said there was no text there.
+    """
+    document, renderer = opened(_source(tmp_path))
+    try:
+        lines = renderer.source_text_lines(document.pages[0])
+        line = lines[1]
+        for offset, where in ((-3.0, "above the ink"), (3.0, "below the ink")):
+            y = line.rect.y0 + offset if offset < 0 else line.rect.y1 + offset
+            assert line_at(lines, Point(120.0, y)) is line, f"missed {where}"
+    finally:
+        renderer.close_all()
+
+
+def test_every_point_between_two_lines_belongs_to_one_of_them(tmp_path, opened):
+    """The leading is part of a line, as far as anyone clicking is concerned.
+
+    Matching the ink left the gaps between the lines belonging to nothing,
+    which is most of the vertical space on a page of text.
+    """
+    from orion.pdf.text_edit import _bands
+
+    document, renderer = opened(_source(tmp_path))
+    try:
+        lines = renderer.source_text_lines(document.pages[0])
+        bands = sorted(_bands(lines), key=lambda entry: entry[1])
+        for (upper, _top, bottom), (lower, next_top, _) in zip(
+            bands, bands[1:], strict=False
+        ):
+            assert bottom >= next_top, (
+                f"a dead strip between {upper.text!r} and {lower.text!r}"
+            )
+        # And a band never swallows its neighbour's baseline.
+        for line, top, bottom in bands:
+            others = [other for other in lines if other is not line]
+            assert not [o for o in others if top < o.baseline < bottom]
+    finally:
+        renderer.close_all()
+
+
+def test_overlapping_bands_go_to_the_nearest_baseline(tmp_path, opened):
+    """Close leading can make two bands overlap; the eye picks the nearer."""
+    path = tmp_path / "tight.pdf"
+    pdf = rl_canvas.Canvas(str(path), pagesize=PAGE_SIZE)
+    pdf.setFont("Helvetica", 16)
+    pdf.drawString(40.0, 220.0, "first line")
+    pdf.drawString(40.0, 206.0, "second line")  # 14pt apart, at 16pt type
+    pdf.showPage()
+    pdf.save()
+
+    document, renderer = opened(path)
+    try:
+        lines = renderer.source_text_lines(document.pages[0])
+        assert len(lines) == 2, "the two lines were merged into one"
+        upper, lower = sorted(lines, key=lambda line: line.baseline)
+        assert line_at(lines, Point(60.0, upper.baseline - 1.0)) is upper
+        assert line_at(lines, Point(60.0, lower.baseline - 1.0)) is lower
+    finally:
+        renderer.close_all()

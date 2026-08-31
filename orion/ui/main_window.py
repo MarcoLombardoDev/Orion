@@ -213,6 +213,7 @@ class MainWindow(QMainWindow):
         self._thumbnails.context_action.connect(self._on_thumbnail_action)
 
         self._properties.arrange_requested.connect(self._arrange_selection)
+        self._properties.delete_requested.connect(self.delete_selection)
 
         self._search.hits_changed.connect(self._canvas.set_search_hits)
         self._search.current_hit_changed.connect(self._on_search_hit)

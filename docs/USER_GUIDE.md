@@ -157,6 +157,9 @@ them.
 Click to select. **Ctrl/Cmd+click** adds to the selection. Dragging on empty
 space with the Select tool draws a rubber band.
 
+The properties panel has a **Delete** button at the bottom for whatever is
+selected, one object or several.
+
 **Right-click** anything on the page for a menu of what can be done to it:
 edit its text or its comment, cut, copy, duplicate, change its stacking, or
 delete it. Right-clicking an object that is not selected selects it first;

@@ -226,6 +226,43 @@ def _read_annotations(
     return found
 
 
+def _hide_owned_annotations(
+    opened: OpenedPdf, found: dict[int, ImportedAnnotations]
+) -> None:
+    """Stop pdfium drawing the annotations the model has taken over.
+
+    Pages are rasterised with ``draw_annots=True``, which is right for
+    everything Orion cannot edit — a stamp, a form field, a markup kind it has
+    no tool for — and wrong for everything it can. An imported highlight would
+    otherwise be drawn twice: once into the page image by pdfium and once by
+    its own object on the canvas. The two are indistinguishable until the user
+    deletes it, at which point the object goes and the page image keeps
+    drawing it, so nothing appears to happen.
+
+    Marking them hidden is per-annotation rather than turning annotations off
+    for the whole page, so the ones Orion does not own keep showing. It
+    touches only the in-memory document pdfium is holding for the screen: the
+    writer opens the file again with pypdf, so nothing here reaches the disk.
+    """
+    with opened.lock:
+        for index, imported in found.items():
+            try:
+                page = opened.doc[index]
+                for position in imported.indices:
+                    annotation = pdfium_raw.FPDFPage_GetAnnot(page.raw, position)
+                    if not annotation:
+                        continue
+                    flags = int(pdfium_raw.FPDFAnnot_GetFlags(annotation))
+                    pdfium_raw.FPDFAnnot_SetFlags(
+                        annotation, flags | pdfium_raw.FPDF_ANNOT_FLAG_HIDDEN
+                    )
+                    pdfium_raw.FPDFPage_CloseAnnot(annotation)
+            except Exception:  # pragma: no cover - drawing twice beats crashing
+                log.warning("Could not hide the annotations of page %d", index, exc_info=True)
+            finally:
+                page = None
+
+
 def build_pages(
     opened: OpenedPdf, source_key: str, indices: Sequence[int] | None = None
 ) -> list[Page]:
@@ -242,6 +279,7 @@ def build_pages(
             raise PdfReadError(f"The document has no page {index + 1}.")
 
     annotations = _read_annotations(opened, info, wanted)
+    _hide_owned_annotations(opened, annotations)
 
     pages: list[Page] = []
     for index in wanted:
