@@ -5,7 +5,12 @@ All notable changes to Orion are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] — 2026-08-30
+
+Everything below shipped after the first v1.0.0 build and under the same
+version number: the tag is re-cut as the work continues rather than advanced,
+so what a download contains is told apart by the date above rather than by the
+number.
 
 ### Added
 - **Editing the text that is already in the PDF.** Until now Orion could put a
@@ -221,8 +226,6 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   the archives and appeared nowhere before are named, and MuPDF's position has
   its own subsection: Orion cannot sublicense Artifex's code, so a
   Redistribution licence still hands the buyer AGPL MuPDF and its obligations.
-
-### Changed
 - **The PDF engine was replaced.** Orion rendered and wrote PDFs with MuPDF,
   through PyMuPDF, which Artifex licenses under the AGPL-3.0 or a commercial
   licence of its own. Orion held no right to sublicense it, so a customer who
@@ -370,7 +373,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   compressed, net of the licence texts added at the same time.
 
 
-## [1.0.0] — 2026-08-22
+## [1.0.0] — 2026-08-22 · first build
 
 The first release: a complete, offline PDF viewer, editor, annotator and page
 organiser.
