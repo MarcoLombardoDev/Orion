@@ -54,18 +54,20 @@ LINES = (
 )
 
 
-def _embedded_font() -> str | None:
-    """A TrueType file to embed, so the hard case is actually exercised."""
+def _embedded_font(family: str) -> str:
+    """Register *family* under a name of this test's own, and return it.
+
+    The family comes from the ``latin_system_family`` fixture rather than from
+    whatever the scan happened to list first: a font has to be able to write
+    the words these tests look for, and not every installed one can.
+    """
     from orion.pdf import fonts
 
-    for family, styles in fonts._index().items():
-        face = styles.get((False, False))
-        if face is not None:
-            pdfmetrics.registerFont(
-                TTFont(f"Test:{family}", str(face.path), subfontIndex=face.index)
-            )
-            return f"Test:{family}"
-    return None
+    styles = fonts._index()[family]
+    face = styles.get((False, False)) or next(iter(styles.values()))
+    name = f"Test:{family}"
+    pdfmetrics.registerFont(TTFont(name, str(face.path), subfontIndex=face.index))
+    return name
 
 
 def _source(tmp_path, font: str = "Helvetica"):
@@ -241,15 +243,13 @@ def test_replacing_a_line_removes_the_original_from_the_file(tmp_path, opened):
     assert "Dear Mr Rossi," in text and "Keep this line untouched" in text
 
 
-def test_it_works_on_an_embedded_font(tmp_path, opened):
-    """The case the obvious implementation gets wrong.
+def test_it_works_on_an_embedded_font(tmp_path, opened, latin_system_family):
+    """A font that lives only in the file is the normal case in real documents.
 
-    pdfium's in-place ``FPDFText_SetText`` silently does nothing here, so this
-    is the test that says the replacement approach was necessary.
+    A suite built on Helvetica would never touch the path where the glyphs
+    have to be found inside the PDF rather than in the reader.
     """
-    font = _embedded_font()
-    if font is None:
-        pytest.skip("no embeddable system font is installed")
+    font = _embedded_font(latin_system_family)
     document, renderer = opened(_source(tmp_path, font))
     try:
         _replace(document, renderer, Point(120.0, 100.0), "Replaced")
@@ -263,7 +263,7 @@ def test_it_works_on_an_embedded_font(tmp_path, opened):
     assert "Replaced" in text
 
 
-def test_pdfium_can_set_text_in_place_but_it_is_not_what_is_wanted():
+def test_pdfium_can_set_text_in_place_but_it_is_not_what_is_wanted(latin_system_family):
     """Records what the alternative really does, since it is easy to misjudge.
 
     ``FPDFText_SetText`` works, on embedded subsets included: it extends the
@@ -282,9 +282,7 @@ def test_pdfium_can_set_text_in_place_but_it_is_not_what_is_wanted():
 
     import pypdfium2.raw as raw
 
-    font = _embedded_font()
-    if font is None:
-        pytest.skip("no embeddable system font is installed")
+    font = _embedded_font(latin_system_family)
 
     buffer = io.BytesIO()
     pdf = rl_canvas.Canvas(buffer, pagesize=PAGE_SIZE)

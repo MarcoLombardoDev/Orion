@@ -39,12 +39,13 @@ from orion.utils.geometry import Rect
 
 
 @pytest.fixture
-def a_system_family() -> str:
-    """A family installed here that Orion can embed, or skip the test."""
-    extras = [name for name in available_families() if name not in BASE14_MAP]
-    if not extras:
-        pytest.skip("no embeddable system fonts are installed")
-    return extras[0]
+def a_system_family(latin_system_family) -> str:
+    """A family installed here that Orion can embed and write words in.
+
+    ``latin_system_family`` earns its keep in ``conftest``: the first family
+    alphabetically is not a safe choice, and CI proved it twice over.
+    """
+    return latin_system_family
 
 
 # -- the base-14 path must not have moved --------------------------------
@@ -90,12 +91,24 @@ def test_widths_still_match_the_base14_tables():
 
 # -- system fonts ---------------------------------------------------------
 def test_a_system_family_is_embedded_and_measured_with_its_own_metrics(a_system_family):
+    """The metrics have to come from the font, not from the fallback.
+
+    Asserting a *range* was the first attempt and it was wrong: "DejaVu Math
+    TeX Gyre" is a real, installed, perfectly valid font whose bounding box is
+    two and a half ems tall, because it has to hold an integral sign. A number
+    plucked from what Helvetica happens to look like is not an invariant. What
+    is one: the box has a top above the baseline and a bottom below it, and it
+    is not Helvetica's.
+    """
     resolved = resolve(FontRequest(a_system_family))
     assert resolved.embedded
     assert not resolved.substituted
-    # Real metrics, not the Helvetica fallback's.
-    assert 0.5 < resolved.ascender < 2.0
-    assert -1.0 < resolved.descender < 0.0
+    assert resolved.ascender > 0.0 > resolved.descender
+    helvetica = resolve(FontRequest("Helvetica"))
+    assert (resolved.ascender, resolved.descender) != (
+        helvetica.ascender,
+        helvetica.descender,
+    ), "the fallback's metrics were used for an embedded font"
     assert measure("Hello Orion", FontRequest(a_system_family), 12.0) > 0.0
 
 
@@ -170,6 +183,19 @@ def test_a_file_that_is_not_a_usable_font_yields_nothing(tmp_path, content):
     except (ValueError, OSError, struct.error):
         faces = []  # what the scan does with it, and equally acceptable
     assert faces == []
+
+
+def test_apples_hidden_fonts_are_not_offered():
+    """macOS ships private fonts whose names begin with a dot.
+
+    CoreText keeps them out of every picker on the platform, and they are
+    often partial: ".ADT Slab Numeric" has the digits and hardly any letters,
+    so a document set in it loses most of its text. Alphabetical order put it
+    first in the list, which made it the worst possible default — and is how
+    CI found it.
+    """
+    assert not [name for name in available_families() if name.startswith(".")]
+    assert not [name for name in fonts._index() if name.startswith(".")]
 
 
 def test_the_scan_survives_a_directory_of_rubbish(tmp_path, monkeypatch):

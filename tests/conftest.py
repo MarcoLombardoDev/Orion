@@ -340,3 +340,57 @@ def make_encrypted_pdf(path, password: str, width=200.0, height=200.0):
     with open(path, "wb") as handle:
         out.write(handle)
     return path
+
+
+@pytest.fixture(scope="session")
+def latin_system_family() -> str:
+    """An installed family that can actually write the Latin alphabet.
+
+    Taking the first family alphabetically is not good enough, and both CI
+    runners proved it in different ways: Ubuntu's is "DejaVu Math TeX Gyre",
+    whose bounding box is two and a half times the em because it has to hold
+    integral signs, and macOS used to offer ".ADT Slab Numeric" — a hidden
+    Apple font with the digits and hardly any letters, in which "Dear Mr
+    Rossi," comes back as "D M Ri,".
+
+    So the family is chosen by trying it: write a line, read it back, and keep
+    the first one that survives. Session-scoped because that costs a PDF per
+    candidate. Skips when the machine has nothing to embed, which a bare
+    container legitimately does not.
+    """
+    import io
+
+    import pypdfium2 as pdfium
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.pdfgen import canvas
+
+    from orion.pdf import fonts
+
+    sample = "Handgloves"
+    for family, styles in sorted(fonts._index().items()):
+        face = styles.get((False, False)) or next(iter(styles.values()), None)
+        if face is None:
+            continue
+        name = f"probe:{family}"
+        try:
+            pdfmetrics.registerFont(TTFont(name, str(face.path), subfontIndex=face.index))
+        except Exception:
+            continue
+        buffer = io.BytesIO()
+        pdf = canvas.Canvas(buffer, pagesize=(300.0, 120.0))
+        try:
+            pdf.setFont(name, 18)
+            pdf.drawString(20.0, 50.0, sample)
+            pdf.showPage()
+            pdf.save()
+            document = pdfium.PdfDocument(buffer.getvalue())
+            try:
+                written = document[0].get_textpage().get_text_range()
+            finally:
+                document.close()
+        except Exception:
+            continue
+        if sample in written:
+            return family
+    pytest.skip("no installed font can write the Latin alphabet")

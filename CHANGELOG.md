@@ -245,6 +245,13 @@ number.
   highlights and images came out identical on all four page rotations.
 
 ### Fixed
+- **macOS's hidden system fonts were offered in the font picker.** A family
+  whose name begins with a dot is one Apple's own text engine keeps out of
+  every picker on the platform, and they are frequently partial: the runner's
+  ".ADT Slab Numeric" has the digits and hardly any letters, so a line set in
+  it loses most of itself. Alphabetical order put it first in the list, which
+  made it the worst available default. Found by CI on macOS, which is the only
+  machine in the loop that has them.
 - **Icons were drawn twice as large as their buttons on a HiDPI screen.** The
   renderer allocated the pixmap at `size × ratio` device pixels, set its device
   pixel ratio, and then handed that same device pixel count to the shape

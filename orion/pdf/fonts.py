@@ -273,7 +273,14 @@ def _faces_in_file(path: Path) -> list[_Face]:
             if b"name" not in tables:
                 continue
             family, style = _read_names(handle, *tables[b"name"])
-            if not family:
+            if not family or family.startswith("."):
+                # A leading dot is Apple's convention for a font the system
+                # uses and hides: CoreText keeps them out of every picker on
+                # the platform. They are also frequently partial — macOS ships
+                # ".ADT Slab Numeric", which has the digits and almost no
+                # letters, so a document set in it loses most of its text —
+                # and offering one first, which alphabetical order does, would
+                # be the worst possible default.
                 continue
             lowered = style.lower()
             faces.append(
