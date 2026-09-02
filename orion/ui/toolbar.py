@@ -137,7 +137,6 @@ class ToolPalette(QToolBar):
         Tool.TEXT,
         Tool.PAGE_TEXT,
         Tool.IMAGE,
-        Tool.REDACT,
         None,
         Tool.RECTANGLE,
         Tool.ELLIPSE,
@@ -147,9 +146,13 @@ class ToolPalette(QToolBar):
         Tool.HIGHLIGHT,
         Tool.UNDERLINE,
         Tool.STRIKEOUT,
+        # Redaction sits with the markup tools because that is what it is: a
+        # thing you drag over words you have found. Its place among the
+        # object tools put it next to Image, which is about as far from what
+        # it does as the palette gets.
+        Tool.REDACT,
         None,
         Tool.FREEHAND,
-        Tool.COMMENT,
         Tool.STICKY_NOTE,
     )
 

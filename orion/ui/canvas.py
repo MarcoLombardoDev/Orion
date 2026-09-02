@@ -595,7 +595,7 @@ class PdfCanvas(QGraphicsView):
             self.image_requested.emit(page_item.index, base)
             event.accept()
             return
-        if tool in (Tool.COMMENT, Tool.STICKY_NOTE):
+        if tool is Tool.STICKY_NOTE:
             self._create_note(page_item, base, tool)
             event.accept()
             return
@@ -988,8 +988,16 @@ class PdfCanvas(QGraphicsView):
         self.note_edit_requested.emit(item)
 
     def edit_selected_text(self) -> bool:
+        """Start editing the selected text object. False if there is none.
+
+        False, too, when one is already being edited: the caller is deciding
+        whether to consume a key, and a request that changed nothing must not
+        look like one that did.
+        """
         for item in self.selected_items():
             if isinstance(item, TextObjectItem):
+                if item.is_editing:
+                    return False
                 item.begin_editing()
                 return True
         return False
@@ -1058,7 +1066,15 @@ class PdfCanvas(QGraphicsView):
                 self.clear_selection()
             event.accept()
             return
-        if key in (Qt.Key.Key_Return, Qt.Key.Key_F2) and self.edit_selected_text():
+        # Only *start* editing. While the editor is open the key belongs to it,
+        # and claiming it here is what stopped Return breaking a line: the
+        # object being edited is also the selected one, so this branch matched
+        # every time and the key never reached the caret.
+        if (
+            key in (Qt.Key.Key_Return, Qt.Key.Key_F2)
+            and not self.is_editing_text
+            and self.edit_selected_text()
+        ):
             event.accept()
             return
         if key in (

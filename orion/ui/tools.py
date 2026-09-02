@@ -32,7 +32,6 @@ class Tool(str, Enum):
     UNDERLINE = "underline"
     STRIKEOUT = "strikeout"
     FREEHAND = "freehand"
-    COMMENT = "comment"
     STICKY_NOTE = "sticky_note"
     PAGE_TEXT = "page_text"
     REDACT = "redact"
@@ -69,7 +68,6 @@ class Tool(str, Enum):
             Tool.UNDERLINE: AnnotationKind.UNDERLINE,
             Tool.STRIKEOUT: AnnotationKind.STRIKEOUT,
             Tool.FREEHAND: AnnotationKind.INK,
-            Tool.COMMENT: AnnotationKind.COMMENT,
             Tool.STICKY_NOTE: AnnotationKind.STICKY_NOTE,
         }.get(self)
 
@@ -95,7 +93,6 @@ TOOL_INFO: dict[Tool, ToolInfo] = {
     Tool.UNDERLINE: ToolInfo("Underline", "underline", "", "Drag across text to underline it"),
     Tool.STRIKEOUT: ToolInfo("Strikeout", "strikeout", "", "Drag across text to strike it out"),
     Tool.FREEHAND: ToolInfo("Freehand", "freehand", "P", "Draw freely with the mouse"),
-    Tool.COMMENT: ToolInfo("Comment", "comment", "", "Click to attach a comment"),
     Tool.STICKY_NOTE: ToolInfo("Sticky Note", "sticky_note", "N", "Click to place a note"),
     Tool.REDACT: ToolInfo(
         "Redact",

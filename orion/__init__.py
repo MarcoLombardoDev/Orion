@@ -15,7 +15,7 @@ APP_NAME = "Orion"
 APP_SUBTITLE = "PDF Editor for Desktop"
 APP_ID = "orion"
 ORGANISATION = "Orion"
-__version__ = "1.5.0"
+__version__ = "1.5.1"
 
 APP_AUTHOR = "Marco Lombardo"
 APP_COPYRIGHT_YEAR = "2026"

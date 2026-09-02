@@ -164,10 +164,10 @@ def _build_theme_menu(menu: QMenu, actions: ActionRegistry) -> QMenu:
 def _add_tool_entries(menu: QMenu, actions: ActionRegistry) -> None:
     groups: tuple[tuple[Tool, ...], ...] = (
         (Tool.SELECT, Tool.HAND),
-        (Tool.TEXT, Tool.IMAGE),
+        (Tool.TEXT, Tool.PAGE_TEXT, Tool.IMAGE),
         (Tool.RECTANGLE, Tool.ELLIPSE, Tool.LINE, Tool.ARROW),
-        (Tool.HIGHLIGHT, Tool.UNDERLINE, Tool.STRIKEOUT),
-        (Tool.FREEHAND, Tool.COMMENT, Tool.STICKY_NOTE),
+        (Tool.HIGHLIGHT, Tool.UNDERLINE, Tool.STRIKEOUT, Tool.REDACT),
+        (Tool.FREEHAND, Tool.STICKY_NOTE),
     )
     for index, group in enumerate(groups):
         if index:

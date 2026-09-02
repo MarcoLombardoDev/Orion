@@ -65,10 +65,9 @@ The palette down the left side selects what a click on the page does.
 | Highlight | | Drag across text to highlight it |
 | Underline | | Drag across text to underline it |
 | Strikeout | | Drag across text to strike it out |
-| Freehand | `P` | Draw with the mouse held down |
-| Comment | | Click to attach a comment |
-| Sticky Note | `N` | Click to place a note |
 | Redact | | Drag over anything that must leave the file |
+| Freehand | `P` | Draw with the mouse held down |
+| Sticky Note | `N` | Click to place a note |
 | Edit Page Text | `E` | Click a line of the document's own text to rewrite it |
 
 Most tools hand control back to **Select** as soon as the object exists, so you
@@ -81,8 +80,11 @@ square or circle.
 ### Text
 
 Double-click a text object — or select it and press `F2` or `Enter` — to edit
-it in place. **Ctrl/Cmd+Enter** commits; **Esc** cancels; clicking elsewhere
-commits.
+it in place. While you are typing, **Enter** starts a new line;
+**Ctrl/Cmd+Enter** commits; **Esc** cancels; clicking elsewhere commits.
+
+The text stays the size it will be in the saved file the whole time. What you
+type is what the writer lays out, at the size the canvas is already showing.
 
 A small red corner mark means the text does not fit its box: it would be
 clipped in the saved file too. Make the box bigger or the text smaller.
@@ -114,6 +116,11 @@ a box on top of it. Click a line and it becomes an editable text box holding
 that line, in the same place, at the same size and colour; type over it and
 save, and the original is gone from the file rather than covered up.
 
+The original stops being drawn the moment you click it, so what is on screen
+is what the file will hold — one line, not the new one sitting over the old.
+Find stops matching those words too, for the same reason: they are not on the
+page any more.
+
 Three things follow from how it works, and they are worth knowing before you
 rely on it:
 
@@ -138,10 +145,13 @@ inside your drag and snaps the annotation to them, so the marking follows the
 text rather than your hand. If there is no selectable text there — a scanned
 page, for example — the status bar says so and nothing is added.
 
-### Comments and sticky notes
+### Sticky notes
 
 Click to place one; a dialog asks for the text. Double-click it later to edit.
-Both become standard PDF text annotations, so other readers show them.
+It becomes a standard PDF text annotation, so other readers show it.
+
+Notes a *file* already carries are read back and editable in the same way,
+including the ones other programs label comments rather than notes.
 
 ### Annotations already in the file
 

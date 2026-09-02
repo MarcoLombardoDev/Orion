@@ -77,6 +77,9 @@ class PageItem(QGraphicsItem):
         self._image: QImage | None = None
         self._image_scale = 0.0
         self._requested_scale = 0.0
+        #: The replaced set the raster on screen was made with, so a page-text
+        #: edit is noticed even though nothing about the zoom has changed.
+        self._image_replaced: tuple[int, ...] | None = None
         self._search_hits: list[Rect] = []
         self._current_hit: int = -1
 
@@ -107,6 +110,7 @@ class PageItem(QGraphicsItem):
         self._image = None
         self._image_scale = 0.0
         self._requested_scale = 0.0
+        self._image_replaced = None
         self.update()
 
     # -- geometry ---------------------------------------------------------
@@ -138,6 +142,7 @@ class PageItem(QGraphicsItem):
             return  # a sharper raster is already on screen
         self._image = to_qimage(rendered)
         self._image_scale = rendered.scale
+        self._image_replaced = request.replaced
         self.update()
 
     def paint(
@@ -169,17 +174,26 @@ class PageItem(QGraphicsItem):
         painter.drawRect(rect)
 
     def _ensure_raster(self, scale: float) -> None:
-        """Ask for a sharper raster when the zoom has moved on."""
+        """Ask for a fresh raster when the zoom, or the page itself, has moved on.
+
+        Rewriting a line of the document's own text changes what the page
+        looks like without changing its size, its rotation or the zoom — so
+        without the second test here the stale picture stays on screen, still
+        showing the words the edit removed.
+        """
         request = self._canvas.render_service.renderer.request_for(self._page, scale)
-        if abs(request.scale - self._image_scale) < 1e-3:
-            return
-        if abs(request.scale - self._requested_scale) < 1e-3 and self._image is not None:
-            return
+        stale = request.replaced != self._image_replaced
+        if not stale:
+            if abs(request.scale - self._image_scale) < 1e-3:
+                return
+            if abs(request.scale - self._requested_scale) < 1e-3 and self._image is not None:
+                return
         self._requested_scale = request.scale
         rendered = self._canvas.render_service.request(request)
         if rendered is not None:
             self._image = to_qimage(rendered)
             self._image_scale = rendered.scale
+            self._image_replaced = request.replaced
 
     def _paint_placeholder(self, painter: QPainter, rect: QRectF, theme: Theme) -> None:
         """A calm placeholder while the page is still rendering."""

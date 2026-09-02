@@ -97,14 +97,18 @@ class InlineTextEditor:
     def _font(owner: TextObjectItem) -> QFont:
         """The same font the item paints with, so nothing shifts on edit.
 
-        Scene units are PDF points, and a QGraphicsTextItem resolves point
-        sizes against 72 dpi in scene space, so the size maps one to one here
-        — which is the only difference from the painted case.
+        A ``QGraphicsTextItem`` sizes its font against the paint device just
+        as ``QPainter`` does, so it needs the same conversion from points to
+        scene units. Assuming it resolved against 72 dpi is what made the text
+        grow by a third the instant the caret appeared, on every screen
+        reporting the usual 96.
         """
-        from orion.ui.object_items import qt_font
+        from orion.ui.object_items import scene_font
 
         obj = owner.text_object
-        font = qt_font(obj, obj.font_size)
+        viewport = owner._canvas.viewport()
+        dpi = float(viewport.logicalDpiY()) if viewport is not None else 72.0
+        font = scene_font(obj, dpi)
         font.setUnderline(obj.underline)
         return font
 

@@ -20,6 +20,7 @@ import pytest
 pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QPointF, Qt  # noqa: E402
+from PySide6.QtGui import QKeyEvent  # noqa: E402
 
 from orion.document.annotations import AnnotationKind, AnnotationObject  # noqa: E402
 from orion.document.objects import ShapeKind, ShapeObject, TextObject  # noqa: E402
@@ -137,6 +138,158 @@ def test_text_tool_opens_the_inline_editor(window, qapp, sample_pdf):
     item.end_editing(commit=True)
     assert texts[0].text == "Typed on the canvas"
     assert window.session.history.undo_text == "Edit Text"
+
+
+class TestTypingInATextBox:
+    """The two things that made a text box unpleasant to actually type in."""
+
+    @staticmethod
+    def _new_box(window, qapp):
+        _drag(window, Tool.TEXT, (40.0, 300.0), (260.0, 350.0))
+        pump(qapp)
+        obj = [o for o in window.session.document[0].objects if isinstance(o, TextObject)][0]
+        return obj, window._canvas._item_index[obj.id]
+
+    def test_the_editor_uses_the_size_the_canvas_paints(self, window, qapp, sample_pdf):
+        """The text must not change size the instant the caret appears.
+
+        Qt sizes a point against the device's logical DPI, and the editor used
+        to skip the conversion the painter does — so on an ordinary 96 dpi
+        screen every box grew by a third on entry and shrank back on exit.
+        """
+        from orion.ui.object_items import scene_font
+
+        window.open_path(sample_pdf)
+        pump(qapp)
+        obj, item = self._new_box(window, qapp)
+        obj.font_size = 24.0
+
+        dpi = float(window._canvas.viewport().logicalDpiY())
+        painted = scene_font(obj, dpi)
+        editing = item._editor._font(item)
+        assert editing.pointSizeF() == pytest.approx(painted.pointSizeF())
+
+    def test_the_conversion_is_the_one_the_painter_makes(self):
+        """Pinned in units rather than by agreement, so both can be wrong."""
+        from orion.ui.object_items import scene_font
+
+        obj = TextObject(rect=Rect.from_xywh(0.0, 0.0, 100.0, 40.0), text="x", font_size=12.0)
+        assert scene_font(obj, 96.0).pointSizeF() == pytest.approx(9.0)
+        assert scene_font(obj, 72.0).pointSizeF() == pytest.approx(12.0)
+
+    def test_enter_breaks_the_line_instead_of_being_swallowed(
+        self, window, qapp, sample_pdf
+    ):
+        """The canvas claimed Return to *start* editing, while editing.
+
+        The object being edited is also the selected one, so the branch matched
+        every time and the key never reached the caret: Enter did nothing.
+        """
+        window.open_path(sample_pdf)
+        pump(qapp)
+        obj, item = self._new_box(window, qapp)
+        assert item.is_editing
+        item._editor._item.setPlainText("first")
+        cursor = item._editor._item.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        item._editor._item.setTextCursor(cursor)
+
+        event = QKeyEvent(
+            QKeyEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier
+        )
+        window._canvas.keyPressEvent(event)
+        pump(qapp)
+
+        assert item.is_editing, "Return must not commit"
+        assert item._editor._item.toPlainText() == "first\n", "Return did not break the line"
+
+    def test_a_line_break_survives_into_the_model(self, window, qapp, sample_pdf):
+        window.open_path(sample_pdf)
+        pump(qapp)
+        obj, item = self._new_box(window, qapp)
+        item._editor._item.setPlainText("first\nsecond")
+        item.end_editing(commit=True)
+        assert obj.text == "first\nsecond"
+
+    def test_two_lines_are_laid_out_as_two(self, window, qapp, sample_pdf):
+        """A newline the layout ignored would be a line break in name only."""
+        from orion.pdf.text_layout import layout_text
+
+        window.open_path(sample_pdf)
+        pump(qapp)
+        obj, item = self._new_box(window, qapp)
+        item._editor._item.setPlainText("first\nsecond")
+        item.end_editing(commit=True)
+
+        layout = layout_text(obj.text, obj.rect, font_size=obj.font_size)
+        assert len(layout.lines) == 2
+        assert layout.lines[1].baseline > layout.lines[0].baseline
+
+
+class TestTheToolPalette:
+    """What the palette offers, and in what order."""
+
+    def test_redaction_sits_with_the_markup_tools(self):
+        """It is a thing you drag over words, not a thing you place."""
+        from orion.ui.toolbar import ToolPalette
+
+        layout = [tool for tool in ToolPalette.LAYOUT if tool is not None]
+        assert layout.index(Tool.REDACT) > layout.index(Tool.HIGHLIGHT)
+        assert layout.index(Tool.REDACT) > layout.index(Tool.STRIKEOUT)
+        assert layout.index(Tool.REDACT) < layout.index(Tool.FREEHAND)
+
+    def test_there_is_no_second_way_to_place_a_note(self):
+        """Comment and Sticky Note did the same thing under two names."""
+        from orion.ui.toolbar import ToolPalette
+
+        assert not hasattr(Tool, "COMMENT")
+        assert Tool.STICKY_NOTE in ToolPalette.LAYOUT
+
+    def test_every_tool_in_the_palette_has_an_action(self, window):
+        """A palette entry with no action behind it is a dead button."""
+        from orion.ui.toolbar import ToolPalette
+
+        for tool in ToolPalette.LAYOUT:
+            if tool is not None:
+                assert window._actions.tool_action(tool) is not None
+
+    def test_the_menu_offers_the_same_tools_as_the_palette(self, window):
+        """The two drifted apart: Redact and Edit Page Text were palette-only."""
+        from PySide6.QtWidgets import QMenu
+
+        from orion.ui.menu import _add_tool_entries
+
+        menu = QMenu()
+        _add_tool_entries(menu, window._actions)
+        in_menu = {a.text() for a in menu.actions() if not a.isSeparator()}
+
+        from orion.ui.toolbar import ToolPalette
+
+        for tool in ToolPalette.LAYOUT:
+            if tool is not None:
+                assert window._actions.tool_action(tool).text() in in_menu, tool
+
+
+def test_a_comment_annotation_from_a_file_is_still_editable(window, qapp, sample_pdf):
+    """Dropping the tool must not drop the kind.
+
+    A PDF's own ``/Text`` annotations come in as comments, and files full of
+    them predate this change by years.
+    """
+    from orion.document.annotations import AnnotationKind, AnnotationObject
+
+    window.open_path(sample_pdf)
+    pump(qapp)
+    page = window.session.document[0]
+    obj = AnnotationObject(
+        rect=Rect.from_xywh(60.0, 60.0, 20.0, 20.0),
+        annotation=AnnotationKind.COMMENT,
+        contents="from the file",
+    )
+    page.add_object(obj)
+    window._canvas.rebuild()
+    pump(qapp)
+    assert obj.id in window._canvas._item_index
 
 
 # -- selection and clipboard ---------------------------------------------
@@ -1340,6 +1493,40 @@ class TestEditingThePagesOwnText:
         page = window.session.document[0]
         assert page.objects == []
         assert page.replaced_text == ()
+
+    @staticmethod
+    def _page_ink(window) -> int:
+        """Dark pixels in the raster the canvas is actually showing."""
+        image = window._canvas._page_items[0]._image
+        assert image is not None, "the page has not rendered yet"
+        return sum(
+            1
+            for y in range(image.height())
+            for x in range(image.width())
+            if image.pixelColor(x, y).red() < 128
+        )
+
+    def test_the_original_line_leaves_the_screen_too(self, window, qapp, sample_pdf):
+        """The model was right all along; only the picture was wrong.
+
+        The raster the canvas holds is keyed by zoom, and a page-text edit
+        changes neither the zoom nor the page size — so the stale image stayed
+        up, showing the words the edit had removed underneath the ones
+        replacing them. That is what "the edit does not work" looked like.
+        """
+        window.open_path(sample_pdf)
+        pump(qapp)
+        wait_until(qapp, lambda: window._canvas._page_items[0]._image is not None)
+        before = self._page_ink(window)
+        assert before > 0, "the fixture rendered nothing"
+
+        self._click_line(window, qapp, (90.0, 95.0))
+        item = window._canvas._item_index[window.session.document[0].objects[0].id]
+        item.end_editing(commit=False)
+        pump(qapp)
+        wait_until(qapp, lambda: self._page_ink(window) < before)
+
+        assert self._page_ink(window) < before, "the original is still on screen"
 
     def test_the_tool_hands_back_to_select(self, window, qapp, sample_pdf):
         window.open_path(sample_pdf)

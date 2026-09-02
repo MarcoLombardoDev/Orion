@@ -5,6 +5,50 @@ All notable changes to Orion are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] — 2026-09-02
+
+Four things reported from the first real use of 1.5.0. Three were bugs; the
+fourth is a tool that should not have been there.
+
+### Fixed
+- **A text box no longer changes size the instant you type in it.** Qt sizes a
+  font against the display's logical DPI, and the inline editor skipped the
+  conversion the painter makes — so on the 96 dpi a desktop usually reports,
+  every box grew by a third on entry and shrank back on exit. Both now go
+  through one function, and a test pins the arithmetic in units rather than
+  trusting the two to agree.
+- **Enter breaks the line instead of doing nothing.** The canvas claimed
+  Return in order to *start* editing, without first asking whether editing was
+  already under way — and since the box being edited is also the selected one,
+  the branch matched every time and the key never reached the caret.
+- **Rewriting a line of the document's own text now looks like it worked.**
+  Saving had removed the original all along, but the screen went on showing it
+  underneath the replacement: two copies of the line a whisker apart, which
+  reads as the edit having done nothing. The replaced objects are switched off
+  in the copy pdfium holds for the screen, and the page is re-rasterised even
+  though neither the zoom nor the page size changed.
+
+  Switched off rather than deleted, because the model records these as source
+  object indices and removing one renumbers every line after it. And applied
+  on every render rather than remembered: pdfium frees a page when its wrapper
+  goes and reloads every object active again, so a note saying "already
+  hidden" describes a page that no longer exists. Find skips those words too —
+  the text page is built from the content stream and still reports them, so
+  that part is done by geometry.
+
+### Changed
+- **Redact moved down the palette**, in with the markup tools. It is a thing
+  you drag over words you have found, which is what Highlight and Strikeout
+  are; sitting next to Image put it about as far from its own meaning as the
+  palette gets.
+- **The Comment tool is gone.** It placed the same annotation as Sticky Note,
+  under a second name, so the palette offered one job twice. Comments already
+  inside a file — a PDF's `/Text` annotations arrive as these — are still read
+  back, still editable, still saved; there is simply one way to make a new one.
+- The Tools menu lists Redact and Edit Page Text, which had been in the
+  palette and nowhere else since they were added. A test now fails if the two
+  ever disagree again.
+
 ## [1.5.0] — 2026-09-02
 
 The version number starts moving here. Six additions, and the thread running

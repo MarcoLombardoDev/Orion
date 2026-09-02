@@ -600,3 +600,112 @@ def test_overlapping_bands_go_to_the_nearest_baseline(tmp_path, opened):
         assert line_at(lines, Point(60.0, lower.baseline - 1.0)) is lower
     finally:
         renderer.close_all()
+
+
+# -- what the screen shows -------------------------------------------------
+def _ink(renderer, page) -> int:
+    """How many dark pixels the rasterised page carries."""
+    rendered = renderer.render(renderer.request_for(page, 1.0), use_cache=False)
+    return sum(1 for value in rendered.samples[::3] if value < 128)
+
+
+def test_the_replaced_line_stops_being_drawn(tmp_path, opened):
+    """Saving removed it; the screen went on showing it underneath.
+
+    Two copies of the line a whisker apart, which reads as the edit having
+    done nothing at all — and was the whole of the complaint. The raster is
+    the only thing that can answer this: the model was right the entire time.
+    """
+    path = tmp_path / "one-line.pdf"
+    pdf = rl_canvas.Canvas(str(path), pagesize=PAGE_SIZE)
+    pdf.setFont("Helvetica", 18)
+    pdf.drawString(40.0, 220.0, "REPLACE ME")
+    pdf.showPage()
+    pdf.save()
+
+    document, renderer = opened(path)
+    try:
+        page = document.pages[0]
+        before = _ink(renderer, page)
+        assert before > 0, "the fixture drew nothing"
+
+        history = History()
+        line = renderer.source_text_lines(page)[0]
+        obj = TextObject(rect=line.rect, text="something else", font_size=18.0)
+        history.push(ReplacePageTextCommand(document, 0, obj, line.indices))
+
+        assert _ink(renderer, page) == 0, "the original is still on the page"
+        # Twice, because pdfium frees the page when its wrapper goes and
+        # reloads every object active again: hiding it once is not hiding it.
+        assert _ink(renderer, page) == 0, "the original came back on the next render"
+
+        # And undo puts it back: the object is gone, so something must draw it.
+        history.undo()
+        assert _ink(renderer, page) == pytest.approx(before, rel=0.02)
+    finally:
+        renderer.close_all()
+
+
+def test_the_replaced_words_stop_being_searchable(tmp_path, opened):
+    """The old text has to leave the text page too, not just the picture.
+
+    Otherwise Find still lands on words that are no longer on the page, and
+    copying it hands back the line the user replaced.
+    """
+    path = tmp_path / "findable.pdf"
+    pdf = rl_canvas.Canvas(str(path), pagesize=PAGE_SIZE)
+    pdf.setFont("Helvetica", 18)
+    pdf.drawString(40.0, 220.0, "FINDABLE")
+    pdf.showPage()
+    pdf.save()
+
+    document, renderer = opened(path)
+    try:
+        page = document.pages[0]
+        assert renderer.search_page(page, "FINDABLE")
+
+        line = renderer.source_text_lines(page)[0]
+        obj = TextObject(rect=line.rect, text="replaced", font_size=18.0)
+        History().push(ReplacePageTextCommand(document, 0, obj, line.indices))
+        renderer.render(renderer.request_for(page, 1.0), use_cache=False)
+
+        assert not renderer.search_page(page, "FINDABLE")
+    finally:
+        renderer.close_all()
+
+
+def test_the_untouched_lines_keep_their_indices(tmp_path, opened):
+    """Deactivating rather than deleting is the reason this holds.
+
+    Removing an object renumbers every one after it, and the model records
+    these as source indices — so one edit would quietly point every later
+    line at the wrong words.
+    """
+    path = tmp_path / "three.pdf"
+    pdf = rl_canvas.Canvas(str(path), pagesize=PAGE_SIZE)
+    pdf.setFont("Helvetica", 16)
+    for offset, words in enumerate(("first line", "second line", "third line")):
+        pdf.drawString(40.0, 220.0 - offset * 40.0, words)
+    pdf.showPage()
+    pdf.save()
+
+    document, renderer = opened(path)
+    try:
+        page = document.pages[0]
+        lines = renderer.source_text_lines(page)
+        before = {line.text.strip(): line.indices for line in lines}
+        first = sorted(lines, key=lambda line: line.baseline)[0]
+
+        obj = TextObject(rect=first.rect, text="rewritten", font_size=16.0)
+        History().push(ReplacePageTextCommand(document, 0, obj, first.indices))
+        renderer.render(renderer.request_for(page, 1.0), use_cache=False)
+
+        after = {
+            line.text.strip(): line.indices for line in renderer.source_text_lines(page)
+        }
+        for words, indices in before.items():
+            if words == first.text.strip():
+                continue
+            assert after.get(words) == indices, f"{words!r} was renumbered"
+    finally:
+        renderer.close_all()

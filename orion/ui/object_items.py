@@ -137,6 +137,21 @@ def qt_font(obj: TextObject, point_size: float) -> QFont:
     return font
 
 
+def scene_font(obj: TextObject, dpi: float) -> QFont:
+    """A ``QFont`` whose em is *exactly* ``obj.font_size`` scene units.
+
+    One scene unit is one PDF point, but Qt sizes a point against the paint
+    device's logical DPI — so at the 96 dpi a desktop usually reports, asking
+    for twelve points gets an em of sixteen units. Converting back is what
+    keeps the canvas honest about where the glyphs will land.
+
+    Both the painted text and the inline editor go through here, and they have
+    to: they are the same words a moment apart, and any disagreement is a jump
+    in size the instant the caret appears.
+    """
+    return qt_font(obj, obj.font_size * 72.0 / max(dpi, 1.0))
+
+
 class ObjectItem(QGraphicsItem):
     """Base class: selection chrome, move/resize/rotate, undo integration."""
 
@@ -589,15 +604,9 @@ class TextObjectItem(ObjectItem):
             self._paint_overflow_marker(painter, rect)
 
     def _qfont(self, painter: QPainter) -> QFont:
-        """A ``QFont`` whose em size is *exactly* the object's point size.
-
-        Qt resolves point sizes against the paint device's logical DPI, but one
-        scene unit here is one PDF point, so the point size is converted back.
-        """
         device = painter.device()
         dpi = float(device.logicalDpiY()) if device is not None else 72.0
-        obj = self.text_object
-        return qt_font(obj, obj.font_size * 72.0 / max(dpi, 1.0))
+        return scene_font(self.text_object, dpi)
 
     def _paint_empty_hint(self, painter: QPainter, rect: QRectF) -> None:
         theme = self._canvas.theme
