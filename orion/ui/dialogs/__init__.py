@@ -9,6 +9,8 @@
 """Dialogs for the operations that need more than a single click."""
 
 from orion.ui.dialogs.about_dialog import AboutDialog
+from orion.ui.dialogs.command_palette import CommandPalette
+from orion.ui.dialogs.export_images_dialog import ExportImagesDialog
 from orion.ui.dialogs.merge_dialog import MergeDialog
 from orion.ui.dialogs.page_dialogs import (
     GoToPageDialog,
@@ -17,17 +19,24 @@ from orion.ui.dialogs.page_dialogs import (
     NoteDialog,
     PageSelectionDialog,
 )
+from orion.ui.dialogs.properties_dialog import DocumentPropertiesDialog
 from orion.ui.dialogs.recovery_dialog import RecoveryDialog
 from orion.ui.dialogs.split_dialog import SplitDialog
+from orion.ui.dialogs.stamp_dialogs import PageNumberDialog, WatermarkDialog
 
 __all__ = [
     "AboutDialog",
+    "CommandPalette",
+    "DocumentPropertiesDialog",
+    "ExportImagesDialog",
     "GoToPageDialog",
     "ImportPagesDialog",
     "InsertPageDialog",
     "MergeDialog",
     "NoteDialog",
+    "PageNumberDialog",
     "PageSelectionDialog",
     "RecoveryDialog",
     "SplitDialog",
+    "WatermarkDialog",
 ]

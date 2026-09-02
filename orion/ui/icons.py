@@ -272,6 +272,36 @@ ICONS: dict[str, tuple[Shape, ...]] = {
     "bring_front": (Box(0.10, 0.10, 0.52, 0.52), Box(0.34, 0.34, 0.56, 0.56, filled=True, radius=0.04)),
     "send_back": (Box(0.34, 0.34, 0.56, 0.56), Box(0.10, 0.10, 0.52, 0.52, filled=True, radius=0.04)),
     "info": (Oval(0.12, 0.12, 0.76, 0.76), Dot(0.50, 0.30, 0.07), Line(0.50, 0.44, 0.50, 0.76)),
+    # A page with a picture in it and an arrow leaving.
+    "export_image": (
+        Box(0.10, 0.12, 0.56, 0.60, radius=0.05),
+        Dot(0.26, 0.30, 0.07),
+        Poly(((0.14, 0.66), (0.30, 0.46), (0.44, 0.60), (0.52, 0.52), (0.62, 0.66)), closed=False),
+        Line(0.62, 0.84, 0.90, 0.84),
+        Poly(((0.90, 0.84), (0.80, 0.78), (0.80, 0.90)), closed=True, filled=True),
+    ),
+    # A word laid diagonally across a page.
+    "watermark": (
+        Box(0.16, 0.10, 0.68, 0.80, radius=0.05),
+        Line(0.28, 0.72, 0.72, 0.28),
+        Line(0.28, 0.72, 0.38, 0.68),
+        Line(0.72, 0.28, 0.62, 0.32),
+    ),
+    # A page with a numeral in the corner where the number goes.
+    "page_numbers": (
+        Box(0.18, 0.08, 0.64, 0.84, radius=0.05),
+        Line(0.30, 0.26, 0.62, 0.26),
+        Line(0.30, 0.42, 0.70, 0.42),
+        Line(0.44, 0.66, 0.50, 0.62),
+        Line(0.50, 0.62, 0.50, 0.80),
+    ),
+    # A solid block over ruled lines: the thing itself, not a symbol for it.
+    "redact": (
+        Line(0.12, 0.20, 0.88, 0.20),
+        Line(0.12, 0.34, 0.66, 0.34),
+        Box(0.12, 0.50, 0.76, 0.24, filled=True),
+        Line(0.12, 0.86, 0.60, 0.86),
+    ),
     # A serif T with a pencil across it: the page's own text, being rewritten.
     "edit_page_text": (
         Line(0.08, 0.22, 0.56, 0.22),

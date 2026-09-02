@@ -38,6 +38,7 @@ __all__ = [
     "ShapeKind",
     "ShapeObject",
     "create_object",
+    "RedactionObject",
     "register_object_type",
     "new_object_id",
     "MIN_OBJECT_SIZE",
@@ -62,6 +63,7 @@ class ObjectKind(str, Enum):
     IMAGE = "image"
     SHAPE = "shape"
     ANNOTATION = "annotation"
+    REDACTION = "redaction"
 
 
 class Align(str, Enum):
@@ -370,6 +372,41 @@ class ShapeObject(PageObject):
 _REGISTRY: dict[str, Callable[[dict[str, Any]], PageObject]] = {}
 
 
+@dataclass
+class RedactionObject(PageObject):
+    """An area whose content is **removed** from the saved file.
+
+    A black rectangle drawn over a name hides nothing: the words are still in
+    the file, still selectable, still found by search, and one copy-and-paste
+    away from whoever was not supposed to read them. This is the object that
+    means it. On the canvas it is a box like any other — selectable, movable,
+    undoable — and at save time the writer deletes every drawing operation it
+    covers before painting the box on top.
+
+    ``fill_color`` is what gets painted where the content was. Black by
+    convention; white is the other useful answer, for taking something out
+    without announcing that anything was there.
+    """
+
+    kind: ClassVar[ObjectKind] = ObjectKind.REDACTION
+
+    fill_color: Color = BLACK
+
+    @property
+    def display_name(self) -> str:
+        return "Redaction"
+
+    def _payload(self) -> dict[str, Any]:
+        return {"fill_color": list(self.fill_color)}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> RedactionObject:
+        return cls(
+            **cls._base_kwargs(data),
+            fill_color=tuple(data.get("fill_color", BLACK)),  # type: ignore[arg-type]
+        )
+
+
 def register_object_type(kind: ObjectKind, factory: Callable[[dict[str, Any]], PageObject]) -> None:
     """Register a deserialiser.  New object types plug in here (spec §2, §36)."""
     _REGISTRY[kind.value] = factory
@@ -387,3 +424,6 @@ def create_object(data: dict[str, Any]) -> PageObject:
 register_object_type(ObjectKind.TEXT, TextObject.from_dict)
 register_object_type(ObjectKind.IMAGE, ImageObject.from_dict)
 register_object_type(ObjectKind.SHAPE, ShapeObject.from_dict)
+
+
+register_object_type(ObjectKind.REDACTION, RedactionObject.from_dict)

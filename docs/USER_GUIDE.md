@@ -68,6 +68,8 @@ The palette down the left side selects what a click on the page does.
 | Freehand | `P` | Draw with the mouse held down |
 | Comment | | Click to attach a comment |
 | Sticky Note | `N` | Click to place a note |
+| Redact | | Drag over anything that must leave the file |
+| Edit Page Text | `E` | Click a line of the document's own text to rewrite it |
 
 Most tools hand control back to **Select** as soon as the object exists, so you
 can position it straight away. Freehand and Pan stay active until you change
@@ -152,6 +154,36 @@ Annotations Orion has no tool for — links, form fields, stamps — are left
 exactly as they are. They are not editable here, and saving does not disturb
 them.
 
+### Redacting
+
+The Redact tool takes something out of the file. Drag a box over it and Orion
+draws an opaque rectangle there — but the rectangle is the smaller half of what
+happens. When you save, everything the box covers is deleted from the page:
+the text objects, the images, the drawings. What is left is a black box with
+nothing underneath it.
+
+That is the difference between this and drawing a filled rectangle over a name.
+A rectangle hides the name on screen and leaves it in the file, where copying
+the page, or opening it in any other editor, brings it straight back. This does
+not.
+
+Two things follow:
+
+* A redaction is an ordinary object until you save. Move it, resize it, undo
+  it — the removal is decided at save time by where the box has ended up, not
+  by where you first drew it.
+* Anything the box **touches** goes, not only what it fully contains. Half a
+  word is not a redaction, so Orion errs towards taking the whole object. If
+  something disappeared that you wanted, undo, make the box smaller and try
+  again.
+
+The box is black by default. The properties panel changes its colour — white
+is the other useful answer, when the point is to remove something without
+announcing that anything was removed.
+
+Redaction removes what is on the page. It does not touch the document's
+metadata; **File ▸ Document Properties** is where an author's name lives.
+
 ## Working with objects
 
 Click to select. **Ctrl/Cmd+click** adds to the selection. Dragging on empty
@@ -228,6 +260,62 @@ commit.
 **File ▸ Merge PDF** collects documents, lets you drag them into order, and
 writes the result. "Add Current Document" includes what you have open, unsaved
 changes and all.
+
+## Stamping a whole run of pages
+
+Two jobs that would otherwise mean placing the same text box eighty times.
+
+### Watermark
+
+**Tools ▸ Watermark** puts a word across a range of pages: the text, its size,
+colour, opacity and angle, and which pages get it. It lands in the middle of
+each page, turned as you asked.
+
+The size you choose is a starting point rather than a promise. A word too wide
+for the page is shrunk until it fits, measured on the diagonal it will actually
+sit on, so a long word turned at 45° keeps more of its size than the same word
+lying flat.
+
+### Page numbers
+
+**Tools ▸ Page Numbers** numbers a range. Choose one of six positions, and a
+template: `{n}` is the number and `{total}` the count, so `Page {n} of {total}`
+gives what it says. Numbering starts at 1 by default; **Start at** changes that
+when the first numbered page is not the first page of the file.
+
+Both write **real text**, not a picture of it — selectable, searchable, and
+ordinary objects afterwards. A page number that lands on top of an existing
+footer can be dragged out of the way, restyled, or deleted one page at a time,
+and the whole run is a single undo.
+
+## What the document says about itself
+
+**File ▸ Document Properties** shows the title, author, subject and keywords —
+the fields a reader's own Properties window shows — and lets you change them.
+Emptying a field removes it rather than writing a blank one.
+
+Everything else the file carries is listed below, read-only, so it is at least
+visible. Orion has always kept these across a save; this is where you can see
+what it is keeping. A file that came from somewhere else may well have someone
+else's name on it.
+
+## Exporting pages as images
+
+**File ▸ Export as Images** writes the pages you choose as PNG or JPEG files,
+at a resolution you pick between 72 and 600 DPI.
+
+The images are rendered from the document as it would be saved, so what you
+have added is in them, whether or not you have saved yet.
+
+## Finding a command
+
+`Ctrl/Cmd+Shift+P` opens a box; type a few letters and the matching commands
+are listed, best first. **Enter** runs the top one.
+
+Matching is by letters in order rather than whole words, so `wm` finds
+Watermark and `epg` finds Export Pages. Commands that cannot run right now —
+Save with nothing open, Delete with nothing selected — are left out rather than
+shown greyed, so what the list offers is what will work.
 
 ## Saving
 

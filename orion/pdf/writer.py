@@ -62,6 +62,7 @@ from orion.document.document import Document
 from orion.document.objects import (
     ImageObject,
     PageObject,
+    RedactionObject,
     ShapeKind,
     ShapeObject,
     TextObject,
@@ -77,9 +78,10 @@ from orion.pdf.coordinates import (
 )
 from orion.pdf.errors import PdfWriteError
 from orion.pdf.fonts import FontRequest, resolve
+from orion.pdf.text_edit import content_objects_in
 from orion.pdf.text_layout import layout_text
 from orion.utils.fileio import atomic_write_bytes
-from orion.utils.geometry import Point
+from orion.utils.geometry import Point, Rect
 
 log = logging.getLogger(__name__)
 
@@ -218,18 +220,27 @@ def _strip_replaced_text(out: PdfWriter, document: Document) -> PdfWriter:
         for index, page in enumerate(document.pages)
         if page.replaced_text
     }
-    if not targets:
+    areas = {
+        index: [obj.rect for obj in page.objects if isinstance(obj, RedactionObject)]
+        for index, page in enumerate(document.pages)
+    }
+    areas = {index: rects for index, rects in areas.items() if rects}
+    if not targets and not areas:
         return out
 
     buffer = io.BytesIO()
     out.write(buffer)
-    edited = _remove_page_objects(buffer.getvalue(), targets)
+    edited = _remove_page_objects(buffer.getvalue(), targets, areas)
     if edited is None:
         return out
     return PdfWriter(clone_from=io.BytesIO(edited))
 
 
-def _remove_page_objects(data: bytes, targets: dict[int, Sequence[int]]) -> bytes | None:
+def _remove_page_objects(
+    data: bytes,
+    targets: dict[int, Sequence[int]],
+    areas: dict[int, Sequence[Rect]] | None = None,
+) -> bytes | None:
     """Delete content objects from pages of *data*, returning the new bytes.
 
     Every page handle is taken **once** and held in a local until the document
@@ -240,13 +251,24 @@ def _remove_page_objects(data: bytes, targets: dict[int, Sequence[int]]) -> byte
     with nothing to connect it to the line that caused it — found the hard way
     while building this.
     """
+    areas = areas or {}
     document = pdfium.PdfDocument(data)
     try:
-        for page_index, indices in targets.items():
+        for page_index in sorted(set(targets) | set(areas)):
             if not 0 <= page_index < len(document):
                 continue  # pragma: no cover - defensive
             page = document[page_index]
             try:
+                indices = set(targets.get(page_index, ()))
+                # Resolved here rather than in the model because the box can be
+                # moved after it is drawn: what a redaction covers is a fact
+                # about where it ends up, not about where it started.
+                for rect in areas.get(page_index, ()):
+                    left, bottom, right, top = page.get_mediabox()
+                    geometry = PageGeometry(
+                        abs(right - left), abs(top - bottom), int(page.get_rotation())
+                    )
+                    indices.update(content_objects_in(page.raw, geometry, rect))
                 count = int(pdfium_raw.FPDFPage_CountObjects(page.raw))
                 # Highest first: removing an object renumbers the ones after it.
                 for index in sorted(indices, reverse=True):
@@ -375,6 +397,8 @@ def _draw_overlay(
                 _draw_image(canvas, obj, geometry)
             elif isinstance(obj, ShapeObject):
                 _draw_shape(canvas, obj, geometry)
+            elif isinstance(obj, RedactionObject):
+                _draw_redaction(canvas, obj, geometry)
             else:  # pragma: no cover - future object kinds
                 log.warning("Skipping unknown object type %s", type(obj).__name__)
         except Exception as exc:
@@ -472,6 +496,23 @@ def _draw_string(canvas, geometry: PageGeometry, x: float, y: float, text: str) 
     canvas.translate(x, y)
     canvas.rotate(angle)
     canvas.drawString(0, 0, text)
+    canvas.restoreState()
+
+
+def _draw_redaction(canvas, obj: RedactionObject, geometry: PageGeometry) -> None:
+    """Fill the redacted area, opaquely and with no outline.
+
+    The content underneath is gone by the time this runs, so the box is not
+    hiding anything — it is there because a hole in a page reads as damage,
+    and a solid block reads as a decision. Opacity is ignored on purpose: a
+    translucent redaction would suggest something is still under it.
+    """
+    red, green, blue = obj.fill_color
+    x0, y0, x1, y1 = to_pdf_rect(geometry, obj.rect)
+    canvas.saveState()
+    canvas.setFillColorRGB(red, green, blue)
+    canvas.setStrokeColorRGB(red, green, blue)
+    canvas.rect(x0, y0, x1 - x0, y1 - y0, stroke=0, fill=1)
     canvas.restoreState()
 
 

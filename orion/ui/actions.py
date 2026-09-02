@@ -59,6 +59,8 @@ ACTIONS: tuple[ActionSpec, ...] = (
     ActionSpec("file.save_as", "Save &As…", "save_as", "Ctrl+Shift+S", "Save the document under a new name"),
     ActionSpec("file.merge", "&Merge PDF…", "merge", "", "Combine several PDF files into one", needs_document=False),
     ActionSpec("file.clear_recent", "Clear Recent Files", "", "", "Forget the list of recently opened files", needs_document=False),
+    ActionSpec("file.export_images", "Export as &Images…", "export_image", "", "Save pages as PNG or JPEG files"),
+    ActionSpec("file.properties", "Document &Properties…", "properties", "", "Read and edit the document's title, author and keywords"),
     ActionSpec("file.quit", "&Quit", "", "Ctrl+Q", "Close Orion", needs_document=False),
     # -- Edit ------------------------------------------------------------
     ActionSpec("edit.undo", "&Undo", "undo", "Ctrl+Z", "Undo the last change"),
@@ -106,8 +108,11 @@ ACTIONS: tuple[ActionSpec, ...] = (
     # -- Tools -----------------------------------------------------------
     ActionSpec("tools.insert_image", "Insert &Image…", "image", "Ctrl+Shift+I", "Place an image on the page"),
     ActionSpec("tools.edit_text", "&Edit Text Object", "text", "F2", "Edit the selected text object"),
+    ActionSpec("tools.watermark", "&Watermark…", "watermark", "", "Stamp a word across a range of pages"),
+    ActionSpec("tools.page_numbers", "Page &Numbers…", "page_numbers", "", "Number a range of pages"),
     ActionSpec("tools.edit_note", "Edit &Comment…", "comment", "", "Edit the selected annotation's comment"),
     # -- Help ------------------------------------------------------------
+    ActionSpec("view.commands", "&Find a Command…", "search", "Ctrl+Shift+P", "Search every command by name", needs_document=False),
     ActionSpec("help.shortcuts", "&Keyboard Shortcuts", "", "", "List the keyboard shortcuts", needs_document=False),
     ActionSpec("help.log", "Open &Log Folder", "", "", "Open the folder containing Orion's log file", needs_document=False),
     ActionSpec("help.about", "&About Orion", "info", "", "About this application", needs_document=False),
@@ -169,6 +174,10 @@ class ActionRegistry:
 
     def keys(self) -> Iterable[str]:
         return self._actions.keys()
+
+    def all(self) -> Iterable[QAction]:
+        """Every action, for anything that offers the whole set at once."""
+        return self._actions.values()
 
     def connect(self, key: str, slot: Callable[..., None]) -> None:
         self._actions[key].triggered.connect(slot)

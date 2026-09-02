@@ -37,6 +37,9 @@ _STRUCTURE: tuple[tuple[str, tuple[str | None, ...]], ...] = (
             "file.save_as",
             SEPARATOR,
             "file.merge",
+            "file.export_images",
+            SEPARATOR,
+            "file.properties",
             SEPARATOR,
             "file.close",
             "file.quit",
@@ -104,8 +107,20 @@ _STRUCTURE: tuple[tuple[str, tuple[str | None, ...]], ...] = (
             "pages.split",
         ),
     ),
-    ("&Tools", ("@tools", SEPARATOR, "tools.insert_image", "tools.edit_text", "tools.edit_note")),
-    ("&Help", ("help.shortcuts", "help.log", SEPARATOR, "help.about")),
+    (
+        "&Tools",
+        (
+            "@tools",
+            SEPARATOR,
+            "tools.insert_image",
+            "tools.edit_text",
+            "tools.edit_note",
+            SEPARATOR,
+            "tools.watermark",
+            "tools.page_numbers",
+        ),
+    ),
+    ("&Help", ("view.commands", SEPARATOR, "help.shortcuts", "help.log", SEPARATOR, "help.about")),
 )
 
 

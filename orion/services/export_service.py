@@ -28,7 +28,12 @@ from orion.pdf.writer import build_pdf_bytes
 
 log = logging.getLogger(__name__)
 
-__all__ = ["ExportService"]
+__all__ = ["ExportService", "IMAGE_FORMATS"]
+
+#: The image formats offered, and the extension each is written with. Both are
+#: in Pillow's core, so neither adds anything to the bundle.
+IMAGE_FORMATS: tuple[str, ...] = ("PNG", "JPEG")
+_IMAGE_SUFFIXES = {"PNG": ".png", "JPEG": ".jpg", "JPG": ".jpg"}
 
 
 class ExportService:
@@ -49,6 +54,71 @@ class ExportService:
             ) from exc
 
     # -- operations ------------------------------------------------------
+    def export_images(
+        self,
+        document: Document,
+        indices: Sequence[int],
+        directory: str | Path,
+        *,
+        image_format: str = "PNG",
+        dpi: int = 150,
+    ) -> list[Path]:
+        """Save the chosen pages as images, and return the files written.
+
+        Rendered from the document built to PDF bytes rather than from the
+        canvas, so what lands in the image is exactly what a save would put in
+        the file — objects, annotations and redactions included, and none of
+        the selection handles or page shadows the screen shows.
+        """
+        import pypdfium2 as pdfium
+
+        if not indices:
+            raise PdfWriteError("Select at least one page to export.")
+        suffix = _IMAGE_SUFFIXES.get(image_format.upper())
+        if suffix is None:
+            raise PdfWriteError(f"“{image_format}” is not an image format Orion writes.")
+
+        directory = Path(directory)
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise PdfWriteError(
+                f"The folder “{directory}” could not be created.", detail=str(exc)
+            ) from exc
+
+        stem = _stem_for(document)
+        # 72 points to the inch is the PDF unit, so this is the scale factor.
+        scale = max(dpi, 1) / 72.0
+        written: list[Path] = []
+        pdf = pdfium.PdfDocument(self._bytes_of(document))
+        try:
+            for index in indices:
+                if not 0 <= index < len(pdf):
+                    continue
+                page = pdf[index]
+                try:
+                    image = page.render(scale=scale, rev_byteorder=True).to_pil()
+                    if image_format.upper() in ("JPEG", "JPG"):
+                        # JPEG has no alpha, and pasting onto white is what a
+                        # reader shows for a page with no background of its own.
+                        image = image.convert("RGB")
+                    target = directory / f"{stem}-{index + 1:03d}{suffix}"
+                    image.save(target)
+                    written.append(target)
+                finally:
+                    del page
+        except PdfWriteError:
+            raise
+        except Exception as exc:
+            raise PdfWriteError(
+                "The pages could not be exported as images.", detail=str(exc)
+            ) from exc
+        finally:
+            pdf.close()
+
+        log.info("Exported %d page(s) to %s", len(written), directory)
+        return written
+
     def extract(self, document: Document, indices: Sequence[int], output: str | Path) -> Path:
         """Write the selected pages of *document* to a new file (spec §16)."""
         if not indices:

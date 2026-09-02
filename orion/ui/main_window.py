@@ -37,7 +37,9 @@ from PySide6.QtWidgets import (
 )
 
 from orion import APP_NAME, APP_SUBTITLE
+from orion.commands.base import MacroCommand
 from orion.commands.object_commands import (
+    AddObjectCommand,
     DeleteObjectsCommand,
     PasteObjectsCommand,
     RaiseObjectCommand,
@@ -287,7 +289,12 @@ class MainWindow(QMainWindow):
         connect("tools.insert_image", self.insert_image)
         connect("tools.edit_text", lambda: self._canvas.edit_selected_text())
         connect("tools.edit_note", lambda: self._canvas.edit_selected_note())
+        connect("file.export_images", self.export_images)
+        connect("file.properties", self.edit_document_properties)
+        connect("tools.watermark", self.add_watermark)
+        connect("tools.page_numbers", self.add_page_numbers)
         # Help
+        connect("view.commands", self.show_command_palette)
         connect("help.shortcuts", self.show_shortcuts)
         connect("help.log", self.open_log_folder)
         connect("help.about", lambda: AboutDialog(self).exec())
@@ -1052,6 +1059,126 @@ class MainWindow(QMainWindow):
         if menu is not None:
             menu.exec(position)
 
+    # ------------------------------------------------------------------
+    # Exporting and describing the document
+    # ------------------------------------------------------------------
+    def export_images(self) -> None:
+        """Save the chosen pages as PNG or JPEG files in a folder."""
+        from orion.ui.dialogs import ExportImagesDialog
+
+        session = self._session
+        if session is None:
+            return
+        dialog = ExportImagesDialog(session.document.page_count, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        indices = dialog.indices
+        if not indices:
+            self._status.flash("That is not a page range this document has.")
+            return
+
+        directory = QFileDialog.getExistingDirectory(
+            self, "Export Pages Into", str(self._settings.get("last_directory", "") or Path.home())
+        )
+        if not directory:
+            return
+
+        QGuiApplication.setOverrideCursor(Qt.CursorShape.BusyCursor)
+        try:
+            written = self._export.export_images(
+                session.document,
+                indices,
+                directory,
+                image_format=dialog.image_format,
+                dpi=dialog.dpi,
+            )
+        except OrionPdfError as exc:
+            self._report(exc, title="Cannot Export Images")
+            return
+        finally:
+            QGuiApplication.restoreOverrideCursor()
+
+        self._settings.set("last_directory", directory)
+        self._status.flash(
+            f"Exported {len(written)} page{'s' if len(written) != 1 else ''} to {directory}."
+        )
+
+    def edit_document_properties(self) -> None:
+        """Show what the file says about itself, and let it be changed."""
+        from orion.ui.dialogs import DocumentPropertiesDialog
+
+        session = self._session
+        if session is None:
+            return
+        dialog = DocumentPropertiesDialog(session.document.metadata, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted or not dialog.changed:
+            return
+        session.document.metadata = dialog.metadata
+        session.document.set_modified(True)
+        self._update_title()
+        self._status.flash("Document properties updated.")
+
+    # ------------------------------------------------------------------
+    # Stamping a range of pages
+    # ------------------------------------------------------------------
+    def add_watermark(self) -> None:
+        """Put a word across the middle of the chosen pages."""
+        from orion.pdf.stamps import watermark_for
+        from orion.ui.dialogs import WatermarkDialog
+
+        self._stamp_pages(
+            WatermarkDialog,
+            lambda page, spec, _position, _total: watermark_for(page, spec),
+            "Add Watermark",
+        )
+
+    def add_page_numbers(self) -> None:
+        """Number the chosen pages, in the order they were chosen."""
+        from orion.pdf.stamps import page_number_for
+        from orion.ui.dialogs import PageNumberDialog
+
+        self._stamp_pages(PageNumberDialog, page_number_for, "Add Page Numbers")
+
+    def _stamp_pages(self, dialog_type, build, text: str) -> None:
+        """Ask, then add one object per chosen page as a single undo step.
+
+        The objects are ordinary text, so everything that already works on
+        text works on them: the canvas draws them straight away, the panel
+        restyles them, and one Undo takes the whole run of pages back off.
+        """
+        session = self._session
+        if session is None:
+            return
+        dialog = dialog_type(session.document.page_count, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        indices = dialog.indices
+        if not indices:
+            self._status.flash("That is not a page range this document has.")
+            return
+
+        spec = dialog.spec
+        commands = []
+        for position, index in enumerate(indices):
+            page = session.document.page_at(index)
+            if page is None:  # pragma: no cover - the range was validated
+                continue
+            commands.append(
+                AddObjectCommand(
+                    session.document,
+                    index,
+                    build(page, spec, position, len(indices)),
+                    text=text,
+                )
+            )
+        if not commands:  # pragma: no cover - defensive
+            return
+        session.history.push(MacroCommand(commands, text=text))
+        self._status.flash(
+            f"{text.split()[1].capitalize()} added to {len(commands)} page"
+            f"{'s' if len(commands) != 1 else ''}."
+        )
+
     def _return_to_select_tool(self) -> None:
         """Most tools are one-shot; go back to Select once the object exists."""
         if self._canvas.tool in (Tool.SELECT, Tool.HAND, Tool.FREEHAND):
@@ -1230,6 +1357,19 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Help
     # ------------------------------------------------------------------
+    def show_command_palette(self) -> None:
+        """Search every command by name and run the one chosen.
+
+        The action is triggered rather than called, so a command reached this
+        way goes through exactly the path the menu would have taken — same
+        handler, same enabled state, same undo entry.
+        """
+        from orion.ui.dialogs import CommandPalette
+
+        palette = CommandPalette(list(self._actions.all()), self)
+        if palette.exec() == QDialog.DialogCode.Accepted and palette.chosen is not None:
+            palette.chosen.trigger()
+
     def show_shortcuts(self) -> None:
         rows = self._actions.shortcut_table()
         body = "\n".join(f"{name:<28}{sequence}" for name, sequence in rows)

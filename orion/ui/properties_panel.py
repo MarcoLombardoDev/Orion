@@ -47,6 +47,7 @@ from orion.document.objects import (
     Align,
     ImageObject,
     PageObject,
+    RedactionObject,
     ShapeObject,
     TextObject,
 )
@@ -135,6 +136,7 @@ class PropertiesPanel(QWidget):
         self._image_group = self._build_image_section()
         self._shape_group = self._build_shape_section()
         self._note_group = self._build_note_section()
+        self._redaction_group = self._build_redaction_section()
         self._geometry_group = self._build_geometry_section()
         self._arrange_group = self._build_arrange_section()
         self._delete_group = self._build_delete_section()
@@ -144,6 +146,7 @@ class PropertiesPanel(QWidget):
             self._image_group,
             self._shape_group,
             self._note_group,
+            self._redaction_group,
             self._geometry_group,
             self._arrange_group,
             self._delete_group,
@@ -277,6 +280,22 @@ class PropertiesPanel(QWidget):
         form.addRow("Fill", self._fill_color)
         return group
 
+    def _build_redaction_section(self) -> QGroupBox:
+        group = QGroupBox("Redaction")
+        form = QFormLayout(group)
+        self._redaction_color = ColorButton((0.0, 0.0, 0.0), title="Redaction Colour")
+        self._redaction_color.color_changed.connect(
+            lambda value: self._apply({"fill_color": value}, "Change Redaction Colour")
+        )
+        form.addRow("Colour", self._redaction_color)
+        note = QLabel(
+            "Everything under this box is removed from the file when you save, "
+            "not just covered."
+        )
+        note.setWordWrap(True)
+        form.addRow(note)
+        return group
+
     def _build_note_section(self) -> QGroupBox:
         group = QGroupBox("Annotation")
         form = QFormLayout(group)
@@ -396,6 +415,7 @@ class PropertiesPanel(QWidget):
             self._image_group,
             self._shape_group,
             self._note_group,
+            self._redaction_group,
             self._geometry_group,
             self._arrange_group,
             self._delete_group,
@@ -426,6 +446,9 @@ class PropertiesPanel(QWidget):
                 self._show_shape(single)
             elif isinstance(single, AnnotationObject):
                 self._show_annotation(single)
+            elif isinstance(single, RedactionObject):
+                self._redaction_group.setVisible(True)
+                self._redaction_color.set_color(single.fill_color)
             self._show_geometry(single)
 
     def refresh(self) -> None:

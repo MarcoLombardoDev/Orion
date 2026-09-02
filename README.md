@@ -74,6 +74,13 @@ your original file is never touched until you press Save.
 - **Annotations** — highlight, underline and strikeout that snap to the
   document's own text lines, freehand drawing, comments and sticky notes.
   All written as standard PDF annotations, so other readers understand them.
+- **Page text** — click a line of the document's own text and rewrite it. The
+  original is removed from the file rather than covered over.
+- **Redaction** — drag a box over anything that must not survive. The covered
+  content is deleted from the saved page, not hidden behind a rectangle.
+- **Watermarks and page numbers** — stamp a word across a run of pages, or
+  number them from a `Page {n} of {total}` template, in any of six positions.
+  Both are real text, and ordinary objects afterwards.
 
 **Working with objects**
 - Select one or many; drag-select; Ctrl/Cmd-click to extend a selection
@@ -95,8 +102,11 @@ your original file is never touched until you press Save.
 **Files**
 - Save and Save As, written atomically so an interrupted save cannot damage
   your document
+- Export pages as PNG or JPEG, from 72 to 600 DPI
+- Read and edit the document's title, author, subject and keywords
 - Crash recovery: unsaved work is snapshotted separately from your PDF
 - Light and dark themes
+- A command palette (`Ctrl/Cmd+Shift+P`) that searches every command by name
 
 ## Download
 

@@ -48,6 +48,7 @@ from orion.document.objects import (
     MIN_OBJECT_SIZE,
     ImageObject,
     PageObject,
+    RedactionObject,
     ShapeKind,
     ShapeObject,
     TextObject,
@@ -913,6 +914,28 @@ class AnnotationObjectItem(ObjectItem):
         super().mouseDoubleClickEvent(event)
 
 
+class RedactionObjectItem(ObjectItem):
+    """An opaque box, drawn as it will be saved.
+
+    Deliberately identical on screen and in the file: a redaction that looked
+    translucent while editing would invite the assumption that the content
+    under it is merely covered, and the whole point is that by the time the
+    file is written it is not there any more. The dashed outline appears only
+    while it is selected, which is the one moment the user needs to see the
+    boundary rather than the result.
+    """
+
+    def paint_content(self, painter: QPainter, option, widget) -> None:
+        obj = self.redaction
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(_qcolor(obj.fill_color))
+        painter.drawRect(self.local_rect())
+
+    @property
+    def redaction(self) -> RedactionObject:
+        return self._object  # type: ignore[return-value]
+
+
 # --------------------------------------------------------------------------
 # Factory
 # --------------------------------------------------------------------------
@@ -921,6 +944,7 @@ _ITEM_TYPES = {
     ImageObject: ImageObjectItem,
     ShapeObject: ShapeObjectItem,
     AnnotationObject: AnnotationObjectItem,
+    RedactionObject: RedactionObjectItem,
 }
 
 

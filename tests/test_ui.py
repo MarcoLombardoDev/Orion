@@ -1398,3 +1398,154 @@ class TestDeleteFromThePropertiesPanel:
         window._actions["edit.undo"].trigger()
         pump(qapp)
         assert len(window.session.document[0].objects) == 1
+
+
+class TestDocumentProperties:
+    """What the file says about itself, made visible and changeable.
+
+    Orion carried the metadata across a save without ever showing it, so a
+    document could go out with the previous author's name on it and nothing in
+    the interface would have said so.
+    """
+
+    def test_the_dialog_offers_the_fields_a_reader_shows(self, qapp):
+        from orion.ui.dialogs import DocumentPropertiesDialog
+
+        dialog = DocumentPropertiesDialog({"/Title": "A contract", "/Author": "Someone"})
+        assert dialog.metadata["/Title"] == "A contract"
+        assert not dialog.changed
+
+    def test_editing_a_field_changes_only_that_field(self, qapp):
+        from orion.ui.dialogs import DocumentPropertiesDialog
+
+        dialog = DocumentPropertiesDialog(
+            {"/Title": "Old", "/Author": "Someone", "/Producer": "Another program"}
+        )
+        dialog._fields["/Title"].setText("New")
+        assert dialog.changed
+        assert dialog.metadata["/Title"] == "New"
+        assert dialog.metadata["/Author"] == "Someone"
+        assert dialog.metadata["/Producer"] == "Another program", (
+            "a key the dialog does not edit was dropped"
+        )
+
+    def test_clearing_a_field_removes_it(self, qapp):
+        """A reader shows "Title: " for an empty string and nothing for absent.
+
+        Clearing the field means the second one.
+        """
+        from orion.ui.dialogs import DocumentPropertiesDialog
+
+        dialog = DocumentPropertiesDialog({"/Title": "Old", "/Author": "Someone"})
+        dialog._fields["/Title"].setText("   ")
+        assert "/Title" not in dialog.metadata
+        assert dialog.metadata["/Author"] == "Someone"
+
+    def test_the_document_takes_the_edit_and_is_marked_modified(
+        self, window, qapp, sample_pdf, monkeypatch
+    ):
+        from PySide6.QtWidgets import QDialog
+
+        from orion.ui.dialogs import properties_dialog
+
+        window.open_path(sample_pdf)
+        pump(qapp)
+
+        class _Accepting(properties_dialog.DocumentPropertiesDialog):
+            def exec(self):
+                self._fields["/Title"].setText("Renamed by the test")
+                return QDialog.DialogCode.Accepted
+
+        monkeypatch.setattr(properties_dialog, "DocumentPropertiesDialog", _Accepting)
+        monkeypatch.setattr(
+            "orion.ui.dialogs.DocumentPropertiesDialog", _Accepting, raising=False
+        )
+        window.edit_document_properties()
+        pump(qapp)
+        assert window.session.document.metadata["/Title"] == "Renamed by the test"
+        assert window.session.document.modified
+
+    def test_it_survives_having_no_document(self, window, qapp):
+        window.edit_document_properties()
+        window.export_images()
+
+
+class TestTheCommandPalette:
+    """Sixty commands across six menus; a menu only helps if you know which.
+
+    The matching is the part worth testing, because it is what decides whether
+    a three-letter query is worth typing.
+    """
+
+    def test_a_subsequence_finds_the_command(self, qapp):
+        """"wm" has to find Watermark, or the shortest queries are useless."""
+        from orion.ui.dialogs.command_palette import match_score
+
+        assert match_score("wm", "Watermark") is not None
+        assert match_score("epg", "Export Pages as Images") is not None
+        assert match_score("zq", "Watermark") is None
+
+    def test_a_match_at_the_start_of_a_word_wins(self, qapp):
+        from orion.ui.dialogs.command_palette import match_score
+
+        assert match_score("mark", "Watermark") > match_score("mark", "Bookmark Page")
+
+    def test_the_shorter_label_breaks_a_tie(self, qapp):
+        from orion.ui.dialogs.command_palette import match_score
+
+        assert match_score("save", "Save") < match_score("save", "Save As")
+
+    def test_it_offers_the_window_s_own_actions(self, window, qapp, sample_pdf):
+        from orion.ui.dialogs.command_palette import CommandPalette, rank_actions
+
+        window.open_path(sample_pdf)
+        pump(qapp)
+        palette = CommandPalette(list(window._actions.all()), window)
+        try:
+            labels = [
+                palette._list.item(row).text().split("\t")[0]
+                for row in range(palette._list.count())
+            ]
+            assert "Watermark" in labels
+            assert "Page Numbers" in labels
+            assert "Export as Images" in labels
+            assert rank_actions(list(window._actions.all()), "water")[0].text().replace(
+                "&", ""
+            ).startswith("Watermark")
+        finally:
+            palette.deleteLater()
+
+    def test_a_command_that_cannot_run_is_not_offered(self, window, qapp):
+        """Offering a dead end dressed up as an answer is worse than nothing."""
+        from orion.ui.dialogs.command_palette import rank_actions
+
+        # With no document open, saving is disabled.
+        offered = [a.data() for a in rank_actions(list(window._actions.all()), "save")]
+        assert "file.save" not in offered
+        assert window._actions["file.save"].isEnabled() is False
+
+    def test_choosing_runs_the_real_action(self, window, qapp, sample_pdf):
+        """Triggered, not called: same handler, same undo entry as the menu."""
+        from orion.ui.dialogs.command_palette import CommandPalette
+
+        window.open_path(sample_pdf)
+        pump(qapp)
+        fired = []
+        window._actions["view.next_page"].triggered.connect(lambda: fired.append(True))
+
+        palette = CommandPalette([window._actions["view.next_page"]], window)
+        try:
+            palette._choose(palette._list.item(0))
+            assert palette.chosen is window._actions["view.next_page"]
+            palette.chosen.trigger()
+        finally:
+            palette.deleteLater()
+        assert fired, "the action never ran"
+
+    def test_an_empty_query_lists_everything_available(self, window, qapp, sample_pdf):
+        from orion.ui.dialogs.command_palette import rank_actions
+
+        window.open_path(sample_pdf)
+        pump(qapp)
+        available = [a for a in window._actions.all() if a.isEnabled() and a.text()]
+        assert len(rank_actions(list(window._actions.all()), "")) == len(available)

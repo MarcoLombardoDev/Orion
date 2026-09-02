@@ -6,7 +6,10 @@
 # A commercial licence, without the AGPL's obligations, is available for use
 # in proprietary or closed-source products — see COMMERCIAL-LICENSE.md.
 
-"""Reading the text that is already on a page, so it can be replaced.
+"""Reading the content that is already on a page, so it can be changed.
+
+Mostly the text — finding the line under the cursor so it can be rewritten —
+and, for redaction, any drawing operation at all that falls inside an area.
 
 A PDF has no notion of an editable paragraph. What it has is a content stream
 of drawing operations, some of which put glyphs at coordinates, and "the line
@@ -57,7 +60,13 @@ from orion.utils.geometry import Point, Rect
 
 log = logging.getLogger(__name__)
 
-__all__ = ["SourceTextRun", "SourceTextLine", "read_text_lines", "line_at"]
+__all__ = [
+    "SourceTextRun",
+    "SourceTextLine",
+    "read_text_lines",
+    "line_at",
+    "content_objects_in",
+]
 
 #: Subset prefixes look like ``ABCDEF+`` and say nothing about the typeface.
 _SUBSET_PREFIX = re.compile(r"^[A-Z]{6}\+")
@@ -311,6 +320,34 @@ def read_text_lines(page_handle, textpage_handle, geometry: PageGeometry) -> lis
             )
         )
     return _group_into_lines(runs)
+
+
+def content_objects_in(page_handle, geometry: PageGeometry, area: Rect) -> tuple[int, ...]:
+    """Every drawing operation on the page that *touches* ``area``.
+
+    Used by redaction, and the choice of "touches" rather than "is inside" is
+    the whole of what makes it redaction. A run of text that crosses the edge
+    of the box has some of its glyphs under the box and some outside; keeping
+    it would leave the covered words in the file, still selectable, still
+    found by search, with a black rectangle painted over them — which is the
+    failure this feature exists to prevent, and an invisible one.
+
+    So anything the box touches goes, and the cost is visible instead:
+    redacting one word can take the rest of its run with it. Over-removal is
+    something the user can see and undo. Under-removal is something nobody
+    sees until it matters.
+    """
+    covered: list[int] = []
+    count = int(pdfium_raw.FPDFPage_CountObjects(page_handle))
+    for index in range(count):
+        obj = pdfium_raw.FPDFPage_GetObject(page_handle, index)
+        if not obj:
+            continue
+        left, bottom, right, top = _object_bounds(obj)
+        bounds = from_pdf_rect(geometry, (left, bottom, right, top))
+        if bounds.intersects(area):
+            covered.append(index)
+    return tuple(covered)
 
 
 def _group_into_lines(runs: list[SourceTextRun]) -> list[SourceTextLine]:

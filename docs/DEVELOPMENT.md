@@ -121,6 +121,14 @@ The action, shortcut and menu entry are generated from those tables.
 | `test_coordinates.py` | coordinate conversions, by rendering | no |
 | `test_save_pipeline.py` | open → edit → save round trips | no |
 | `test_recovery.py` | autosave and crash recovery | no |
+| `test_page_text_editing.py` | rewriting the document's own text | no |
+| `test_redaction.py` | what a redaction removes, proved by reopening | no |
+| `test_stamps.py` | watermark fitting, page-number templates | no |
+| `test_annotation_import.py` | reading a file's own annotations back | no |
+| `test_fonts.py` | system font discovery and subset embedding | no |
+| `test_renderer.py` | rasterisation, the cache, and thread safety | no |
+| `test_layering.py` | that the Qt-free layers stayed Qt-free | no |
+| `test_docs.py` · `test_packaging.py` · `test_release_workflow.py` · `test_third_party_licences.py` | the repository itself: docs, metadata, workflow, licence inventory | no |
 | `test_ui.py` | the real widgets, driven offscreen | yes (offscreen is fine) |
 
 `tests/conftest.py` points `ORION_HOME` at a temporary directory for the whole

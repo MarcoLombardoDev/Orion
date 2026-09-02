@@ -47,6 +47,7 @@ from orion.document.document import Document
 from orion.document.objects import (
     MIN_OBJECT_SIZE,
     PageObject,
+    RedactionObject,
     ShapeObject,
     TextObject,
 )
@@ -764,6 +765,15 @@ class PdfCanvas(QGraphicsView):
 
         if tool.is_markup:
             self._create_markup(page_item, rect, tool)
+            return
+        if tool is Tool.REDACT:
+            if rect.width < MIN_OBJECT_SIZE or rect.height < MIN_OBJECT_SIZE:
+                return
+            self._push_new_object(
+                page_item,
+                RedactionObject(rect=rect, fill_color=self._tool_state.redaction_color),
+                "Redact",
+            )
             return
         if tool is Tool.TEXT:
             if rect.width < MIN_OBJECT_SIZE * 3 or rect.height < MIN_OBJECT_SIZE * 2:

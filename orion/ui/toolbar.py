@@ -137,6 +137,7 @@ class ToolPalette(QToolBar):
         Tool.TEXT,
         Tool.PAGE_TEXT,
         Tool.IMAGE,
+        Tool.REDACT,
         None,
         Tool.RECTANGLE,
         Tool.ELLIPSE,

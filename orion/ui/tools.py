@@ -35,6 +35,7 @@ class Tool(str, Enum):
     COMMENT = "comment"
     STICKY_NOTE = "sticky_note"
     PAGE_TEXT = "page_text"
+    REDACT = "redact"
 
     @property
     def is_drawing(self) -> bool:
@@ -96,6 +97,12 @@ TOOL_INFO: dict[Tool, ToolInfo] = {
     Tool.FREEHAND: ToolInfo("Freehand", "freehand", "P", "Draw freely with the mouse"),
     Tool.COMMENT: ToolInfo("Comment", "comment", "", "Click to attach a comment"),
     Tool.STICKY_NOTE: ToolInfo("Sticky Note", "sticky_note", "N", "Click to place a note"),
+    Tool.REDACT: ToolInfo(
+        "Redact",
+        "redact",
+        "",
+        "Drag over anything that must be removed from the saved file",
+    ),
     Tool.PAGE_TEXT: ToolInfo(
         "Edit Page Text",
         "edit_page_text",
@@ -136,6 +143,10 @@ class ToolState:
     )
     ink_width: float = 2.0
     author: str = ""
+
+    # Redaction. Black by convention; white is the other useful answer, for
+    # taking something out without announcing that anything was there.
+    redaction_color: Color = (0.0, 0.0, 0.0)
 
     opacity: float = 1.0
 
