@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from collections.abc import Sequence
 from contextlib import suppress
@@ -205,10 +206,39 @@ def _self_check(app) -> int:
     return 0
 
 
+def _pin_graphics_backend() -> None:
+    """Tell Qt which graphics backend to use, so it does not go and ask.
+
+    Left to itself on Windows, Qt works out what the machine can do before it
+    opens a window, and part of that is asking the system about the display
+    adapter and its driver. The usual way to ask that question is a WMI query,
+    and a WMI query is also how a good deal of reconnaissance starts — so an
+    endpoint agent watching a freshly downloaded, unsigned, PyInstaller-built
+    executable make one reports enumeration, which is exactly what happened.
+
+    Orion has no use for the answer. Everything it draws goes through
+    ``QPainter`` onto a ``QGraphicsView``, which is the raster path; it owns
+    no OpenGL widget and no scene graph. Naming the software backend costs it
+    nothing and removes the reason to look.
+
+    Set as environment variables because Qt reads them when the platform
+    plugin loads, which is during ``QApplication``'s constructor and therefore
+    before any attribute could be set on it. Not overwritten if they are
+    already there: somebody debugging a display problem has to be able to ask
+    for the other path.
+    """
+    if sys.platform != "win32":
+        return
+    os.environ.setdefault("QT_OPENGL", "software")
+    os.environ.setdefault("QSG_RHI_BACKEND", "software")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     setup_logging(args.log_level)
     log.info("Starting %s %s", APP_NAME, __version__)
+
+    _pin_graphics_backend()
 
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication

@@ -195,6 +195,9 @@ Orion/
 ├── tests/                     pytest suite (model/engine tests need no display)
 ├── resources/                 icons/, styles/
 ├── docs/                      ARCHITECTURE.md, USER_GUIDE.md, DEVELOPMENT.md
+├── packaging/                 per-platform start scripts (checksum, then launch)
+├── orion.spec                 PyInstaller build: no packer, a Windows version
+│                              resource generated from __version__, onedir
 ├── pyproject.toml · requirements.txt · README.md · LICENSE
 ├── CONTRIBUTING.md · CHANGELOG.md · .gitignore
 ```

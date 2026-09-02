@@ -182,6 +182,30 @@ the file is undamaged: whoever could replace the one could replace the other. Th
 on the release page arrive by a different route, which is the entire reason they are worth
 anything — and why they are printed there rather than offered as three more downloads.
 
+### If your antivirus or EDR flags it
+
+An unsigned executable that arrived from the internet, was built by PyInstaller and
+has never been seen before is, on paper, the profile of something worth looking at.
+Corporate endpoint tools score exactly that and some will quarantine Orion on sight.
+
+What Orion does about it is refuse to make the case worse. It carries a full Windows
+version resource, so the file says what it is and who wrote it rather than declining to
+answer. It is not packed — no UPX — and it does not unpack itself into a temporary
+folder and re-run itself, because the release is a plain folder of files. Its launcher
+hashes the executable with PowerShell's `Get-FileHash` rather than borrowing `certutil`,
+which is on every living-off-the-land list there is. And it names the graphics backend it
+wants instead of asking Windows about your display adapter, a question it has no use for
+the answer to.
+
+What remains is inherent to the shape of the thing: it is a compiled Python program, so
+it has the section names PyInstaller gives it and imports the functions CPython and Qt
+import. Those are observations, not findings.
+
+If something still trips, the useful things to send are the detection name, the engine
+that raised it, and the indicators listed against it. All of it is
+[reproducible from source](#installation-from-source) — the whole point of the licence is
+that you do not have to take the binary's word for anything.
+
 ## Installation from source
 
 Orion needs **Python 3.10 or newer**.
@@ -336,6 +360,7 @@ the release.
 |---|---|
 | `ImportError` mentioning `libEGL` or `libxkbcommon` on Linux | The Qt shared libraries are missing — install the packages under [Linux system packages](#linux-system-packages). |
 | The application starts and immediately exits on a headless machine | There is no display. Set `QT_QPA_PLATFORM=offscreen` for tests; the editor itself needs a real one. |
+| Antivirus or a corporate EDR quarantines Orion | Unsigned, PyInstaller-built and new: see [If your antivirus or EDR flags it](#if-your-antivirus-or-edr-flags-it). |
 | Windows SmartScreen or macOS Gatekeeper blocks the download | Expected: the builds are unsigned. See [Windows and macOS will warn on first launch](#windows-and-macos-will-warn-on-first-launch). |
 | Text added to a page is not selectable in another reader | Only text placed with the Text tool is written as real PDF text. Freehand ink and comments are annotations by design. |
 | A saved file looks different in another viewer | Report it with the source document attached, if you can share it — differences between PDF writers are the kind of bug worth a test. |

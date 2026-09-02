@@ -3,10 +3,20 @@ rem Start Orion, after checking that the executable is the one this archive
 rem was built with.
 rem
 rem The archive ships Orion.exe.sha256 beside the executable. This script
-rem recomputes that digest with certutil, which is part of Windows, and
-rem compares. What that catches is a truncated download, a half-finished
-rem unpack, a disk that has started rotting -- damage, which is the failure
-rem that actually happens to people.
+rem recomputes that digest with PowerShell's Get-FileHash and compares. What
+rem that catches is a truncated download, a half-finished unpack, a disk that
+rem has started rotting -- damage, which is the failure that actually happens
+rem to people.
+rem
+rem It used to be certutil, which is also part of Windows and one line
+rem shorter. certutil is on every living-off-the-land list there is, because
+rem its -decode and -urlcache options are how a good deal of real malware
+rem fetches and unpacks its payload. Endpoint security does not read the
+rem arguments and conclude that this one is only hashing: an EDR raised Orion
+rem as suspicious with Command and Control, Data Encoding and Obfuscated
+rem Files against it, on the strength of the process name alone. Get-FileHash
+rem is the boring way to do the same arithmetic, and this script already
+rem needs PowerShell further down.
 rem
 rem What it does NOT catch is tampering. The checksum travels inside the same
 rem zip as the file it describes, so anyone able to alter the executable could
@@ -56,16 +66,29 @@ for /f "usebackq tokens=1" %%H in ("%SUMS%") do (
     if not defined EXPECTED set "EXPECTED=%%H"
 )
 
-rem Line 1 of certutil's output is a heading and line 3 a success message; the
-rem digest is line 2. Some builds of certutil space the bytes apart, so the
-rem spaces come back out before comparing.
-for /f "skip=1 delims=" %%H in ('certutil -hashfile "%EXE%" SHA256 2^>nul') do (
+rem Get-FileHash prints the bare digest here because .Hash takes the string
+rem out of the object it returns. The path travels in a variable rather than
+rem inside the quoted -Command, so a folder name with a space or a quote in
+rem it cannot break the PowerShell that receives it -- the same reasoning as
+rem the launch below.
+rem
+rem No PowerShell means no check. That is the answer this script already gives
+rem when the .sha256 is missing: say so, and start the program anyway. A
+rem verification step that refused to launch when it could not run would turn
+rem an unusual Windows into a broken download.
+where powershell > nul 2>&1
+if errorlevel 1 (
+    echo %APP%: PowerShell is not available, starting without checking 1>&2
+    goto :launch
+)
+
+set "_HASH_TARGET=%EXE%"
+for /f "usebackq delims=" %%H in (`powershell -NoProfile -Command "(Get-FileHash -LiteralPath ${env:_HASH_TARGET} -Algorithm SHA256).Hash" 2^>nul`) do (
     if not defined ACTUAL set "ACTUAL=%%H"
 )
-if defined ACTUAL set "ACTUAL=%ACTUAL: =%"
 
 if not defined ACTUAL (
-    echo %APP%: certutil could not hash the executable, starting without checking 1>&2
+    echo %APP%: could not hash the executable, starting without checking 1>&2
     goto :launch
 )
 if not defined EXPECTED (
@@ -73,7 +96,7 @@ if not defined EXPECTED (
     goto :launch
 )
 
-rem /i because certutil's case has changed between Windows versions.
+rem /i because Get-FileHash returns upper case and sha256sum writes lower.
 if /i not "%ACTUAL%"=="%EXPECTED%" (
     echo %APP%: the executable does not match %APP%.exe.sha256. 1>&2
     echo   expected %EXPECTED% 1>&2

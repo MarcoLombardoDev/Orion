@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "orion-pdf-editor"
-version = "1.5.1"
+version = "1.6.0"
 description = "Orion — an offline desktop PDF viewer, editor, annotator and page organiser"
 readme = "README.md"
 requires-python = ">=3.10"

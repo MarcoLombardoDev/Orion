@@ -29,6 +29,88 @@ from collect_licences import collect as collect_licences  # noqa: E402
 BUILD_DIR = Path(SPECPATH)  # noqa: F821 - injected by PyInstaller
 APP_NAME = "Orion"
 
+
+def _version() -> str:
+    """Orion's version, read rather than imported.
+
+    Importing the package here would drag PySide6 into the build process to
+    answer a question a single line of text can.
+    """
+    text = (BUILD_DIR / "orion" / "__init__.py").read_text(encoding="utf-8")
+    for line in text.splitlines():
+        if line.startswith("__version__"):
+            return line.split("=", 1)[1].strip().strip("\"'")
+    return "0.0.0"
+
+
+def _version_resource() -> str | None:
+    """Write Windows' VS_VERSION_INFO for the executable, and return its path.
+
+    Without this the executable carries no version resource at all: no
+    company, no product, no original filename, nothing that says what the
+    file is or who made it. Every other program on the machine has one, and
+    an endpoint agent that finds none has nothing to attribute the binary to
+    — which is how Orion came to be reported as executing "with non-standard
+    resource type". It is also what puts a sane Details tab on the file's
+    properties, which is worth having on its own.
+
+    A resource is not a signature and does not pretend to be: anyone can put
+    any name in one. It is the difference between a file that declines to say
+    what it is and a file that says.
+
+    Generated from ``__version__`` rather than written by hand, because a
+    version resource that disagrees with the program is worse than none — it
+    is the field an installer, a helpdesk and a crash report all read.
+    """
+    if sys.platform != "win32":
+        return None
+    version = _version()
+    parts = [int(piece) for piece in version.split(".")[:3]]
+    while len(parts) < 4:
+        parts.append(0)
+    numbers = tuple(parts[:4])
+
+    target = BUILD_DIR / "build" / "version_info.txt"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        f"""VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers={numbers},
+    prodvers={numbers},
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0),
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable(
+        '040904B0',
+        [
+          StringStruct('CompanyName', 'Marco Lombardo'),
+          StringStruct('FileDescription', 'Orion - PDF Editor for Desktop'),
+          StringStruct('FileVersion', '{version}'),
+          StringStruct('InternalName', '{APP_NAME}'),
+          StringStruct(
+            'LegalCopyright',
+            'Copyright (C) 2026 Marco Lombardo. AGPL-3.0-or-later.'
+          ),
+          StringStruct('OriginalFilename', '{APP_NAME}.exe'),
+          StringStruct('ProductName', '{APP_NAME}'),
+          StringStruct('ProductVersion', '{version}'),
+        ],
+      )
+    ]),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])]),
+  ],
+)
+""",
+        encoding="utf-8",
+    )
+    return str(target)
+
 # Qt Python modules Orion never imports.
 EXCLUDED_QT = [
     "PySide6.QtWebEngineCore",
@@ -225,6 +307,7 @@ executable = EXE(  # noqa: F821
     upx=False,
     console=False,          # a GUI application has no terminal window
     icon=icon,
+    version=_version_resource(),
 )
 
 collection = COLLECT(  # noqa: F821

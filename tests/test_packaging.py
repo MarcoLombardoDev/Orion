@@ -618,3 +618,111 @@ class TestLicenceHeader:
                     )
                     break
         assert not wrong, "the licence header is broken in:\n  " + "\n  ".join(wrong)
+
+
+# -- what an endpoint agent makes of the build -----------------------------
+class TestLookingLikeOrdinarySoftware:
+    """Choices made so a legitimate build does not read as a malicious one.
+
+    None of this is about hiding what Orion does. It is about not doing three
+    things it never needed to do in the first place, each of which an EDR
+    scores against an unsigned executable that arrived from the internet:
+    borrowing a tool that malware is known to borrow, shipping a binary that
+    declines to say what it is, and asking the machine questions it has no
+    use for the answers to. All three were reported against a real install.
+    """
+
+    START_CMD = REPO / "packaging" / "start.cmd"
+
+    def test_the_launcher_does_not_call_certutil(self):
+        """certutil -decode and -urlcache are how payloads get fetched.
+
+        An EDR reads the process name, not the arguments, so hashing with it
+        earned Orion Command and Control, Data Encoding and Obfuscated Files.
+        """
+        body = "\n".join(
+            line
+            for line in self.START_CMD.read_text(encoding="utf-8").splitlines()
+            if not line.strip().startswith("rem")
+        )
+        assert "certutil" not in body.lower()
+
+    def test_the_launcher_still_verifies_the_checksum(self):
+        """Removing the tool must not quietly remove the check."""
+        body = self.START_CMD.read_text(encoding="utf-8")
+        assert "Get-FileHash" in body
+        assert "SHA256" in body
+
+    def test_a_machine_without_powershell_still_starts(self):
+        """The check is a courtesy; refusing to launch without it is not."""
+        body = self.START_CMD.read_text(encoding="utf-8")
+        assert "PowerShell is not available, starting without checking" in body
+
+    def test_the_executable_declares_a_version_resource(self, spec_source):
+        """No VS_VERSION_INFO is what "non-standard resource type" means.
+
+        Every other program on the machine carries one; a file that carries
+        none gives an endpoint agent nothing to attribute it to.
+        """
+        assert "version=_version_resource()" in spec_source
+        for field in (
+            "CompanyName",
+            "FileDescription",
+            "OriginalFilename",
+            "ProductName",
+            "ProductVersion",
+        ):
+            assert field in spec_source, f"the version resource has no {field}"
+
+    def test_the_version_resource_is_generated_from_the_source(self, spec_source):
+        """Hand-written, it drifts — and a wrong version is worse than none."""
+        assert "__version__" in spec_source
+        assert "def _version()" in spec_source
+
+    def test_the_declared_original_filename_is_the_real_one(self, spec_source):
+        """A name in the resource that is not the file's own is masquerading.
+
+        Which is the one thing a version resource must never look like: it is
+        exactly the shape of the finding this was added to answer.
+        """
+        assert "StringStruct('OriginalFilename', '{APP_NAME}.exe')" in spec_source
+
+    def test_the_build_is_not_packed(self, spec_source):
+        """A packer is the single loudest static signal there is."""
+        assert "upx=True" not in spec_source
+        assert spec_source.count("upx=False") >= 2
+
+    def test_the_build_unpacks_nothing_at_startup(self, spec_source):
+        """A onefile build extracts to %TEMP% and re-runs itself.
+
+        That is self-extraction followed by process creation, which is a
+        behaviour worth flagging in general. COLLECT keeps the files on disk
+        where the user put them.
+        """
+        assert "COLLECT(" in spec_source
+        assert "exclude_binaries=True" in spec_source
+
+    def test_the_graphics_backend_is_named_rather_than_discovered(self):
+        """Qt asks WMI about the display adapter when it has to work it out.
+
+        Orion draws through QPainter onto a QGraphicsView and has no use for
+        the answer, so the question is not worth the finding it produced.
+        """
+        source = (REPO / "orion" / "main.py").read_text(encoding="utf-8")
+        assert "QT_OPENGL" in source
+        assert "_pin_graphics_backend()" in source
+
+    def test_pinning_the_backend_is_windows_only_and_overridable(self):
+        """Somebody debugging a display problem must be able to say otherwise."""
+        import os
+
+        from orion.main import _pin_graphics_backend
+
+        before = dict(os.environ)
+        try:
+            os.environ["QT_OPENGL"] = "desktop"
+            _pin_graphics_backend()
+            assert os.environ["QT_OPENGL"] == "desktop"
+        finally:
+            os.environ.clear()
+            os.environ.update(before)

@@ -5,6 +5,65 @@ All notable changes to Orion are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] — 2026-09-02
+
+Three changes to how the Windows build presents itself, after a corporate
+endpoint agent quarantined Orion on a real installation. None of them changes
+what Orion does; all three stop it doing something it never needed to do, each
+of which scores against an unsigned executable that arrived from the internet.
+
+The alerts were, in order of how bad they looked: a process running "with
+non-standard resource type" tagged Command and Control, Data Encoding,
+Obfuscated Files and Environmental Keying; an enumeration by WMI query; and a
+list of thirty-two static observations about the binary.
+
+### Fixed
+- **The launcher no longer borrows `certutil`.** It hashed the executable with
+  `certutil -hashfile`, which is a perfectly ordinary thing to do and a
+  perfectly terrible thing to be seen doing: `certutil -decode` and
+  `-urlcache` are how a good deal of real malware fetches and unpacks its
+  payload, so the binary is on every living-off-the-land list there is. An EDR
+  reads the process name, not the arguments. PowerShell's `Get-FileHash` does
+  the same arithmetic, and the script already needed PowerShell further down
+  for the launch wait. A machine without it says so and starts anyway, exactly
+  as it already did when the checksum file was missing — a verification step
+  that refuses to launch when it cannot run turns an unusual Windows into a
+  broken download.
+- **The executable says what it is.** It shipped with no `VS_VERSION_INFO`
+  resource at all: no company, no product, no description, no original
+  filename. Every other program on the machine has one, and an agent that
+  finds none has nothing to attribute the file to — which is what "non-standard
+  resource type" means. It now carries the full set, generated from
+  `__version__` at build time, because a version resource that disagrees with
+  the program is worse than none: it is the field an installer, a helpdesk and
+  a crash report all read. A resource is not a signature and is not offered as
+  one; anybody can put any name in one. It is the difference between a file
+  that declines to say what it is and a file that says.
+- **Qt is told which graphics backend to use instead of working it out.** Left
+  to itself on Windows it asks the system about the display adapter before
+  opening a window, and the usual way to ask is a WMI query — which is also
+  how a good deal of reconnaissance starts. Orion draws through `QPainter`
+  onto a `QGraphicsView`, owns no OpenGL widget and no scene graph, and has no
+  use for the answer. Set through the environment rather than as an
+  application attribute, because Qt reads it when the platform plugin loads,
+  which is inside `QApplication`'s constructor. Overridable, so a display
+  problem can still be debugged.
+
+### Added
+- A README section on what to do when antivirus or a corporate EDR flags the
+  download, and what about the build is deliberate rather than accidental.
+- Tests pinning all of it: no `certutil` in the launcher, the checksum still
+  verified, the version resource present and generated from the source, the
+  declared original filename matching the real one, no packer, and the build
+  still a plain folder rather than something that unpacks itself into `%TEMP%`
+  and re-runs itself.
+
+### Note
+The remaining static observations — a compiled Python executable, PyInstaller's
+section names, the functions CPython and Qt import — are inherent to the shape
+of the program and are not addressed here. They are observations, not findings,
+and the honest answer to them is that the source builds the binary.
+
 ## [1.5.1] — 2026-09-02
 
 Four things reported from the first real use of 1.5.0. Three were bugs; the
