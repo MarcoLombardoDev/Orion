@@ -80,11 +80,11 @@ from orion.ui.dialogs.merge_dialog import CURRENT_DOCUMENT
 from orion.ui.icons import set_icon_theme
 from orion.ui.menu import build_menu_bar
 from orion.ui.object_items import ObjectItem
+from orion.ui.pages_panel import PagesPanel
 from orion.ui.properties_panel import PropertiesPanel
 from orion.ui.search_panel import SearchHit, SearchPanel
 from orion.ui.status_bar import OrionStatusBar
 from orion.ui.theme import ThemeMode, apply_theme, resolve_theme
-from orion.ui.thumbnails import ThumbnailPanel
 from orion.ui.toolbar import MainToolBar, ToolPalette
 from orion.ui.tools import Tool
 from orion.utils.geometry import Point, Rect, Size
@@ -166,10 +166,20 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._placeholder, 1)
         self.setCentralWidget(central)
 
-        self._thumbnails = ThumbnailPanel(self)
+        self._pages_panel = PagesPanel(self._actions, self)
+        self._thumbnails = self._pages_panel.thumbnails
         self._thumbnail_dock = QDockWidget("Pages", self)
         self._thumbnail_dock.setObjectName("thumbnails_dock")
-        self._thumbnail_dock.setWidget(self._thumbnails)
+        self._thumbnail_dock.setWidget(self._pages_panel)
+        # No title bar. The dock is pinned beside the tool palette and its
+        # heading was a strip of chrome saying "Pages" above a column of
+        # pages -- and the panel now draws its own divider, which is the only
+        # thing the heading was really doing.
+        self._thumbnail_dock.setTitleBarWidget(QWidget(self._thumbnail_dock))
+        self._thumbnail_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetClosable
+        )
         self._thumbnail_dock.setAllowedAreas(
             Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
         )
@@ -188,7 +198,7 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self._status)
         self._actions.bind_canvas_shortcuts(self._canvas)
         self.resizeDocks(
-            [self._thumbnail_dock, self._properties_dock], [190, 300], Qt.Orientation.Horizontal
+            [self._thumbnail_dock, self._properties_dock], [210, 300], Qt.Orientation.Horizontal
         )
         self._wire_widgets()
         self._show_document_widgets(False)
@@ -325,7 +335,7 @@ class MainWindow(QMainWindow):
         set_icon_theme(theme)
         self._actions.refresh_icons()
         self._canvas.apply_theme(theme)
-        self._thumbnails.apply_theme(theme)
+        self._pages_panel.apply_theme(theme)
         for key, value in (
             ("view.theme_light", ThemeMode.LIGHT),
             ("view.theme_dark", ThemeMode.DARK),

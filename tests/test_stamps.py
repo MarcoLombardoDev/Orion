@@ -235,3 +235,31 @@ def test_a_stamp_is_an_ordinary_object_afterwards():
     assert restored.text == obj.text
     assert restored.rotation == pytest.approx(obj.rotation)
     assert restored.opacity == pytest.approx(obj.opacity)
+
+
+# -- what Qt does to a str enum -------------------------------------------
+def test_a_corner_arrives_by_name_as_readily_as_by_member():
+    """``Corner`` is a ``str`` enum, and Qt hands one back as a plain string.
+
+    A combo box stores its data in a ``QVariant``, which sees something that
+    *is* a string and keeps the string; the member is gone by the time
+    ``currentData`` returns. Every position the page-number dialog offered
+    crashed on ``.at_top`` because of it.
+    """
+    spec = PageNumberSpec(corner="top_right")
+    assert spec.corner is Corner.TOP_RIGHT
+    assert spec.corner.at_top
+
+
+@pytest.mark.parametrize("corner", list(Corner))
+def test_every_position_survives_the_round_trip(corner):
+    """Pinned for all six, since all six came through the same combo box."""
+    spec = PageNumberSpec(corner=corner.value)
+    obj = page_number_for(_page(), spec, 0, 1)
+    assert obj.align is corner.align
+
+
+def test_a_corner_that_is_not_one_still_raises():
+    """Coercion is for Qt's flattening, not for hiding a typo."""
+    with pytest.raises(ValueError):
+        PageNumberSpec(corner="middle_of_nowhere")

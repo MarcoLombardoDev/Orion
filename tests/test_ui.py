@@ -21,6 +21,7 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QPointF, Qt  # noqa: E402
 from PySide6.QtGui import QKeyEvent  # noqa: E402
+from PySide6.QtWidgets import QFrame, QLabel  # noqa: E402
 
 from orion.document.annotations import AnnotationKind, AnnotationObject  # noqa: E402
 from orion.document.objects import ShapeKind, ShapeObject, TextObject  # noqa: E402
@@ -253,22 +254,157 @@ class TestTheToolPalette:
             if tool is not None:
                 assert window._actions.tool_action(tool) is not None
 
-    def test_the_menu_offers_the_same_tools_as_the_palette(self, window):
-        """The two drifted apart: Redact and Edit Page Text were palette-only."""
-        from PySide6.QtWidgets import QMenu
+    def test_the_tools_menu_and_the_palette_hold_the_same_things(self, window):
+        """Neither may offer something the other does not.
 
-        from orion.ui.menu import _add_tool_entries
-
-        menu = QMenu()
-        _add_tool_entries(menu, window._actions)
-        in_menu = {a.text() for a in menu.actions() if not a.isSeparator()}
-
+        They had drifted both ways: Redact and Edit Page Text were on the
+        palette and in no menu, while Watermark and Page Numbers were in the
+        menu and on no palette — and a command that lives in one place only is
+        a command whoever looks in the other place concludes does not exist.
+        """
+        from orion.ui.menu import build_menu_bar
         from orion.ui.toolbar import ToolPalette
 
-        for tool in ToolPalette.LAYOUT:
-            if tool is not None:
-                assert window._actions.tool_action(tool).text() in in_menu, tool
+        bar, _bundle = build_menu_bar(window, window._actions)
+        tools_menu = next(
+            menu for menu in bar.findChildren(type(bar.addMenu("x"))) if menu.title() == "&Tools"
+        )
+        in_menu = {a.text() for a in tools_menu.actions() if not a.isSeparator() and a.text()}
 
+        on_palette = {
+            window._actions.tool_action(tool).text()
+            for tool in ToolPalette.LAYOUT
+            if tool is not None
+        }
+        on_palette |= {window._actions[key].text() for key in ToolPalette.COMMANDS}
+
+        assert in_menu == on_palette, (
+            f"only in the menu: {sorted(in_menu - on_palette)}; "
+            f"only on the palette: {sorted(on_palette - in_menu)}"
+        )
+
+    def test_the_palette_offers_the_two_stamps(self, window):
+        """They open a dialog rather than arming a click, but they are Tools."""
+        from orion.ui.toolbar import ToolPalette
+
+        assert "tools.watermark" in ToolPalette.COMMANDS
+        assert "tools.page_numbers" in ToolPalette.COMMANDS
+
+    def test_selection_actions_are_not_offered_as_tools(self, window):
+        """Edit Text Object and Edit Comment act on what is already selected.
+
+        They are right in the context menu and wrong in a list of tools, where
+        every other entry changes what the next click does.
+        """
+        from orion.ui.toolbar import ToolPalette
+
+        for key in ("tools.edit_text", "tools.edit_note"):
+            assert key not in ToolPalette.COMMANDS
+
+    def test_merge_and_image_export_are_on_the_top_toolbar(self, window):
+        """Both were menu-only, and both are things people reach for often."""
+        texts = {a.text() for a in window._toolbar.actions() if a.text()}
+        assert window._actions["file.merge"].text() in texts
+        assert window._actions["file.export_images"].text() in texts
+
+    def test_the_theme_menu_is_under_help(self, window):
+        from orion.ui.menu import build_menu_bar
+
+        bar, bundle = build_menu_bar(window, window._actions)
+        assert bundle.theme is not None
+        parents = [
+            menu.title()
+            for menu in bar.findChildren(type(bundle.theme))
+            if bundle.theme in menu.actions() or bundle.theme.menuAction() in menu.actions()
+        ]
+        assert "&Help" in parents, f"the theme submenu is under {parents}"
+
+
+class TestThePagesPanel:
+    """The thumbnails, the commands beside them, and the rule between."""
+
+    def test_every_page_command_is_on_the_strip(self, window):
+        """The Pages menu was the only place these lived.
+
+        Which put the verbs a long way from the nouns: select three
+        thumbnails, then go hunting along the menu bar.
+        """
+        from orion.ui.menu import _STRUCTURE
+        from orion.ui.pages_panel import PAGE_COMMANDS
+
+        in_menu = [
+            key
+            for title, entries in _STRUCTURE
+            if title == "&Pages"
+            for key in entries
+            if key is not None
+        ]
+        on_strip = [key for key in PAGE_COMMANDS if key is not None]
+        assert on_strip == in_menu
+
+    def test_every_button_on_the_strip_has_an_icon(self, window):
+        """A strip set to icons-only draws an action with no icon as "···".
+
+        Which is what Rotate 180, Move Up and Move Down looked like: three
+        buttons in a column of pictures showing an ellipsis, unreadable and
+        indistinguishable from each other. The Pages menu had carried them
+        with a label, so nobody had noticed they had no picture.
+        """
+        from orion.ui.pages_panel import PAGE_COMMANDS
+
+        missing = [
+            key
+            for key in PAGE_COMMANDS
+            if key is not None and window._actions[key].icon().isNull()
+        ]
+        assert not missing, f"no icon for {missing}"
+
+    def test_the_strip_carries_the_windows_own_actions(self, window):
+        """Copies would lose the shortcut and drift out of enabled state."""
+        strip = window._pages_panel._commands
+        for key in ("pages.insert", "pages.split"):
+            assert window._actions[key] in strip.actions()
+
+    def test_the_dock_has_no_title_bar(self, window):
+        """A strip of chrome saying "Pages" above a column of pages."""
+        bar = window._thumbnail_dock.titleBarWidget()
+        assert bar is not None, "the dock still has Qt's own title bar"
+        assert not bar.findChildren(QLabel), "the title bar still shows something"
+
+    def test_there_is_a_divider_against_the_tool_palette(self, window):
+        """Two strips of icons with nothing between them read as one strip."""
+        divider = window._pages_panel._divider
+        assert divider.width() == 1
+        assert divider.frameShape() == QFrame.Shape.VLine
+
+    def test_the_divider_is_recoloured_with_the_theme(self, window):
+        for theme in (LIGHT, DARK):
+            window._pages_panel.apply_theme(theme)
+            assert theme.border in window._pages_panel._divider.styleSheet()
+
+    def test_the_strip_cannot_widen_the_dock(self, window):
+        """This one hung the window, and the mechanism is worth pinning.
+
+        A vertical QToolBar asks for room enough for its widest label even
+        with the labels turned off — 136px here, wider than the thumbnails.
+        That pushed the dock's minimum past the width the window asks for,
+        and the two then argued: the dock pushed, the canvas resized,
+        fit-page recomputed the zoom, and the resize came round again.
+        """
+        strip = window._pages_panel._commands
+        assert strip.width() <= 40, "the command strip is as wide as a label"
+        assert (
+            window._pages_panel.minimumSizeHint().width()
+            <= window._thumbnail_dock.width()
+        ), "the panel wants more room than the dock is given"
+
+    def test_rotating_a_page_settles(self, window, qapp, sample_pdf):
+        """The symptom, rather than the mechanism: it used to never return."""
+        window.open_path(sample_pdf)
+        pump(qapp)
+        window.rotate_pages(90, [0])
+        pump(qapp)
+        assert window.session.document[0].rotation == 90
 
 def test_a_comment_annotation_from_a_file_is_still_editable(window, qapp, sample_pdf):
     """Dropping the tool must not drop the kind.
@@ -938,64 +1074,95 @@ class TestStartsMaximised:
         window.close()
 
 
-class TestIconsOnAnActiveButton:
-    """A checked toolbar button is filled with the accent. The icon inside it
-    has to stop being a dark line drawing at that point, or it disappears into
-    the fill — which is what was reported: the button turned blue and the icon
-    went with it.
+class TestIconsReadAgainstWhatIsBehindThem:
+    """One icon, every surface, both themes.
+
+    Orion used to draw a second copy in ``accent_text`` for the states Qt
+    paints with the accent behind them. The flaw is that Qt asks for State.On
+    on anything checkable that is checked, and cannot say what is behind it —
+    and a checked tool is the *same QAction* in the palette and in the Tools
+    menu. So the accent-coloured drawing went into the menu as well, where
+    accent_text is the opposite of the surface: a white icon on a white menu
+    in the light theme, a near-black one on a near-black menu in the dark.
+    Reported as the colours being inverted, and they were.
+
+    The answer is that nothing paints the accent behind an icon any more, so
+    these check both halves: the icon is one colour, and every surface it can
+    land on has enough contrast against that colour.
     """
 
-    def test_the_on_state_is_a_light_icon(self, qapp):
-        from PySide6.QtGui import QIcon
-
-        from orion.ui.icons import available_icons, icon
-
-        def mean_lightness(pixmap):
-            image = pixmap.toImage()
-            ink = [
-                image.pixelColor(x, y)
-                for x in range(image.width())
-                for y in range(image.height())
-                if image.pixelColor(x, y).alpha() > 128
-            ]
-            assert ink, "the icon drew nothing at all"
-            return sum(colour.lightness() for colour in ink) / len(ink)
-
-        drawn = icon(available_icons()[0], 20)
-        off = mean_lightness(drawn.pixmap(20, 20, QIcon.Mode.Normal, QIcon.State.Off))
-        on = mean_lightness(drawn.pixmap(20, 20, QIcon.Mode.Normal, QIcon.State.On))
-
-        assert off < 100, "the ordinary icon is not dark"
-        assert on > 200, "the icon on an active button is not light"
-
-    def test_a_selected_row_gets_the_light_icon_too(self, qapp):
-        """Same problem, same fill: a selected item is painted with the accent
-        behind it.
-        """
-        from PySide6.QtGui import QIcon
-
-        from orion.ui.icons import available_icons, icon
-
-        drawn = icon(available_icons()[0], 20)
-        selected = drawn.pixmap(20, 20, QIcon.Mode.Selected, QIcon.State.Off).toImage()
+    @staticmethod
+    def _mean_lightness(pixmap) -> float:
+        image = pixmap.toImage()
         ink = [
-            selected.pixelColor(x, y)
-            for x in range(selected.width())
-            for y in range(selected.height())
-            if selected.pixelColor(x, y).alpha() > 128
+            image.pixelColor(x, y)
+            for x in range(image.width())
+            for y in range(image.height())
+            if image.pixelColor(x, y).alpha() > 128
         ]
-        assert ink and sum(c.lightness() for c in ink) / len(ink) > 200
+        assert ink, "the icon drew nothing at all"
+        return sum(colour.lightness() for colour in ink) / len(ink)
 
-    def test_an_active_button_is_dark_enough_for_a_white_icon(self, qapp):
-        """The other half of it. A light icon on a light fill is the same bug
-        the other way round, and the stylesheet is where that would happen.
+    @pytest.mark.parametrize("theme", [LIGHT, DARK])
+    def test_the_icon_is_one_colour_whatever_qt_asks_for(self, qapp, theme):
+        """No state may hand back a drawing in a different colour."""
+        from PySide6.QtGui import QIcon
+
+        from orion.ui.icons import available_icons, icon, set_icon_theme
+
+        set_icon_theme(theme)
+        drawn = icon(available_icons()[0], 20)
+        # Normal and Active are the two a menu and a toolbar ask for, and the
+        # two Orion supplies. Mode.Selected is left out on purpose: Qt
+        # synthesises that one itself by blending toward the highlight, for
+        # item views that really do paint the accent behind a row.
+        states = [
+            (QIcon.Mode.Normal, QIcon.State.Off),
+            (QIcon.Mode.Normal, QIcon.State.On),
+            (QIcon.Mode.Active, QIcon.State.Off),
+            (QIcon.Mode.Active, QIcon.State.On),
+        ]
+        readings = [
+            self._mean_lightness(drawn.pixmap(20, 20, mode, state))
+            for mode, state in states
+        ]
+        assert max(readings) - min(readings) < 20, (
+            f"{theme.name}: the icon changes colour by state {readings}"
+        )
+
+    @pytest.mark.parametrize("theme", [LIGHT, DARK])
+    def test_the_icon_follows_the_theme(self, qapp, theme):
+        """Dark ink on the light theme, light ink on the dark one."""
+        from orion.ui.icons import available_icons, icon, set_icon_theme
+
+        set_icon_theme(theme)
+        lightness = self._mean_lightness(icon(available_icons()[0], 20).pixmap(20, 20))
+        if theme.is_dark:
+            assert lightness > 150, "the icon is dark on a dark theme"
+        else:
+            assert lightness < 120, "the icon is light on a light theme"
+
+    @pytest.mark.parametrize("theme", [LIGHT, DARK])
+    def test_every_surface_an_icon_lands_on_has_contrast_against_it(self, theme):
+        """The other half: a tint the icon cannot be seen on is the same bug.
+
+        These are the three backgrounds a themed icon is drawn on — a plain
+        toolbar, a checked tool, and a highlighted menu row.
         """
-        from pathlib import Path
+        text = theme.color("text").lightness()
+        for token in ("surface", "surface_alt", "accent_soft"):
+            behind = theme.color(token).lightness()
+            assert abs(text - behind) > 90, (
+                f"{theme.name}: {token} is too close to the icon colour"
+            )
 
-        sheet = (Path(__file__).resolve().parent.parent
-                 / "resources" / "styles" / "orion.qss").read_text(encoding="utf-8")
-        block = sheet.split("QToolButton:pressed", 1)[1].split("}", 1)[0]
-        assert "#2c3e50" in block, "the checked fill is not the dark primary"
+    def test_the_checked_tool_is_tinted_rather_than_filled(self):
+        """Filling it with the accent is what forced the second drawing."""
+        from orion.ui.theme import DARK, stylesheet
+
+        block = stylesheet(DARK).split("QToolButton:checked", 1)[1].split("}", 1)[0]
+        assert DARK.accent_soft in block
+        assert f"background: {DARK.accent};" not in block
 
 
 class TestIconsAreNotScaledTwice:
@@ -1413,128 +1580,6 @@ class TestTheFontPicker:
         assert note.isVisible() and "embedded" in note.text()
 
 
-class TestEditingThePagesOwnText:
-    """Clicking a line of the document's text and rewriting it.
-
-    The model-level tests live in ``tests/test_page_text_editing.py``; what
-    these check is the part only the window can answer — that the click lands
-    on the right line, that the box arrives ready to type in, and that undo
-    puts the page back.
-    """
-
-    @staticmethod
-    def _click_line(window, qapp, base: tuple[float, float]) -> None:
-        _drag(window, Tool.PAGE_TEXT, base, base)
-        pump(qapp)
-
-    def test_clicking_a_line_turns_it_into_an_editable_box(
-        self, window, qapp, sample_pdf
-    ):
-        from orion.document.objects import TextObject
-
-        window.open_path(sample_pdf)
-        pump(qapp)
-        # The fixture draws "PAGE 1 NEEDLE" with its baseline 100pt down.
-        self._click_line(window, qapp, (90.0, 95.0))
-
-        objects = window.session.document[0].objects
-        assert len(objects) == 1, "the click did not produce a text object"
-        obj = objects[0]
-        assert isinstance(obj, TextObject)
-        assert obj.text == "PAGE 1 NEEDLE"
-        assert obj.font_size == pytest.approx(18.0, abs=0.5)
-        assert window.session.document[0].replaced_text, "the original was not claimed"
-
-        item = window._canvas._item_index[obj.id]
-        assert item.is_editing, "the box should be ready to type in"
-
-    def test_the_box_sits_where_the_line_did(self, window, qapp, sample_pdf):
-        """Not a coordinate check: the text must not jump up or down the page.
-
-        Orion puts a box's first baseline at ``top + ascender * size``, so the
-        top has to be that far above the original baseline.
-        """
-        window.open_path(sample_pdf)
-        pump(qapp)
-        self._click_line(window, qapp, (90.0, 95.0))
-        obj = window.session.document[0].objects[0]
-
-        from orion.pdf.fonts import FontRequest, resolve
-        from orion.pdf.text_layout import layout_text
-
-        layout = layout_text(
-            obj.text,
-            obj.rect,
-            font=FontRequest(obj.font_family, obj.bold, obj.italic),
-            font_size=obj.font_size,
-        )
-        assert resolve(FontRequest(obj.font_family)).ascender > 0
-        # The fixture's baseline is 100pt from the top of a 600pt page.
-        assert layout.lines[0].baseline == pytest.approx(100.0, abs=1.0)
-
-    def test_clicking_where_there_is_no_text_says_so(self, window, qapp, sample_pdf):
-        window.open_path(sample_pdf)
-        pump(qapp)
-        self._click_line(window, qapp, (200.0, 500.0))
-        assert window.session.document[0].objects == []
-        assert window.session.document[0].replaced_text == ()
-
-    def test_undo_restores_the_page(self, window, qapp, sample_pdf):
-        """Both halves, or a line of the document disappears on the next save."""
-        window.open_path(sample_pdf)
-        pump(qapp)
-        self._click_line(window, qapp, (90.0, 95.0))
-        item = window._canvas._item_index[window.session.document[0].objects[0].id]
-        item.end_editing(commit=True)
-        pump(qapp)
-
-        window._actions["edit.undo"].trigger()
-        pump(qapp)
-        page = window.session.document[0]
-        assert page.objects == []
-        assert page.replaced_text == ()
-
-    @staticmethod
-    def _page_ink(window) -> int:
-        """Dark pixels in the raster the canvas is actually showing."""
-        image = window._canvas._page_items[0]._image
-        assert image is not None, "the page has not rendered yet"
-        return sum(
-            1
-            for y in range(image.height())
-            for x in range(image.width())
-            if image.pixelColor(x, y).red() < 128
-        )
-
-    def test_the_original_line_leaves_the_screen_too(self, window, qapp, sample_pdf):
-        """The model was right all along; only the picture was wrong.
-
-        The raster the canvas holds is keyed by zoom, and a page-text edit
-        changes neither the zoom nor the page size — so the stale image stayed
-        up, showing the words the edit had removed underneath the ones
-        replacing them. That is what "the edit does not work" looked like.
-        """
-        window.open_path(sample_pdf)
-        pump(qapp)
-        wait_until(qapp, lambda: window._canvas._page_items[0]._image is not None)
-        before = self._page_ink(window)
-        assert before > 0, "the fixture rendered nothing"
-
-        self._click_line(window, qapp, (90.0, 95.0))
-        item = window._canvas._item_index[window.session.document[0].objects[0].id]
-        item.end_editing(commit=False)
-        pump(qapp)
-        wait_until(qapp, lambda: self._page_ink(window) < before)
-
-        assert self._page_ink(window) < before, "the original is still on screen"
-
-    def test_the_tool_hands_back_to_select(self, window, qapp, sample_pdf):
-        window.open_path(sample_pdf)
-        pump(qapp)
-        self._click_line(window, qapp, (90.0, 95.0))
-        assert window._canvas.tool is Tool.SELECT
-
-
 class TestDeleteFromThePropertiesPanel:
     """Delete, where the properties of the thing being deleted already are.
 
@@ -1585,6 +1630,56 @@ class TestDeleteFromThePropertiesPanel:
         window._actions["edit.undo"].trigger()
         pump(qapp)
         assert len(window.session.document[0].objects) == 1
+
+
+class TestStampingThroughTheDialog:
+    """The page-number dialog, driven as the window drives it.
+
+    The model tests built specs directly and passed; the crash lived in the
+    one step they skipped, which is Qt handing the value back.
+    """
+
+    def test_the_dialog_returns_a_usable_position(self, window, qapp, sample_pdf):
+        from orion.pdf.stamps import Corner, page_number_for
+        from orion.ui.dialogs.stamp_dialogs import PageNumberDialog
+
+        window.open_path(sample_pdf)
+        pump(qapp)
+        dialog = PageNumberDialog(window.session.document.page_count, window)
+        try:
+            for index in range(dialog._corner.count()):
+                dialog._corner.setCurrentIndex(index)
+                spec = dialog.spec
+                assert isinstance(spec.corner, Corner), (
+                    f"row {index} came back as {type(spec.corner).__name__}"
+                )
+                # The call that used to raise.
+                page_number_for(window.session.document[0], spec, 0, 3)
+        finally:
+            dialog.deleteLater()
+
+    def test_numbering_the_document_adds_one_object_per_page(
+        self, window, qapp, sample_pdf, monkeypatch
+    ):
+        """End to end, because that is the path that was broken."""
+        from orion.ui.dialogs import stamp_dialogs
+
+        window.open_path(sample_pdf)
+        pump(qapp)
+
+        def _accept(dialog):
+            dialog._corner.setCurrentIndex(0)
+            return True
+
+        monkeypatch.setattr(
+            stamp_dialogs.PageNumberDialog, "exec", lambda self: _accept(self)
+        )
+        window.add_page_numbers()
+        pump(qapp)
+
+        document = window.session.document
+        assert all(len(page.objects) == 1 for page in document.pages)
+        assert window.session.history.undo_text == "Add Page Numbers"
 
 
 class TestDocumentProperties:

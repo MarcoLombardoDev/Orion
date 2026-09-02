@@ -49,6 +49,58 @@ list of thirty-two static observations about the binary.
   which is inside `QApplication`'s constructor. Overridable, so a display
   problem can still be debugged.
 
+### Fixed — the interface
+- **Page numbers no longer crash the window.** Every position the dialog
+  offered raised `AttributeError: 'str' object has no attribute 'at_top'`.
+  `Corner` is a `str` enum, and a `str` enum that goes through Qt comes back a
+  plain `str`: a combo box hands its data to `QVariant`, which sees something
+  that *is* a string and keeps the string, so the member is gone by the time
+  `currentData` returns. The spec now takes a corner by name as readily as by
+  member. The model tests had built specs directly and passed — the crash was
+  in the one step they skipped — so there is now a test that drives the real
+  dialog through all six positions.
+- **Menu icons are the right colour in both themes.** Orion drew a second copy
+  of every icon in `accent_text` for the states Qt paints with the accent
+  behind them. The flaw is that Qt asks for `State.On` on anything checkable
+  that is checked and cannot say what is behind it — and a checked tool is the
+  *same QAction* in the palette and in the Tools menu. So the accent-coloured
+  drawing went into the menu as well, where `accent_text` is the opposite of
+  the surface: a white icon on a white menu in the light theme, a near-black
+  one on a near-black menu in the dark. Nothing paints the accent behind an
+  icon any more — a checked tool and a highlighted menu row are tinted instead
+  — so one colour reads everywhere and there is nothing left to special-case.
+- **Rotating a page no longer hangs the window.** A vertical `QToolBar` asks
+  for room enough for its widest label even with the labels turned off, which
+  pushed the new Pages strip to 136px and the dock's minimum past the width
+  the window asks for. The two then argued: the dock pushed, the canvas
+  resized, fit-page recomputed the zoom, and the resize came round again.
+
+### Changed — the interface
+- **The Pages panel has its own strip of commands**, carrying everything under
+  the Pages menu — insert, duplicate, delete, rotate, reorder, import, extract
+  and split — beside the thumbnails they act on rather than up in the menu bar.
+  Three of those actions turned out to have no icon at all, which a strip set
+  to icons-only draws as "···"; they have one now, and a test fails if another
+  ever joins them.
+- **The panel's "Pages" title bar is gone**, and a rule divides the panel from
+  the tool palette. Two strips of icons side by side with nothing between them
+  read as one strip arranged oddly.
+- **The tool palette and the Tools menu hold the same things.** They had
+  drifted both ways: Watermark and Page Numbers were in the menu and on no
+  palette, while Edit Text Object and Edit Comment were offered as tools when
+  they act on what is already selected. A test now compares the two lists and
+  fails on any difference.
+- **Merge and Export as Images are on the top toolbar**, where they are one
+  click rather than two menus deep.
+- **Theme moved from the View menu to Help.**
+
+### Removed
+- **Edit Page Text.** The replacement worked and the original was removed from
+  the file, but the feature as a whole was still not right in use, so it comes
+  out rather than staying in half-working. The engine underneath stays — it is
+  what redaction uses to strip content on save — so nothing about the file
+  format or an existing document changes.
+
 ### Added
 - A README section on what to do when antivirus or a corporate EDR flags the
   download, and what about the build is deliberate rather than accidental.

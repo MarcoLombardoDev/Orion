@@ -42,7 +42,7 @@ class MainToolBar(QToolBar):
         self.setIconSize(QSize(20, 20))
         self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
 
-        for key in ("file.open", "file.save"):
+        for key in ("file.open", "file.save", "file.merge", "file.export_images"):
             self.addAction(actions[key])
         self.addSeparator()
         for key in ("edit.undo", "edit.redo"):
@@ -135,7 +135,6 @@ class ToolPalette(QToolBar):
         Tool.HAND,
         None,
         Tool.TEXT,
-        Tool.PAGE_TEXT,
         Tool.IMAGE,
         None,
         Tool.RECTANGLE,
@@ -156,6 +155,13 @@ class ToolPalette(QToolBar):
         Tool.STICKY_NOTE,
     )
 
+    #: Below the tools, and below a separator: the Tools menu entries that are
+    #: not tools. They open a dialog rather than arming the next click, so they
+    #: are ordinary buttons and take no part in the exclusive group — but they
+    #: belong on the palette, because "everything under Tools" is where a user
+    #: looks for them and a menu-only command is a command nobody finds.
+    COMMANDS: tuple[str, ...] = ("tools.watermark", "tools.page_numbers")
+
     def __init__(self, actions: ActionRegistry, parent: QWidget | None = None) -> None:
         super().__init__("Tools", parent)
         self.setObjectName("tool_palette")
@@ -175,6 +181,11 @@ class ToolPalette(QToolBar):
             action.triggered.connect(
                 lambda _checked=False, tool=entry: self.tool_selected.emit(tool)
             )
+
+        self.addSeparator()
+        for key in self.COMMANDS:
+            self.addAction(actions[key])
+
         actions.tool_action(Tool.SELECT).setChecked(True)
 
     def set_tool(self, tool: Tool) -> None:

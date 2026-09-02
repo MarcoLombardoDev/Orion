@@ -144,6 +144,8 @@ Orion/
 │   │   ├── object_items.py    Text/Image/Shape/Annotation QGraphicsItems + handles
 │   │   ├── tools.py           tool state machine (select, text, image, shapes…)
 │   │   ├── thumbnails.py      ThumbnailPanel (async, drag&drop reorder)
+│   │   ├── pages_panel.py    the thumbnails, the Pages commands beside them,
+│   │   │                     and the rule dividing them from the tool palette
 │   │   ├── properties_panel.py dynamic per-type property editor
 │   │   ├── search_panel.py    text search UI
 │   │   ├── render_bridge.py   raw RGB buffer -> QImage, Qt render worker

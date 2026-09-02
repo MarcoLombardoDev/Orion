@@ -19,8 +19,14 @@
 └──────────────────────────────────────────────────────────────┘
 ```
 
-Both side panels can be hidden — **F9** for the thumbnails, **F10** for the
+Both side panels can be hidden — **F9** for the pages, **F10** for the
 properties — and dragged to the other side of the window.
+
+There are two strips of icons on the left, separated by a rule. The first is
+the **tools**: what the next click on a page does. The second belongs to the
+**pages** beside it, and holds everything under the Pages menu — insert,
+duplicate, delete, rotate, reorder, import, extract and split — so the verbs
+are next to the thing they act on rather than up in the menu bar.
 
 ## Opening documents
 
@@ -68,7 +74,6 @@ The palette down the left side selects what a click on the page does.
 | Redact | | Drag over anything that must leave the file |
 | Freehand | `P` | Draw with the mouse held down |
 | Sticky Note | `N` | Click to place a note |
-| Edit Page Text | `E` | Click a line of the document's own text to rewrite it |
 
 Most tools hand control back to **Select** as soon as the object exists, so you
 can position it straight away. Freehand and Pan stay active until you change
@@ -108,35 +113,6 @@ If you open a document that names a font this machine does not have, the name
 is kept and the panel says Helvetica is standing in for it. A family that has
 no italic, or no bold, is shown upright or regular on the canvas too, so the
 screen does not promise something the saved file will not have.
-
-### Editing the document's own text
-
-**Edit Page Text** rewrites text that is already in the PDF, rather than adding
-a box on top of it. Click a line and it becomes an editable text box holding
-that line, in the same place, at the same size and colour; type over it and
-save, and the original is gone from the file rather than covered up.
-
-The original stops being drawn the moment you click it, so what is on screen
-is what the file will hold — one line, not the new one sitting over the old.
-Find stops matching those words too, for the same reason: they are not on the
-page any more.
-
-Three things follow from how it works, and they are worth knowing before you
-rely on it:
-
-* The line is **replaced, not edited**. Orion redraws it with its own fonts, so
-  if the document's font is not installed on this computer the replacement is
-  drawn in Helvetica and the line changes appearance. The panel says so when it
-  happens.
-* A line with **more than one style** — a bold label followed by a plain figure
-  — becomes one style, the one most of the line already used. Replace the two
-  halves separately if you need to keep both.
-* The replaced line is drawn last, so a program that reads the page in order —
-  a screen reader, or copying the whole page — finds it at the end rather than
-  in its place on the page.
-
-If there is no text where you click, the status bar says so and nothing
-changes. Scanned pages have no text to edit; use a text box on top instead.
 
 ### Highlight, underline and strikeout
 
@@ -350,7 +326,7 @@ Recovered documents open as unsaved, so use **Save As** to write them out.
 
 ## Themes
 
-**View ▸ Theme** offers Light, Dark, or Match System, which follows your
+**Help ▸ Theme** offers Light, Dark, or Match System, which follows your
 desktop setting.
 
 ## When something goes wrong

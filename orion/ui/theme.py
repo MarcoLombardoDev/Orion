@@ -44,6 +44,7 @@ class Theme:
     text_muted: str
     accent: str
     accent_text: str
+    accent_soft: str
     canvas: str
     page_shadow: str
     selection: str
@@ -68,6 +69,7 @@ LIGHT = Theme(
     text_muted="#6b7280",
     accent="#2f6feb",
     accent_text="#ffffff",
+    accent_soft="#dce7fd",
     canvas="#9aa1ab",
     page_shadow="#00000033",
     selection="#2f6feb",
@@ -89,6 +91,7 @@ DARK = Theme(
     text_muted="#9aa2af",
     accent="#5b8dff",
     accent_text="#0d1017",
+    accent_soft="#26324a",
     canvas="#15171c",
     page_shadow="#00000066",
     selection="#5b8dff",
@@ -170,10 +173,18 @@ def stylesheet(theme: Theme) -> str:
         color: {theme.text};
     }}
     QToolButton:hover {{ background: {theme.surface_alt}; }}
+    /* Tinted rather than filled, and the reason is the icons. A checked
+       action is the *same QAction* in the palette and in the Tools menu, so
+       one icon has to read on both backgrounds -- and it cannot, if one of
+       them is the accent and the other is the menu. Recolouring the icon for
+       the checked state is what Orion did instead, and it inverted: white on
+       white in the light theme, near-black on near-black in the dark one,
+       because accent_text is the opposite of the surface in each. A tint the
+       ordinary text colour reads against settles it everywhere at once. */
     QToolButton:checked {{
-        background: {theme.accent};
+        background: {theme.accent_soft};
         border-color: {theme.accent};
-        color: {theme.accent_text};
+        color: {theme.text};
     }}
     QToolButton::menu-indicator {{ width: 0px; }}
     QStatusBar {{
@@ -247,7 +258,7 @@ def stylesheet(theme: Theme) -> str:
         padding: 4px;
     }}
     QMenu::item {{ padding: 5px 26px 5px 22px; border-radius: 4px; }}
-    QMenu::item:selected {{ background: {theme.accent}; color: {theme.accent_text}; }}
+    QMenu::item:selected {{ background: {theme.accent_soft}; color: {theme.text}; }}
     QMenu::separator {{ height: 1px; background: {theme.border}; margin: 4px 8px; }}
     QSplitter::handle {{ background: {theme.border}; }}
     QLabel[role="hint"] {{ color: {theme.text_muted}; }}

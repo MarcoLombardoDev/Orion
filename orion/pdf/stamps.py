@@ -106,6 +106,23 @@ class PageNumberSpec:
     #: numbered is left out of the range instead, so this stays a pure offset.
     start_at: int = 1
 
+    def __post_init__(self) -> None:
+        """Take a corner by name as readily as by member.
+
+        ``Corner`` is a ``str`` enum, and a ``str`` enum that goes through Qt
+        comes back a plain ``str``: a combo box hands ``currentData`` to
+        ``QVariant``, which sees something that *is* a string and keeps the
+        string. The member is gone by the time it returns, and the first thing
+        to touch ``.at_top`` raises — which is where the page-number dialog
+        crashed for every position it offered.
+
+        Coerced here rather than at that one call site, so anything else
+        rebuilding a spec — a settings file, a test, the next dialog — gets
+        the same courtesy.
+        """
+        if not isinstance(self.corner, Corner):
+            object.__setattr__(self, "corner", Corner(self.corner))
+
 
 def format_page_number(spec: PageNumberSpec, position: int, total: int) -> str:
     """Fill in the template for the *position*-th stamped page (0-based).

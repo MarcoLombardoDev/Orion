@@ -41,7 +41,7 @@ from PySide6.QtWidgets import (
 )
 
 from orion.commands.history import History
-from orion.commands.object_commands import AddObjectCommand, ReplacePageTextCommand
+from orion.commands.object_commands import AddObjectCommand
 from orion.document.annotations import AnnotationKind, AnnotationObject
 from orion.document.document import Document
 from orion.document.objects import (
@@ -51,9 +51,7 @@ from orion.document.objects import (
     ShapeObject,
     TextObject,
 )
-from orion.pdf.fonts import FontRequest, resolve
 from orion.pdf.renderer import RenderedPage, RenderRequest
-from orion.pdf.text_edit import line_at
 from orion.ui.object_items import ObjectItem, TextObjectItem, create_item
 from orion.ui.page_item import PageItem
 from orion.ui.render_bridge import RenderService
@@ -562,7 +560,7 @@ class PdfCanvas(QGraphicsView):
             self.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
         elif tool is Tool.SELECT:
             self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
-        elif tool in (Tool.TEXT, Tool.PAGE_TEXT):
+        elif tool is Tool.TEXT:
             self.viewport().setCursor(Qt.CursorShape.IBeamCursor)
         else:
             self.viewport().setCursor(Qt.CursorShape.CrossCursor)
@@ -603,11 +601,6 @@ class PdfCanvas(QGraphicsView):
             self._begin_ink(page_item, base)
             event.accept()
             return
-        if tool is Tool.PAGE_TEXT:
-            self._replace_page_text(page_item, base)
-            event.accept()
-            return
-
         self._begin_draft(page_item, scene_pos)
         event.accept()
 
@@ -919,67 +912,6 @@ class PdfCanvas(QGraphicsView):
         )
         obj.rect = obj.recompute_rect()
         self._push_new_object(page_item, obj, "Add Freehand")
-
-    def _replace_page_text(self, page_item: PageItem, base: Point) -> None:
-        """Turn the line of page text under *base* into an editable text box.
-
-        The original glyphs are not edited: they are removed from the saved
-        file and redrawn as an Orion text object, which is then editable like
-        any other — wrapping, alignment, colour, size, undo and the properties
-        panel all come with it. See :mod:`orion.pdf.text_edit` for why the
-        in-place alternative was not taken.
-
-        The box is placed so its first baseline lands on the original's. Orion
-        puts that baseline at ``top + ascender * size``, so the top is that
-        much above it, and the replacement sits exactly where the old line sat
-        rather than a few points low.
-        """
-        lines = self.render_service.renderer.source_text_lines(page_item.page)
-        line = line_at(lines, base) if lines else None
-        if line is None:
-            self.status_message.emit("There is no editable text at that point.")
-            self.tool_finished.emit()
-            return
-
-        run = line.dominant_run
-        request = FontRequest(run.family, run.bold, run.italic)
-        resolved = resolve(request)
-        size = line.font_size
-        # Room to type without immediately wrapping, without wandering off the
-        # page: a replacement is usually about as long as what it replaces.
-        width = min(
-            max(line.rect.width * 1.15, line.rect.width + 12.0),
-            max(page_item.page.base_size.width - line.rect.x0 - 4.0, 24.0),
-        )
-        obj = TextObject(
-            rect=Rect.from_xywh(
-                line.rect.x0,
-                line.baseline - resolved.ascender * size,
-                width,
-                size * (resolved.ascender - resolved.descender) + 2.0,
-            ),
-            text=line.text,
-            font_family=run.family,
-            font_size=size,
-            bold=run.bold,
-            italic=run.italic,
-            color=run.color,
-        )
-
-        self.history.push(
-            ReplacePageTextCommand(self.document, page_item.index, obj, line.indices)
-        )
-        item = self._item_index.get(obj.id)
-        if item is not None:
-            self.select_objects([obj.id])
-        if resolved.substituted:
-            self.status_message.emit(
-                f"“{run.family}” is not installed here, so the replacement "
-                "is drawn in Helvetica."
-            )
-        self.tool_finished.emit()
-        if isinstance(item, TextObjectItem):
-            item.begin_editing()
 
     # ------------------------------------------------------------------
     # Editing helpers

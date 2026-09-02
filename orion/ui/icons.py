@@ -259,6 +259,21 @@ ICONS: dict[str, tuple[Shape, ...]] = {
         Poly(((0.80, 0.32), (0.80, 0.14), (0.62, 0.14)), closed=True, filled=True),
         Poly(((0.80, 0.22), (0.48, 0.18), (0.22, 0.42), (0.26, 0.74), (0.56, 0.86), (0.80, 0.72))),
     ),
+    # A half turn: the same arc as the quarter-turn pair, carried all the way
+    # round, with the arrowhead landing at the bottom rather than the top.
+    "rotate_180": (
+        Poly(((0.20, 0.68), (0.20, 0.86), (0.38, 0.86)), closed=True, filled=True),
+        Poly(((0.20, 0.78), (0.20, 0.44), (0.36, 0.20), (0.64, 0.16), (0.82, 0.34),
+              (0.82, 0.60))),
+    ),
+    "move_up": (
+        Line(0.50, 0.84, 0.50, 0.22),
+        Poly(((0.50, 0.14), (0.30, 0.40), (0.70, 0.40)), closed=True, filled=True),
+    ),
+    "move_down": (
+        Line(0.50, 0.16, 0.50, 0.78),
+        Poly(((0.50, 0.86), (0.30, 0.60), (0.70, 0.60)), closed=True, filled=True),
+    ),
     "extract": (
         Box(0.10, 0.20, 0.44, 0.62, radius=0.06),
         Line(0.58, 0.50, 0.90, 0.50),
@@ -343,22 +358,22 @@ def icon(name: str, size: int = 20, color: QColor | None = None) -> QIcon:
     for scale in (1, 2):
         result.addPixmap(_render(shapes, size, tint, scale))
 
-    # A second drawing, in the colour that reads on the accent, for the states
-    # Qt paints with the accent behind them: a checked toolbar button, and a
-    # selected row. Without it the icon stays the text colour -- a dark line
-    # drawing on a dark blue fill, which is the same as no icon at all.
+    # One colour, every mode and state. There used to be a second drawing in
+    # accent_text for the states Qt paints with the accent behind them, and it
+    # was wrong in a way that is worth writing down, because the idea is
+    # tempting and the flaw is not obvious.
     #
-    # Qt asks for State.On on anything checkable and Mode.Selected on a
-    # selected item, and falls back to the pixmaps above everywhere else, so
-    # adding these takes nothing away.
-    on_tint = _theme.color("accent_text") if _theme else QColor("#ffffff")
-    for scale in (1, 2):
-        pixmap = _render(shapes, size, on_tint, scale)
-        result.addPixmap(pixmap, QIcon.Mode.Normal, QIcon.State.On)
-        result.addPixmap(pixmap, QIcon.Mode.Active, QIcon.State.On)
-        result.addPixmap(pixmap, QIcon.Mode.Selected, QIcon.State.On)
-        result.addPixmap(pixmap, QIcon.Mode.Selected, QIcon.State.Off)
-
+    # Qt asks for State.On on *anything checkable that is checked*, and it has
+    # no way to say what is behind it. A checked tool is the same QAction in
+    # the palette, where the accent was the background, and in the Tools menu,
+    # where it is not -- so the accent-coloured drawing went into the menu
+    # too. accent_text is white on the light theme and near-black on the dark
+    # one, which put a white icon on a white menu and a black icon on a black
+    # one: the colours looked exactly inverted, which is how it was reported.
+    #
+    # Nothing anywhere paints the accent behind an icon now (see the tint on
+    # QToolButton:checked and QMenu::item:selected in theme.py), so the text
+    # colour reads everywhere and there is nothing left to special-case.
     _cache[key] = result
     return result
 

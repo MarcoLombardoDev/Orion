@@ -74,8 +74,6 @@ your original file is never touched until you press Save.
 - **Annotations** — highlight, underline and strikeout that snap to the
   document's own text lines, freehand drawing, comments and sticky notes.
   All written as standard PDF annotations, so other readers understand them.
-- **Page text** — click a line of the document's own text and rewrite it. The
-  original is removed from the file rather than covered over.
 - **Redaction** — drag a box over anything that must not survive. The covered
   content is deleted from the saved page, not hidden behind a rectangle.
 - **Watermarks and page numbers** — stamp a word across a run of pages, or

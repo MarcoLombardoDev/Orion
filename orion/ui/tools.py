@@ -33,7 +33,6 @@ class Tool(str, Enum):
     STRIKEOUT = "strikeout"
     FREEHAND = "freehand"
     STICKY_NOTE = "sticky_note"
-    PAGE_TEXT = "page_text"
     REDACT = "redact"
 
     @property
@@ -99,12 +98,6 @@ TOOL_INFO: dict[Tool, ToolInfo] = {
         "redact",
         "",
         "Drag over anything that must be removed from the saved file",
-    ),
-    Tool.PAGE_TEXT: ToolInfo(
-        "Edit Page Text",
-        "edit_page_text",
-        "E",
-        "Click a line of the document's own text to rewrite it",
     ),
 }
 

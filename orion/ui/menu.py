@@ -85,7 +85,6 @@ _STRUCTURE: tuple[tuple[str, tuple[str | None, ...]], ...] = (
             SEPARATOR,
             "view.thumbnails",
             "view.properties",
-            "@theme",
         ),
     ),
     (
@@ -110,17 +109,29 @@ _STRUCTURE: tuple[tuple[str, tuple[str | None, ...]], ...] = (
     (
         "&Tools",
         (
+            # Whatever the palette holds, in the palette's own order, built
+            # from one list so the two cannot drift apart. Everything below
+            # the separator is in the palette too, as a button that opens a
+            # dialog rather than one that arms a click.
             "@tools",
-            SEPARATOR,
-            "tools.insert_image",
-            "tools.edit_text",
-            "tools.edit_note",
             SEPARATOR,
             "tools.watermark",
             "tools.page_numbers",
         ),
     ),
-    ("&Help", ("view.commands", SEPARATOR, "help.shortcuts", "help.log", SEPARATOR, "help.about")),
+    (
+        "&Help",
+        (
+            "view.commands",
+            SEPARATOR,
+            "@theme",
+            SEPARATOR,
+            "help.shortcuts",
+            "help.log",
+            SEPARATOR,
+            "help.about",
+        ),
+    ),
 )
 
 
@@ -164,7 +175,7 @@ def _build_theme_menu(menu: QMenu, actions: ActionRegistry) -> QMenu:
 def _add_tool_entries(menu: QMenu, actions: ActionRegistry) -> None:
     groups: tuple[tuple[Tool, ...], ...] = (
         (Tool.SELECT, Tool.HAND),
-        (Tool.TEXT, Tool.PAGE_TEXT, Tool.IMAGE),
+        (Tool.TEXT, Tool.IMAGE),
         (Tool.RECTANGLE, Tool.ELLIPSE, Tool.LINE, Tool.ARROW),
         (Tool.HIGHLIGHT, Tool.UNDERLINE, Tool.STRIKEOUT, Tool.REDACT),
         (Tool.FREEHAND, Tool.STICKY_NOTE),
