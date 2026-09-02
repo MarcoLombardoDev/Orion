@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import QWidget
 
+from orion.i18n import tr
 from orion.ui.icons import icon
 from orion.ui.tools import TOOL_INFO, Tool
 
@@ -93,6 +94,11 @@ ACTIONS: tuple[ActionSpec, ...] = (
     ActionSpec("view.theme_light", "&Light Theme", "", "", "Use the light theme", checkable=True, needs_document=False),
     ActionSpec("view.theme_dark", "&Dark Theme", "", "", "Use the dark theme", checkable=True, needs_document=False),
     ActionSpec("view.theme_system", "Match &System", "", "", "Follow the desktop's light or dark setting", checkable=True, needs_document=False),
+    # The two language names stay in their own language, in both languages:
+    # somebody who has landed in the wrong one is looking for the word they
+    # recognise, and "Inglese" is no help to them.
+    ActionSpec("view.language_en", "English", "", "", "Use Orion in English", checkable=True, needs_document=False),
+    ActionSpec("view.language_it", "Italiano", "", "", "Usa Orion in italiano", checkable=True, needs_document=False),
     # -- Pages -----------------------------------------------------------
     ActionSpec("pages.insert", "&Insert Blank Page…", "page_add", "", "Add an empty page"),
     ActionSpec("pages.duplicate", "&Duplicate Page", "duplicate", "", "Duplicate the current page"),
@@ -148,14 +154,14 @@ class ActionRegistry:
         )
 
     def _create(self, spec: ActionSpec) -> QAction:
-        action = QAction(spec.text, self._parent)
+        action = QAction(tr(spec.text), self._parent)
         if spec.icon:
             action.setIcon(icon(spec.icon))
         if spec.shortcut:
             action.setShortcut(QKeySequence(spec.shortcut))
         if spec.tip:
-            action.setToolTip(spec.tip)
-            action.setStatusTip(spec.tip)
+            action.setToolTip(tr(spec.tip))
+            action.setStatusTip(tr(spec.tip))
         action.setCheckable(spec.checkable)
         action.setData(spec.key)
         self._actions[spec.key] = action
@@ -178,6 +184,25 @@ class ActionRegistry:
     def all(self) -> Iterable[QAction]:
         """Every action, for anything that offers the whole set at once."""
         return self._actions.values()
+
+    def retranslate(self) -> None:
+        """Re-apply every label in the current language.
+
+        The specs keep the English, so switching language is a second look-up
+        rather than a rebuild: the QActions stay the same objects, which is
+        what lets the menus, the toolbars and the context menus that share
+        them all change at once without any of them being touched.
+
+        Undo and Redo get the plain word here and the command name back on
+        the next history change. Skipping them entirely was the obvious idea
+        and leaves "&Undo" in English for as long as no document is open.
+        """
+        for key, spec in self._specs.items():
+            action = self._actions[key]
+            action.setText(tr(spec.text))
+            if spec.tip:
+                action.setToolTip(tr(spec.tip))
+                action.setStatusTip(tr(spec.tip))
 
     def connect(self, key: str, slot: Callable[..., None]) -> None:
         self._actions[key].triggered.connect(slot)

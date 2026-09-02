@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from orion.i18n import tr
 from orion.pdf.renderer import PageRenderer
 from orion.utils.geometry import Rect
 
@@ -65,9 +66,10 @@ class SearchPanel(QFrame):
 
         from orion.ui.icons import icon
 
-        layout.addWidget(QLabel("Find"))
+        self._label = QLabel(tr("Find"))
+        layout.addWidget(self._label)
         self._field = QLineEdit()
-        self._field.setPlaceholderText("Search text…")
+        self._field.setPlaceholderText(tr("Search text…"))
         self._field.setClearButtonEnabled(True)
         self._field.returnPressed.connect(self.find_next)
         self._field.textChanged.connect(self._on_text_changed)
@@ -75,13 +77,13 @@ class SearchPanel(QFrame):
 
         self._previous_button = QToolButton()
         self._previous_button.setIcon(icon("prev_page", 16))
-        self._previous_button.setToolTip("Previous match (Shift+Enter)")
+        self._previous_button.setToolTip(tr("Previous match (Shift+Enter)"))
         self._previous_button.clicked.connect(self.find_previous)
         layout.addWidget(self._previous_button)
 
         self._next_button = QToolButton()
         self._next_button.setIcon(icon("next_page", 16))
-        self._next_button.setToolTip("Next match (Enter)")
+        self._next_button.setToolTip(tr("Next match (Enter)"))
         self._next_button.clicked.connect(self.find_next)
         layout.addWidget(self._next_button)
 
@@ -93,11 +95,19 @@ class SearchPanel(QFrame):
 
         self._close_button = QToolButton()
         self._close_button.setIcon(icon("close", 16))
-        self._close_button.setToolTip("Close (Esc)")
+        self._close_button.setToolTip(tr("Close (Esc)"))
         self._close_button.clicked.connect(self.close_panel)
         layout.addWidget(self._close_button)
 
         self.setVisible(False)
+
+    def retranslate(self) -> None:
+        """The bar's own words; the match count is rebuilt by the search."""
+        self._label.setText(tr("Find"))
+        self._field.setPlaceholderText(tr("Search text…"))
+        self._previous_button.setToolTip(tr("Previous match (Shift+Enter)"))
+        self._next_button.setToolTip(tr("Next match (Enter)"))
+        self._close_button.setToolTip(tr("Close (Esc)"))
 
     # -- wiring ------------------------------------------------------------
     def set_session(self, session) -> None:
@@ -179,7 +189,7 @@ class SearchPanel(QFrame):
         if not self._needle:
             self._status.clear()
         elif not self._hits:
-            self._status.setText("No matches")
+            self._status.setText(tr("No matches"))
         else:
             self._status.setText(f"{self._current + 1} of {len(self._hits)}")
         has_hits = bool(self._hits)

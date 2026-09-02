@@ -26,10 +26,16 @@ from __future__ import annotations
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QToolBar, QWidget
 
+from orion.i18n import tr
 from orion.ui.actions import ActionRegistry
 from orion.ui.thumbnails import ThumbnailPanel
+from orion.ui.toolbar import ICON_SIZE as TOOL_ICON_SIZE
 
 __all__ = ["PagesPanel"]
+
+#: Matched to the tool palette's. Two columns of icons side by side, drawn at
+#: two different sizes, read as a mistake rather than as two groups.
+ICON_SIZE = TOOL_ICON_SIZE
 
 #: Every Pages action, in the menu's order, with ``None`` for a separator.
 PAGE_COMMANDS: tuple[str | None, ...] = (
@@ -71,12 +77,12 @@ class PagesPanel(QWidget):
         self._divider.setFixedWidth(1)
         layout.addWidget(self._divider)
 
-        self._commands = QToolBar("Pages", self)
+        self._commands = QToolBar(tr("Pages"), self)
         self._commands.setObjectName("pages_commands")
         self._commands.setMovable(False)
         self._commands.setFloatable(False)
         self._commands.setOrientation(Qt.Orientation.Vertical)
-        self._commands.setIconSize(QSize(18, 18))
+        self._commands.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         self._commands.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         for key in PAGE_COMMANDS:
             if key is None:
@@ -95,6 +101,10 @@ class PagesPanel(QWidget):
 
         self.thumbnails = ThumbnailPanel(self)
         layout.addWidget(self.thumbnails, 1)
+
+    def retranslate(self) -> None:
+        """The strip's own name, which is what its toggle action is called."""
+        self._commands.setWindowTitle(tr("Pages"))
 
     def apply_theme(self, theme) -> None:
         """Colour the divider by hand; a QFrame line ignores the palette."""

@@ -5,6 +5,44 @@ All notable changes to Orion are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] — 2026-09-02
+
+Orion speaks Italian.
+
+### Added
+- **An Italian interface**, complete: menus, toolbars, panels, dialogs, status
+  messages, the names in the Undo entry. **Help ▸ Language** offers English and
+  Italiano and switches with the window open — a restart would be the easy
+  answer and a poor one, because a setting two clicks away in a menu that
+  demands the program be closed and reopened teaches people not to touch it.
+
+  On a first run the desktop decides: an Italian system gets Italian and every
+  other language gets English. Both are listed under their own name rather than
+  translated, since somebody who has landed in the wrong one is looking for the
+  word they recognise.
+
+  Built on a plain table of English-to-Italian rather than Qt's `QTranslator`,
+  for two reasons particular to this project. `QTranslator` reads compiled
+  `.qm` files, which are binary blobs built by a separate tool and shipped in
+  the bundle — and Orion deliberately carries none, down to drawing its icons
+  in code. And a gap in a `.qm` is silent, whereas a dict can be checked: a
+  test builds the real window in Italian, walks every action, label, button and
+  menu title in it, and fails on any English still showing. That test found
+  thirty-seven strings the first time it ran, which is thirty-seven a reading
+  of the diff would have missed.
+
+  The QActions are relabelled rather than rebuilt, which is what makes the
+  switch cheap: the menus, both toolbars and the context menus share those
+  objects, so they all change together. The panels that build their labels
+  once are rebuilt, because there is nothing to relabel through.
+
+### Changed
+- **The Pages strip uses the same icon size as the tool palette.** Two columns
+  of icons side by side at two different sizes read as a mistake.
+- **The Properties panel has lost its title bar**, as the Pages panel already
+  had. Each panel says what it is by what it holds, and a heading over each of
+  two docks is chrome that only makes the window narrower.
+
 ## [1.6.0] — 2026-09-02
 
 Three changes to how the Windows build presents itself, after a corporate

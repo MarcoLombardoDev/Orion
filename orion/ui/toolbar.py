@@ -24,6 +24,9 @@ from PySide6.QtWidgets import (
 from orion.ui.actions import ActionRegistry
 from orion.ui.tools import Tool
 
+#: Every toolbar and palette icon in the window, so they cannot drift apart.
+ICON_SIZE = 20
+
 __all__ = ["MainToolBar", "ToolPalette", "ZOOM_PRESETS"]
 
 ZOOM_PRESETS = (25, 50, 75, 100, 125, 150, 200, 400)
@@ -39,7 +42,7 @@ class MainToolBar(QToolBar):
         super().__init__("Main", parent)
         self.setObjectName("main_toolbar")
         self.setMovable(False)
-        self.setIconSize(QSize(20, 20))
+        self.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
 
         for key in ("file.open", "file.save", "file.merge", "file.export_images"):
@@ -167,7 +170,7 @@ class ToolPalette(QToolBar):
         self.setObjectName("tool_palette")
         self.setMovable(False)
         self.setOrientation(Qt.Orientation.Vertical)
-        self.setIconSize(QSize(20, 20))
+        self.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
 
         self._group = QActionGroup(self)
         self._group.setExclusive(True)

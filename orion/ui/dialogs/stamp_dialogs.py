@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from orion.i18n import tr
 from orion.pdf.fonts import available_families
 from orion.pdf.operations import format_page_ranges, parse_page_ranges
 from orion.pdf.stamps import Corner, PageNumberSpec, WatermarkSpec
@@ -84,14 +85,14 @@ class WatermarkDialog(QDialog):
 
     def __init__(self, page_count: int, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Watermark")
+        self.setWindowTitle(tr("Watermark"))
         form = QFormLayout(self)
 
         self._text = QLineEdit("DRAFT")
         form.addRow("Text", self._text)
 
         self._font = _font_box()
-        form.addRow("Font", self._font)
+        form.addRow(tr("Font"), self._font)
 
         self._size = QDoubleSpinBox()
         self._size.setRange(6.0, 400.0)
@@ -99,20 +100,20 @@ class WatermarkDialog(QDialog):
         self._size.setSuffix(" pt")
         form.addRow("Size", self._size)
 
-        self._color = ColorButton((0.5, 0.5, 0.5), title="Watermark Colour")
-        form.addRow("Colour", self._color)
+        self._color = ColorButton((0.5, 0.5, 0.5), title=tr("Watermark Colour"))
+        form.addRow(tr("Colour"), self._color)
 
         self._opacity = QSpinBox()
         self._opacity.setRange(5, 100)
         self._opacity.setValue(25)
         self._opacity.setSuffix(" %")
-        form.addRow("Opacity", self._opacity)
+        form.addRow(tr("Opacity"), self._opacity)
 
         self._angle = QSpinBox()
         self._angle.setRange(-90, 90)
         self._angle.setValue(-45)
         self._angle.setSuffix("°")
-        form.addRow("Angle", self._angle)
+        form.addRow(tr("Angle"), self._angle)
 
         self._range = _RangeRow(form, page_count)
         note = QLabel(
@@ -144,21 +145,21 @@ class PageNumberDialog(QDialog):
 
     def __init__(self, page_count: int, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Page Numbers")
+        self.setWindowTitle(tr("Page Numbers"))
         form = QFormLayout(self)
 
         self._template = QLineEdit("{n}")
         self._template.setToolTip("{n} is the number, {total} the count")
-        form.addRow("Format", self._template)
+        form.addRow(tr("Format"), self._template)
 
         self._corner = QComboBox()
         for corner in Corner:
             self._corner.addItem(corner.label, corner)
         self._corner.setCurrentText(Corner.BOTTOM_CENTRE.label)
-        form.addRow("Position", self._corner)
+        form.addRow(tr("Position"), self._corner)
 
         self._font = _font_box()
-        form.addRow("Font", self._font)
+        form.addRow(tr("Font"), self._font)
 
         self._size = QDoubleSpinBox()
         self._size.setRange(4.0, 72.0)
@@ -166,14 +167,14 @@ class PageNumberDialog(QDialog):
         self._size.setSuffix(" pt")
         form.addRow("Size", self._size)
 
-        self._color = ColorButton((0.0, 0.0, 0.0), title="Page Number Colour")
-        form.addRow("Colour", self._color)
+        self._color = ColorButton((0.0, 0.0, 0.0), title=tr("Page Number Colour"))
+        form.addRow(tr("Colour"), self._color)
 
         self._start = QSpinBox()
         self._start.setRange(0, 99999)
         self._start.setValue(1)
-        self._start.setToolTip("What the first numbered page is called")
-        form.addRow("Start at", self._start)
+        self._start.setToolTip(tr("What the first numbered page is called"))
+        form.addRow(tr("Start at"), self._start)
 
         self._range = _RangeRow(form, page_count)
         note = QLabel(

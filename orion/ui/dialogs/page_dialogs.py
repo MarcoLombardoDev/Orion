@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from orion.i18n import tr
 from orion.pdf import operations
 from orion.utils.geometry import Size
 
@@ -39,18 +40,18 @@ __all__ = [
 
 #: Common page sizes in points, offered when inserting a blank page.
 PAGE_SIZES: dict[str, Size] = {
-    "A4 (210 × 297 mm)": Size(595.28, 841.89),
-    "A3 (297 × 420 mm)": Size(841.89, 1190.55),
-    "A5 (148 × 210 mm)": Size(419.53, 595.28),
-    "US Letter (8.5 × 11 in)": Size(612.0, 792.0),
-    "US Legal (8.5 × 14 in)": Size(612.0, 1008.0),
+    tr("A4 (210 × 297 mm)"): Size(595.28, 841.89),
+    tr("A3 (297 × 420 mm)"): Size(841.89, 1190.55),
+    tr("A5 (148 × 210 mm)"): Size(419.53, 595.28),
+    tr("US Letter (8.5 × 11 in)"): Size(612.0, 792.0),
+    tr("US Legal (8.5 × 14 in)"): Size(612.0, 1008.0),
 }
 
 
 class GoToPageDialog(QDialog):
     def __init__(self, page_count: int, current: int, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Go to Page")
+        self.setWindowTitle(tr("Go to Page"))
         layout = QFormLayout(self)
         self._spin = QSpinBox()
         self._spin.setRange(1, max(1, page_count))
@@ -77,7 +78,7 @@ class InsertPageDialog(QDialog):
         self, page_count: int, current: int, default: Size, parent: QWidget | None = None
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Insert Blank Page")
+        self.setWindowTitle(tr("Insert Blank Page"))
         self._default = default
         layout = QFormLayout(self)
 
@@ -87,14 +88,14 @@ class InsertPageDialog(QDialog):
         )
         for label, size in PAGE_SIZES.items():
             self._size.addItem(label, size)
-        layout.addRow("Size", self._size)
+        layout.addRow(tr("Size"), self._size)
 
         self._position = QComboBox()
-        self._position.addItem("After current page", current + 1)
-        self._position.addItem("Before current page", current)
-        self._position.addItem("At the beginning", 0)
-        self._position.addItem("At the end", page_count)
-        layout.addRow("Position", self._position)
+        self._position.addItem(tr("After current page"), current + 1)
+        self._position.addItem(tr("Before current page"), current)
+        self._position.addItem(tr("At the beginning"), 0)
+        self._position.addItem(tr("At the end"), page_count)
+        layout.addRow(tr("Position"), self._position)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -119,7 +120,7 @@ class PageSelectionDialog(QDialog):
         self,
         page_count: int,
         *,
-        title: str = "Select Pages",
+        title: str = tr("Select Pages"),
         prompt: str = "Pages",
         initial: str = "",
         parent: QWidget | None = None,
@@ -179,17 +180,17 @@ class ImportPagesDialog(PageSelectionDialog):
     ) -> None:
         super().__init__(
             page_count,
-            title="Import Pages",
+            title=tr("Import Pages"),
             prompt=f"Pages from “{path.name}”",
             initial=f"1-{page_count}",
             parent=parent,
         )
         self._position = QComboBox()
-        self._position.addItem("After current page", insert_at)
-        self._position.addItem("At the beginning", 0)
-        self._position.addItem("At the end", total)
+        self._position.addItem(tr("After current page"), insert_at)
+        self._position.addItem(tr("At the beginning"), 0)
+        self._position.addItem(tr("At the end"), total)
         form = QFormLayout()
-        form.addRow("Insert", self._position)
+        form.addRow(tr("Insert"), self._position)
         self.layout().insertLayout(1, form)
 
     @property
@@ -205,7 +206,7 @@ class NoteDialog(QDialog):
         text: str = "",
         author: str = "",
         *,
-        title: str = "Comment",
+        title: str = tr("Comment"),
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -214,13 +215,13 @@ class NoteDialog(QDialog):
 
         layout = QVBoxLayout(self)
         self._editor = QPlainTextEdit(text)
-        self._editor.setPlaceholderText("Write your note…")
+        self._editor.setPlaceholderText(tr("Write your note…"))
         layout.addWidget(self._editor, 1)
 
         form = QFormLayout()
         self._author = QLineEdit(author)
-        self._author.setPlaceholderText("Optional")
-        form.addRow("Author", self._author)
+        self._author.setPlaceholderText(tr("Optional"))
+        form.addRow(tr("Author"), self._author)
         layout.addLayout(form)
 
         buttons = QDialogButtonBox(

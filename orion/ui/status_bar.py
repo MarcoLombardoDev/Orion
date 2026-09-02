@@ -17,6 +17,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QLabel, QStatusBar, QWidget
 
 from orion import CONTACT_EMAIL, LICENSE_NOTICE, LICENSING_SUBJECT
+from orion.i18n import tr
 
 #: Breathing room kept between the notice and the edges it must not touch:
 #: the left of the bar, and the leftmost indicator.
@@ -34,6 +35,11 @@ class OrionStatusBar(QStatusBar):
         self._zoom = QLabel()
         self._mode = QLabel()
         self._modified = QLabel()
+        # What the standing labels last said, in the numbers they were built
+        # from, so a language change can redraw them without asking anybody.
+        self._last_page: tuple[int, int] = (0, 0)
+        self._last_zoom: tuple[float, str] = (1.0, "custom")
+        self._last_modified = False
 
         for label in (self._page, self._zoom, self._mode, self._modified):
             label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
@@ -157,19 +163,37 @@ class OrionStatusBar(QStatusBar):
         return label
 
     def set_page(self, index: int, total: int) -> None:
-        self._page.setText(f"Page {index + 1} / {total}" if total else "")
+        self._last_page = (index, total)
+        self._page.setText(f"{tr('Page')} {index + 1} / {total}" if total else "")
         self._place_notice()
 
     def set_zoom(self, zoom: float, mode: str) -> None:
-        self._zoom.setText(f"Zoom {round(zoom * 100)}%")
+        self._last_zoom = (zoom, mode)
+        self._zoom.setText(f"{tr('Zoom')} {round(zoom * 100)}%")
         self._mode.setText(
-            {"fit_width": "Fit Width", "fit_page": "Fit Page"}.get(mode, "Custom Zoom")
+            {"fit_width": tr("Fit Width"), "fit_page": tr("Fit Page")}.get(
+                mode, tr("Custom Zoom")
+            )
         )
         self._place_notice()
 
     def set_modified(self, modified: bool) -> None:
-        self._modified.setText("Modified" if modified else "")
+        self._last_modified = modified
+        self._modified.setText(tr("Modified") if modified else "")
         self._place_notice()
+
+    def retranslate(self) -> None:
+        """Redraw the three standing labels in the current language.
+
+        They are built from numbers the bar already knows rather than from
+        anything it can ask for again, so it keeps the last of each. The
+        transient message is deliberately not restored: it described something
+        that has already happened, and translating it after the fact would be
+        putting words in its mouth.
+        """
+        self.set_page(*self._last_page)
+        self.set_zoom(*self._last_zoom)
+        self.set_modified(self._last_modified)
 
     def clear_document(self) -> None:
         self._page.clear()

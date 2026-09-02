@@ -36,6 +36,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from orion.i18n import tr
+
 __all__ = ["CommandPalette", "match_score", "rank_actions"]
 
 #: Shown at once; more than this and the list is a scroll bar, not an answer.
@@ -106,14 +108,14 @@ class CommandPalette(QDialog):
 
     def __init__(self, actions: list[QAction], parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Commands")
+        self.setWindowTitle(tr("Commands"))
         self.setModal(True)
         self._actions = actions
         self._chosen: QAction | None = None
 
         layout = QVBoxLayout(self)
         self._query = QLineEdit()
-        self._query.setPlaceholderText("Type a command…")
+        self._query.setPlaceholderText(tr("Type a command…"))
         self._query.textChanged.connect(self._refresh)
         self._query.installEventFilter(self)
         layout.addWidget(self._query)

@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 )
 
 from orion.document.document import Document
+from orion.i18n import tr
 from orion.pdf.renderer import RenderedPage, RenderRequest
 from orion.ui.render_bridge import RenderService, to_qimage
 from orion.ui.theme import LIGHT, Theme
@@ -271,12 +272,12 @@ class ThumbnailPanel(QListWidget):
 
         menu = QMenu(self)
         entries = [
-            ("Rotate Left", "rotate_left", "rotate_left"),
-            ("Rotate Right", "rotate_right", "rotate_right"),
+            (tr("Rotate Left"), "rotate_left", "rotate_left"),
+            (tr("Rotate Right"), "rotate_right", "rotate_right"),
             (None, None, None),
             ("Duplicate", "duplicate", "duplicate"),
-            ("Insert Blank Page After", "page_add", "insert_after"),
-            ("Extract to New PDF…", "extract", "extract"),
+            (tr("Insert Blank Page After"), "page_add", "insert_after"),
+            (tr("Extract to New PDF…"), "extract", "extract"),
             (None, None, None),
             ("Delete", "page_delete", "delete"),
         ]

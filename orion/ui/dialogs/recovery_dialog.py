@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from orion.i18n import tr
 from orion.services.autosave import RecoverySnapshot
 
 __all__ = ["RecoveryDialog"]
@@ -35,7 +36,7 @@ class RecoveryDialog(QDialog):
         self, snapshots: Sequence[RecoverySnapshot], parent: QWidget | None = None
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Recover Unsaved Work")
+        self.setWindowTitle(tr("Recover Unsaved Work"))
         self.setMinimumSize(460, 300)
         self._snapshots = list(snapshots)
 
@@ -60,9 +61,9 @@ class RecoveryDialog(QDialog):
         layout.addWidget(self._list, 1)
 
         buttons = QDialogButtonBox()
-        buttons.addButton("Recover", QDialogButtonBox.ButtonRole.AcceptRole)
-        discard = buttons.addButton("Discard All", QDialogButtonBox.ButtonRole.DestructiveRole)
-        buttons.addButton("Not Now", QDialogButtonBox.ButtonRole.RejectRole)
+        buttons.addButton(tr("Recover"), QDialogButtonBox.ButtonRole.AcceptRole)
+        discard = buttons.addButton(tr("Discard All"), QDialogButtonBox.ButtonRole.DestructiveRole)
+        buttons.addButton(tr("Not Now"), QDialogButtonBox.ButtonRole.RejectRole)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         discard.clicked.connect(self._discard_all)

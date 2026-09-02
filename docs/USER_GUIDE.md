@@ -19,8 +19,9 @@
 └──────────────────────────────────────────────────────────────┘
 ```
 
-Both side panels can be hidden — **F9** for the pages, **F10** for the
-properties — and dragged to the other side of the window.
+Neither side panel has a heading over it; each says what it is by what it
+holds. Both can be hidden — **F9** for the pages, **F10** for the properties —
+and dragged to the other side of the window.
 
 There are two strips of icons on the left, separated by a rule. The first is
 the **tools**: what the next click on a page does. The second belongs to the
@@ -323,6 +324,19 @@ undo past the save.
 While you have unsaved changes, Orion periodically writes a recovery snapshot —
 a separate file, never your PDF. Next time it starts, it offers to restore.
 Recovered documents open as unsaved, so use **Save As** to write them out.
+
+## Language
+
+**Help ▸ Language** offers **English** and **Italiano**, and switches with the
+window open — no restart.
+
+On a first run Orion asks the desktop: an Italian system gets Italian, and
+every other language gets English. Once you choose from the menu, that choice
+is what it remembers.
+
+Both languages are listed under their own name rather than translated, because
+somebody who has landed in the wrong one is looking for the word they
+recognise.
 
 ## Themes
 

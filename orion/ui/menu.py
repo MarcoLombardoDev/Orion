@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QMenu, QMenuBar, QWidget
 
+from orion.i18n import tr
 from orion.ui.actions import ActionRegistry
 from orion.ui.tools import Tool
 
@@ -124,6 +125,7 @@ _STRUCTURE: tuple[tuple[str, tuple[str | None, ...]], ...] = (
         (
             "view.commands",
             SEPARATOR,
+            "@language",
             "@theme",
             SEPARATOR,
             "help.shortcuts",
@@ -141,6 +143,7 @@ class MenuBundle:
     def __init__(self) -> None:
         self.recent: QMenu | None = None
         self.theme: QMenu | None = None
+        self.language: QMenu | None = None
 
 
 def build_menu_bar(parent: QWidget, actions: ActionRegistry) -> tuple[QMenuBar, MenuBundle]:
@@ -148,14 +151,16 @@ def build_menu_bar(parent: QWidget, actions: ActionRegistry) -> tuple[QMenuBar, 
     bundle = MenuBundle()
 
     for title, entries in _STRUCTURE:
-        menu = bar.addMenu(title)
+        menu = bar.addMenu(tr(title))
         for entry in entries:
             if entry is SEPARATOR:
                 menu.addSeparator()
             elif entry == "@recent":
-                bundle.recent = menu.addMenu("Open &Recent")
+                bundle.recent = menu.addMenu(tr("Open &Recent"))
             elif entry == "@theme":
                 bundle.theme = _build_theme_menu(menu, actions)
+            elif entry == "@language":
+                bundle.language = _build_language_menu(menu, actions)
             elif entry == "@tools":
                 _add_tool_entries(menu, actions)
             else:
@@ -166,8 +171,15 @@ def build_menu_bar(parent: QWidget, actions: ActionRegistry) -> tuple[QMenuBar, 
 
 
 def _build_theme_menu(menu: QMenu, actions: ActionRegistry) -> QMenu:
-    submenu = menu.addMenu("&Theme")
+    submenu = menu.addMenu(tr("&Theme"))
     for key in ("view.theme_system", "view.theme_light", "view.theme_dark"):
+        submenu.addAction(actions[key])
+    return submenu
+
+
+def _build_language_menu(menu: QMenu, actions: ActionRegistry) -> QMenu:
+    submenu = menu.addMenu(tr("&Language"))
+    for key in ("view.language_en", "view.language_it"):
         submenu.addAction(actions[key])
     return submenu
 

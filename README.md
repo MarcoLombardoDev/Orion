@@ -104,6 +104,8 @@ your original file is never touched until you press Save.
 - Read and edit the document's title, author, subject and keywords
 - Crash recovery: unsaved work is snapshotted separately from your PDF
 - Light and dark themes
+- **English and Italian**, switched from the menu without a restart. An Italian
+  desktop gets Italian on a first run; everything else gets English
 - A command palette (`Ctrl/Cmd+Shift+P`) that searches every command by name
 
 ## Download

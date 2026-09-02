@@ -29,14 +29,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from orion.i18n import tr
+
 __all__ = ["DocumentPropertiesDialog", "EDITABLE_FIELDS"]
 
 #: ``(PDF key, label)`` for the fields a reader shows, in that order.
 EDITABLE_FIELDS: tuple[tuple[str, str], ...] = (
-    ("/Title", "Title"),
-    ("/Author", "Author"),
-    ("/Subject", "Subject"),
-    ("/Keywords", "Keywords"),
+    ("/Title", tr("Title")),
+    ("/Author", tr("Author")),
+    ("/Subject", tr("Subject")),
+    ("/Keywords", tr("Keywords")),
 )
 
 #: Keys a viewer writes about itself. Shown, never presented as the user's.
@@ -48,7 +50,7 @@ class DocumentPropertiesDialog(QDialog):
 
     def __init__(self, metadata: dict[str, str], parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Document Properties")
+        self.setWindowTitle(tr("Document Properties"))
         self._original = dict(metadata)
         form = QFormLayout(self)
 
@@ -71,7 +73,7 @@ class DocumentPropertiesDialog(QDialog):
         if extra:
             rest = QLabel(", ".join(f"{k.lstrip('/')}: {v}" for k, v in sorted(extra.items())))
             rest.setWordWrap(True)
-            form.addRow("Also in the file", rest)
+            form.addRow(tr("Also in the file"), rest)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel

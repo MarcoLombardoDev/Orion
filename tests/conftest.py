@@ -28,6 +28,28 @@ def _isolated_home(tmp_path_factory) -> Path:
     return home
 
 
+@pytest.fixture(autouse=True)
+def _english_interface(_isolated_home):
+    """Every test starts in English, and leaves the suite in English.
+
+    The language is process-wide *and* persisted, so a test that switches to
+    Italian would otherwise hand Italian to every test that ran after it —
+    including the ones that assert on English labels, which is exactly what
+    happened. Both halves are put back: the module's current language, and
+    the stored preference a new window would read.
+    """
+    from orion.i18n import Language, set_language
+    from orion.services.settings import Settings
+
+    def _reset():
+        set_language(Language.ENGLISH)
+        Settings(_isolated_home / "settings.json").set("language", "")
+
+    _reset()
+    yield
+    _reset()
+
+
 @pytest.fixture
 def sample_pdf(tmp_path: Path) -> Path:
     """A three-page PDF with distinct, searchable text on each page."""

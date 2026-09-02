@@ -51,6 +51,7 @@ from orion.document.objects import (
     ShapeObject,
     TextObject,
 )
+from orion.i18n import tr
 from orion.pdf.fonts import FontRequest, available_families, resolve
 from orion.ui.icons import icon
 from orion.ui.widgets import ColorButton
@@ -62,10 +63,10 @@ log = logging.getLogger(__name__)
 __all__ = ["PropertiesPanel"]
 
 _ALIGN_LABELS = [
-    ("Left", Align.LEFT),
-    ("Centre", Align.CENTER),
-    ("Right", Align.RIGHT),
-    ("Justify", Align.JUSTIFY),
+    (tr("Left"), Align.LEFT),
+    (tr("Centre"), Align.CENTER),
+    (tr("Right"), Align.RIGHT),
+    (tr("Justify"), Align.JUSTIFY),
 ]
 
 
@@ -113,7 +114,7 @@ class PropertiesPanel(QWidget):
         self._layout.setSpacing(10)
         scroll.setWidget(body)
 
-        self._empty = QLabel("Select an object to edit its properties.")
+        self._empty = QLabel(tr("Select an object to edit its properties."))
         self._empty.setWordWrap(True)
         self._empty.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._empty.setProperty("role", "hint")
@@ -123,6 +124,27 @@ class PropertiesPanel(QWidget):
         self._layout.addStretch(1)
         self.setMinimumWidth(286)
         self.show_selection([], 0)
+
+    def retranslate(self) -> None:
+        """Rebuild every section in the current language.
+
+        Rebuilt rather than relabelled because there is nothing to relabel
+        through: the titles, the field names and the button captions are
+        arguments passed once to constructors, and the panel keeps no handle
+        on most of them. Throwing the sections away is a dozen widgets and
+        happens when somebody changes language, which is not a hot path.
+        """
+        selection, page = list(self._objects), self._page_index
+        while self._layout.count() > 1:  # keep the placeholder at the top
+            item = self._layout.takeAt(1)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+                widget.deleteLater()
+        self._empty.setText(tr("Select an object to edit its properties."))
+        self._build_sections()
+        self._layout.addStretch(1)
+        self.show_selection(selection, page)
 
     # ------------------------------------------------------------------
     # Construction
@@ -154,13 +176,13 @@ class PropertiesPanel(QWidget):
             self._layout.addWidget(group)
 
     def _build_text_section(self) -> QGroupBox:
-        group = QGroupBox("Text")
+        group = QGroupBox(tr("Text"))
         form = QFormLayout(group)
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
         self._text_edit = QPlainTextEdit()
-        self._text_edit.setPlaceholderText("Type the text…")
+        self._text_edit.setPlaceholderText(tr("Type the text…"))
         self._text_edit.setFixedHeight(74)
         self._text_edit.focusOutEvent = self._wrap_focus_out(  # type: ignore[method-assign]
             self._text_edit.focusOutEvent, self._commit_text
@@ -184,7 +206,7 @@ class PropertiesPanel(QWidget):
                 {"font_family": self._font_family.currentText()}, "Change Font"
             )
         )
-        form.addRow("Font", self._font_family)
+        form.addRow(tr("Font"), self._font_family)
 
         #: Says when the family a document names is not on this machine, or
         #: when the style it asks for is not one the family ships. Silence is
@@ -199,14 +221,14 @@ class PropertiesPanel(QWidget):
         self._font_size.valueChanged.connect(
             lambda value: self._apply({"font_size": float(value)}, "Change Font Size")
         )
-        form.addRow("Size", self._font_size)
+        form.addRow(tr("Size"), self._font_size)
 
         style_row = QWidget()
         style_layout = QHBoxLayout(style_row)
         style_layout.setContentsMargins(0, 0, 0, 0)
-        self._bold = QCheckBox("Bold")
-        self._italic = QCheckBox("Italic")
-        self._underline = QCheckBox("Underline")
+        self._bold = QCheckBox(tr("Bold"))
+        self._italic = QCheckBox(tr("Italic"))
+        self._underline = QCheckBox(tr("Underline"))
         styles = ((self._bold, "bold"), (self._italic, "italic"), (self._underline, "underline"))
         for box, key in styles:
             box.toggled.connect(
@@ -216,11 +238,11 @@ class PropertiesPanel(QWidget):
         style_layout.addStretch(1)
         form.addRow(style_row)
 
-        self._text_color = ColorButton((0.0, 0.0, 0.0), title="Text Colour")
+        self._text_color = ColorButton((0.0, 0.0, 0.0), title=tr("Text Colour"))
         self._text_color.color_changed.connect(
             lambda value: self._apply({"color": value}, "Change Colour")
         )
-        form.addRow("Colour", self._text_color)
+        form.addRow(tr("Colour"), self._text_color)
 
         self._align = QComboBox()
         for label, value in _ALIGN_LABELS:
@@ -230,64 +252,66 @@ class PropertiesPanel(QWidget):
                 {"align": self._align.itemData(index)}, "Change Alignment"
             )
         )
-        form.addRow("Alignment", self._align)
+        form.addRow(tr("Alignment"), self._align)
 
         self._line_spacing = _spin(0.5, 4.0, 0.05, 2)
         self._line_spacing.valueChanged.connect(
             lambda value: self._apply({"line_spacing": float(value)}, "Change Line Spacing")
         )
-        form.addRow("Line spacing", self._line_spacing)
+        form.addRow(tr("Line spacing"), self._line_spacing)
         return group
 
     def _build_image_section(self) -> QGroupBox:
-        group = QGroupBox("Image")
+        group = QGroupBox(tr("Image"))
         form = QFormLayout(group)
         self._image_info = QLabel()
         self._image_info.setProperty("role", "hint")
         form.addRow(self._image_info)
 
-        self._keep_aspect = QCheckBox("Lock aspect ratio")
+        self._keep_aspect = QCheckBox(tr("Lock aspect ratio"))
         self._keep_aspect.toggled.connect(
             lambda value: self._apply({"keep_aspect": bool(value)}, "Change Aspect Ratio")
         )
         form.addRow(self._keep_aspect)
 
-        self._reset_aspect = QPushButton("Reset to natural size")
+        self._reset_aspect = QPushButton(tr("Reset to natural size"))
         self._reset_aspect.clicked.connect(self._reset_image_size)
         form.addRow(self._reset_aspect)
         return group
 
     def _build_shape_section(self) -> QGroupBox:
-        group = QGroupBox("Shape")
+        group = QGroupBox(tr("Shape"))
         form = QFormLayout(group)
 
-        self._stroke_color = ColorButton((0.0, 0.0, 0.0), allow_none=True, title="Stroke Colour")
+        self._stroke_color = ColorButton(
+            (0.0, 0.0, 0.0), allow_none=True, title=tr("Stroke Colour")
+        )
         self._stroke_color.color_changed.connect(
             lambda value: self._apply({"stroke_color": value}, "Change Stroke Colour")
         )
-        form.addRow("Stroke", self._stroke_color)
+        form.addRow(tr("Stroke"), self._stroke_color)
 
         self._stroke_width = _spin(0.0, 72.0, 0.5, 2, " pt")
         self._stroke_width.valueChanged.connect(
             lambda value: self._apply({"stroke_width": float(value)}, "Change Stroke Width")
         )
-        form.addRow("Stroke width", self._stroke_width)
+        form.addRow(tr("Stroke width"), self._stroke_width)
 
-        self._fill_color = ColorButton(None, allow_none=True, title="Fill Colour")
+        self._fill_color = ColorButton(None, allow_none=True, title=tr("Fill Colour"))
         self._fill_color.color_changed.connect(
             lambda value: self._apply({"fill_color": value}, "Change Fill Colour")
         )
-        form.addRow("Fill", self._fill_color)
+        form.addRow(tr("Fill"), self._fill_color)
         return group
 
     def _build_redaction_section(self) -> QGroupBox:
-        group = QGroupBox("Redaction")
+        group = QGroupBox(tr("Redaction"))
         form = QFormLayout(group)
-        self._redaction_color = ColorButton((0.0, 0.0, 0.0), title="Redaction Colour")
+        self._redaction_color = ColorButton((0.0, 0.0, 0.0), title=tr("Redaction Colour"))
         self._redaction_color.color_changed.connect(
             lambda value: self._apply({"fill_color": value}, "Change Redaction Colour")
         )
-        form.addRow("Colour", self._redaction_color)
+        form.addRow(tr("Colour"), self._redaction_color)
         note = QLabel(
             "Everything under this box is removed from the file when you save, "
             "not just covered."
@@ -297,32 +321,32 @@ class PropertiesPanel(QWidget):
         return group
 
     def _build_note_section(self) -> QGroupBox:
-        group = QGroupBox("Annotation")
+        group = QGroupBox(tr("Annotation"))
         form = QFormLayout(group)
 
-        self._annotation_color = ColorButton((1.0, 0.9, 0.2), title="Annotation Colour")
+        self._annotation_color = ColorButton((1.0, 0.9, 0.2), title=tr("Annotation Colour"))
         self._annotation_color.color_changed.connect(
             lambda value: self._apply({"color": value}, "Change Colour")
         )
-        form.addRow("Colour", self._annotation_color)
+        form.addRow(tr("Colour"), self._annotation_color)
 
         self._ink_width = _spin(0.2, 40.0, 0.5, 2, " pt")
         self._ink_width.valueChanged.connect(
             lambda value: self._apply({"stroke_width": float(value)}, "Change Stroke Width")
         )
-        form.addRow("Pen width", self._ink_width)
+        form.addRow(tr("Pen width"), self._ink_width)
 
         self._contents = QPlainTextEdit()
-        self._contents.setPlaceholderText("Comment…")
+        self._contents.setPlaceholderText(tr("Comment…"))
         self._contents.setFixedHeight(66)
         self._contents.focusOutEvent = self._wrap_focus_out(  # type: ignore[method-assign]
             self._contents.focusOutEvent, self._commit_contents
         )
-        form.addRow("Note", self._contents)
+        form.addRow(tr("Note"), self._contents)
         return group
 
     def _build_geometry_section(self) -> QGroupBox:
-        group = QGroupBox("Geometry")
+        group = QGroupBox(tr("Geometry"))
         form = QFormLayout(group)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
@@ -341,17 +365,17 @@ class PropertiesPanel(QWidget):
 
         form.addRow("X", self._x)
         form.addRow("Y", self._y)
-        form.addRow("Width", self._width)
-        form.addRow("Height", self._height)
-        form.addRow("Rotation", self._rotation)
-        form.addRow("Opacity", self._opacity)
+        form.addRow(tr("Width"), self._width)
+        form.addRow(tr("Height"), self._height)
+        form.addRow(tr("Rotation"), self._rotation)
+        form.addRow(tr("Opacity"), self._opacity)
         return group
 
     def _build_arrange_section(self) -> QGroupBox:
-        group = QGroupBox("Arrange")
+        group = QGroupBox(tr("Arrange"))
         layout = QHBoxLayout(group)
-        self._front = QPushButton("Bring to Front")
-        self._back = QPushButton("Send to Back")
+        self._front = QPushButton(tr("Bring to Front"))
+        self._back = QPushButton(tr("Send to Back"))
         self._front.clicked.connect(lambda: self.arrange_requested.emit(True))
         self._back.clicked.connect(lambda: self.arrange_requested.emit(False))
         layout.addWidget(self._front)
@@ -369,8 +393,8 @@ class PropertiesPanel(QWidget):
         group.setFlat(True)
         layout = QHBoxLayout(group)
         layout.setContentsMargins(0, 0, 0, 0)
-        self._delete = QPushButton(icon("delete"), "Delete")
-        self._delete.setToolTip("Remove the selected objects from the page")
+        self._delete = QPushButton(icon("delete"), tr("Delete"))
+        self._delete.setToolTip(tr("Remove the selected objects from the page"))
         self._delete.clicked.connect(self.delete_requested.emit)
         layout.addWidget(self._delete)
         return group
@@ -497,7 +521,7 @@ class PropertiesPanel(QWidget):
             )
             message = f"“{obj.font_family}” has no {missing} face; the plain one is used."
         elif resolved.embedded:
-            message = "This font is embedded in the saved file."
+            message = tr("This font is embedded in the saved file.")
         else:
             message = ""
         self._font_note.setText(message)

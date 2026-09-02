@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from orion.i18n import tr
 from orion.pdf import operations
 
 __all__ = ["SplitDialog"]
@@ -36,7 +37,7 @@ class SplitDialog(QDialog):
 
     def __init__(self, page_count: int, output_dir: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Split PDF")
+        self.setWindowTitle(tr("Split PDF"))
         self.setMinimumWidth(460)
         self._page_count = page_count
 
@@ -45,7 +46,7 @@ class SplitDialog(QDialog):
         header.setProperty("role", "hint")
         layout.addWidget(header)
 
-        self._every_radio = QRadioButton("Split every")
+        self._every_radio = QRadioButton(tr("Split every"))
         self._every_radio.setChecked(True)
         self._every_spin = QSpinBox()
         self._every_spin.setRange(1, max(1, page_count))
@@ -59,7 +60,7 @@ class SplitDialog(QDialog):
         every_layout.addStretch(1)
         layout.addWidget(every_row)
 
-        self._ranges_radio = QRadioButton("Split by page ranges")
+        self._ranges_radio = QRadioButton(tr("Split by page ranges"))
         layout.addWidget(self._ranges_radio)
         self._ranges_field = QLineEdit()
         self._ranges_field.setPlaceholderText("for example  1-5, 6-10, 11-20")
@@ -73,10 +74,10 @@ class SplitDialog(QDialog):
         folder_row = QWidget()
         folder_layout = QHBoxLayout(folder_row)
         folder_layout.setContentsMargins(0, 0, 0, 0)
-        folder_layout.addWidget(QLabel("Save to"))
+        folder_layout.addWidget(QLabel(tr("Save to")))
         self._folder_field = QLineEdit(str(output_dir))
         folder_layout.addWidget(self._folder_field, 1)
-        browse = QPushButton("Browse…")
+        browse = QPushButton(tr("Browse…"))
         browse.clicked.connect(self._choose_folder)
         folder_layout.addWidget(browse)
         layout.addWidget(folder_row)
@@ -89,7 +90,7 @@ class SplitDialog(QDialog):
         self._buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        self._buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Split")
+        self._buttons.button(QDialogButtonBox.StandardButton.Ok).setText(tr("Split"))
         self._buttons.accepted.connect(self.accept)
         self._buttons.rejected.connect(self.reject)
         layout.addWidget(self._buttons)
@@ -97,7 +98,7 @@ class SplitDialog(QDialog):
 
     def _choose_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(
-            self, "Choose an output folder", self._folder_field.text()
+            self, tr("Choose an output folder"), self._folder_field.text()
         )
         if folder:
             self._folder_field.setText(folder)

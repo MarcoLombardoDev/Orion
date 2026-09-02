@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from orion.i18n import tr
 from orion.pdf.operations import format_page_ranges, parse_page_ranges
 from orion.services.export_service import IMAGE_FORMATS
 
@@ -35,23 +36,23 @@ class ExportImagesDialog(QDialog):
 
     def __init__(self, page_count: int, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Export Pages as Images")
+        self.setWindowTitle(tr("Export Pages as Images"))
         self._page_count = page_count
         form = QFormLayout(self)
 
         self._range = QLineEdit(format_page_ranges(range(page_count)))
-        self._range.setToolTip("For example: 1-3, 7, 10-12")
+        self._range.setToolTip(tr("For example: 1-3, 7, 10-12"))
         form.addRow("Pages", self._range)
 
         self._format = QComboBox()
         self._format.addItems(IMAGE_FORMATS)
-        form.addRow("Format", self._format)
+        form.addRow(tr("Format"), self._format)
 
         self._dpi = QComboBox()
         for value in DPI_CHOICES:
             self._dpi.addItem(f"{value} dpi", value)
         self._dpi.setCurrentText("150 dpi")
-        form.addRow("Resolution", self._dpi)
+        form.addRow(tr("Resolution"), self._dpi)
 
         note = QLabel(
             "One file per page, named after the document. The images show what "

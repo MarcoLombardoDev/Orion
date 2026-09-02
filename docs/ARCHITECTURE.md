@@ -154,6 +154,7 @@ Orion/
 │   │   └── dialogs/           merge, split, extract, import, watermark, page numbers,
 │   │                          document properties, export images, command palette
 │   │
+│   ├── i18n.py                English -> Italian, one table and a tr()
 │   ├── document/              ── model (Qt-free)
 │   │   ├── document.py        Document, DocumentSource
 │   │   ├── page.py            Page, PageSource

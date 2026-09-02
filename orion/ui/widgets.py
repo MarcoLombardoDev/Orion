@@ -15,6 +15,7 @@ from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QColorDialog, QToolButton, QWidget
 
 from orion.document.objects import Color
+from orion.i18n import tr
 
 __all__ = ["ColorButton", "to_qcolor", "from_qcolor"]
 
@@ -39,7 +40,7 @@ class ColorButton(QToolButton):
         color: Color | None = None,
         *,
         allow_none: bool = False,
-        title: str = "Select Colour",
+        title: str = tr("Select Colour"),
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -66,7 +67,7 @@ class ColorButton(QToolButton):
 
     def _update_tooltip(self) -> None:
         if self._color is None:
-            self.setToolTip("No colour")
+            self.setToolTip(tr("No colour"))
         else:
             self.setToolTip(to_qcolor(self._color).name().upper())
 

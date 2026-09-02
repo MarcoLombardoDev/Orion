@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from orion.i18n import tr
 from orion.pdf import operations
 from orion.pdf.errors import OrionPdfError
 
@@ -41,7 +42,7 @@ class MergeDialog(QDialog):
 
     def __init__(self, parent: QWidget | None = None, *, current_name: str | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Merge PDF")
+        self.setWindowTitle(tr("Merge PDF"))
         self.setMinimumSize(500, 380)
         self._current_name = current_name
 
@@ -63,24 +64,24 @@ class MergeDialog(QDialog):
         buttons_row = QWidget()
         row = QHBoxLayout(buttons_row)
         row.setContentsMargins(0, 0, 0, 0)
-        add = QPushButton("Add Files…")
+        add = QPushButton(tr("Add Files…"))
         add.clicked.connect(self._add_files)
         row.addWidget(add)
 
         if current_name:
-            add_current = QPushButton("Add Current Document")
+            add_current = QPushButton(tr("Add Current Document"))
             add_current.clicked.connect(self._add_current)
             row.addWidget(add_current)
 
-        remove = QPushButton("Remove")
+        remove = QPushButton(tr("Remove"))
         remove.clicked.connect(self._remove_selected)
         row.addWidget(remove)
 
-        up = QPushButton("Move Up")
+        up = QPushButton(tr("Move Up"))
         up.clicked.connect(lambda: self._move(-1))
         row.addWidget(up)
 
-        down = QPushButton("Move Down")
+        down = QPushButton(tr("Move Down"))
         down.clicked.connect(lambda: self._move(1))
         row.addWidget(down)
         row.addStretch(1)
@@ -93,7 +94,7 @@ class MergeDialog(QDialog):
         self._buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        self._buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Merge…")
+        self._buttons.button(QDialogButtonBox.StandardButton.Ok).setText(tr("Merge…"))
         self._buttons.accepted.connect(self.accept)
         self._buttons.rejected.connect(self.reject)
         layout.addWidget(self._buttons)
@@ -106,7 +107,7 @@ class MergeDialog(QDialog):
     # -- list management ---------------------------------------------------
     def _add_files(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
-            self, "Select PDF files to merge", "", "PDF documents (*.pdf)"
+            self, tr("Select PDF files to merge"), "", tr("PDF documents (*.pdf)")
         )
         for path in paths:
             self._append(Path(path))
@@ -154,7 +155,7 @@ class MergeDialog(QDialog):
     def _update_state(self, *_args) -> None:
         count = self._list.count()
         self._summary.setText(
-            "Add at least two documents." if count < 2 else f"{count} documents will be merged."
+            tr("Add at least two documents.") if count < 2 else f"{count} documents will be merged."
         )
         self._buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(count >= 2)
 

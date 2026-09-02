@@ -20,7 +20,7 @@ import logging
 from collections.abc import Sequence
 from pathlib import Path
 
-from PySide6.QtCore import QByteArray, Qt, QTimer
+from PySide6.QtCore import QByteArray, QLocale, Qt, QTimer
 from PySide6.QtGui import QCloseEvent, QGuiApplication
 from PySide6.QtWidgets import (
     QDialog,
@@ -55,6 +55,7 @@ from orion.commands.page_commands import (
 from orion.document.annotations import AnnotationObject
 from orion.document.document import Document
 from orion.document.objects import ImageObject, TextObject
+from orion.i18n import Language, current_language, detect_language, set_language, tr
 from orion.pdf.errors import OrionPdfError, PdfPasswordRequired, describe_exception
 from orion.services.autosave import list_recoverable
 from orion.services.clipboard import ObjectClipboard, release_system_clipboard
@@ -99,8 +100,8 @@ log = logging.getLogger(__name__)
 
 __all__ = ["MainWindow"]
 
-PDF_FILTER = "PDF documents (*.pdf);;All files (*)"
-IMAGE_FILTER = "Images (*.png *.jpg *.jpeg *.webp);;All files (*)"
+PDF_FILTER = tr("PDF documents (*.pdf);;All files (*)")
+IMAGE_FILTER = tr("Images (*.png *.jpg *.jpeg *.webp);;All files (*)")
 #: Longest edge of a freshly placed image, in points.
 IMAGE_PLACEMENT_SIZE = 220.0
 
@@ -117,6 +118,9 @@ class MainWindow(QMainWindow):
         self._recent = RecentFiles(self._settings)
         self._session: DocumentSession | None = None
         self._theme_mode = ThemeMode(self._settings.get("theme", "system"))
+        # Before the actions exist: every label is looked up as it is created,
+        # so the language has to be settled first.
+        set_language(self._chosen_language())
 
         self.setWindowTitle(f"{APP_NAME} — {APP_SUBTITLE}")
         self.setMinimumSize(900, 620)
@@ -168,7 +172,7 @@ class MainWindow(QMainWindow):
 
         self._pages_panel = PagesPanel(self._actions, self)
         self._thumbnails = self._pages_panel.thumbnails
-        self._thumbnail_dock = QDockWidget("Pages", self)
+        self._thumbnail_dock = QDockWidget(tr("Pages"), self)
         self._thumbnail_dock.setObjectName("thumbnails_dock")
         self._thumbnail_dock.setWidget(self._pages_panel)
         # No title bar. The dock is pinned beside the tool palette and its
@@ -186,9 +190,17 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._thumbnail_dock)
 
         self._properties = PropertiesPanel(self)
-        self._properties_dock = QDockWidget("Properties", self)
+        self._properties_dock = QDockWidget(tr("Properties"), self)
         self._properties_dock.setObjectName("properties_dock")
         self._properties_dock.setWidget(self._properties)
+        # No title bar, for the same reason the pages dock has none: the panel
+        # says what it is, and a heading over each of two docks is chrome that
+        # only makes the window narrower.
+        self._properties_dock.setTitleBarWidget(QWidget(self._properties_dock))
+        self._properties_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetClosable
+        )
         self._properties_dock.setAllowedAreas(
             Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
         )
@@ -283,6 +295,8 @@ class MainWindow(QMainWindow):
         connect("view.theme_light", lambda: self._apply_theme(ThemeMode.LIGHT))
         connect("view.theme_dark", lambda: self._apply_theme(ThemeMode.DARK))
         connect("view.theme_system", lambda: self._apply_theme(ThemeMode.SYSTEM))
+        connect("view.language_en", lambda: self._apply_language(Language.ENGLISH))
+        connect("view.language_it", lambda: self._apply_language(Language.ITALIAN))
         # Pages
         connect("pages.insert", self.insert_blank_page)
         connect("pages.duplicate", self.duplicate_page)
@@ -324,6 +338,71 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Theme
     # ------------------------------------------------------------------
+    def _chosen_language(self) -> Language:
+        """The stored language, or the one the desktop is set to.
+
+        An Italian desktop gets Italian and everything else gets English,
+        which is the rule asked for and also the only one that needs no list:
+        Orion speaks two languages, and one of them is the fallback.
+        """
+        stored = self._settings.get("language", "")
+        if stored in (Language.ENGLISH.value, Language.ITALIAN.value):
+            return Language(stored)
+        return detect_language(QLocale.system().name())
+
+    def _apply_language(self, language: Language) -> None:
+        """Switch language with the window open.
+
+        A restart would be the easy answer and a poor one: the setting is two
+        clicks away in a menu, and a program that has to be closed and
+        reopened to change a label teaches people not to touch it.
+
+        The QActions are re-labelled rather than rebuilt, which is what makes
+        this cheap — the menus, both toolbars and the context menus all share
+        those objects, so they change together and none of them is touched
+        here. The menu *bar* is rebuilt because its titles and its two
+        submenus are plain strings owned by nothing else.
+        """
+        set_language(language)
+        self._settings.set("language", language.value)
+        self._actions.retranslate()
+
+        menu_bar, self._menus = build_menu_bar(self, self._actions)
+        self.setMenuBar(menu_bar)
+        self._sync_language_actions()
+        self._sync_theme_actions()
+        self._rebuild_recent_menu(self._recent.paths)
+
+        self._tool_palette.setWindowTitle(tr("Tools"))
+        self._toolbar.setWindowTitle(tr("Main"))
+        # The docks have no title bar, but their windowTitle still names the
+        # toggle action Qt puts on them, which a context menu can reach.
+        self._thumbnail_dock.setWindowTitle(tr("Pages"))
+        self._properties_dock.setWindowTitle(tr("Properties"))
+        self._pages_panel.retranslate()
+        self._status.retranslate()
+        self._properties.retranslate()
+        self._placeholder.retranslate()
+        self._search.retranslate()
+        self._update_ui_state()
+        self._update_title()
+
+    def _sync_language_actions(self) -> None:
+        current = current_language()
+        for key, value in (
+            ("view.language_en", Language.ENGLISH),
+            ("view.language_it", Language.ITALIAN),
+        ):
+            self._actions[key].setChecked(current is value)
+
+    def _sync_theme_actions(self) -> None:
+        for key, value in (
+            ("view.theme_light", ThemeMode.LIGHT),
+            ("view.theme_dark", ThemeMode.DARK),
+            ("view.theme_system", ThemeMode.SYSTEM),
+        ):
+            self._actions[key].setChecked(self._theme_mode is value)
+
     def _apply_theme(self, mode: ThemeMode) -> None:
         self._theme_mode = mode
         theme = resolve_theme(mode)
@@ -336,12 +415,7 @@ class MainWindow(QMainWindow):
         self._actions.refresh_icons()
         self._canvas.apply_theme(theme)
         self._pages_panel.apply_theme(theme)
-        for key, value in (
-            ("view.theme_light", ThemeMode.LIGHT),
-            ("view.theme_dark", ThemeMode.DARK),
-            ("view.theme_system", ThemeMode.SYSTEM),
-        ):
-            self._actions[key].setChecked(mode is value)
+        self._sync_theme_actions()
         self._settings.set("theme", mode.value)
 
     # ------------------------------------------------------------------
@@ -400,11 +474,11 @@ class MainWindow(QMainWindow):
             return
         session = self._files.create_blank()
         self._attach_session(session)
-        self._status.flash("New empty document created.")
+        self._status.flash(tr("New empty document created."))
 
     def open_document(self) -> None:
         start = self._settings.get("last_directory", "") or str(Path.home())
-        path, _ = QFileDialog.getOpenFileName(self, "Open PDF", start, PDF_FILTER)
+        path, _ = QFileDialog.getOpenFileName(self, tr("Open PDF"), start, PDF_FILTER)
         if path:
             self.open_path(Path(path))
 
@@ -416,7 +490,7 @@ class MainWindow(QMainWindow):
         except PdfPasswordRequired as exc:
             entered, accepted = QInputDialog.getText(
                 self,
-                "Password Required",
+                tr("Password Required"),
                 exc.message,
                 QLineEdit.EchoMode.Password,
             )
@@ -424,22 +498,22 @@ class MainWindow(QMainWindow):
                 return False
             if password is not None and entered == password:
                 # The same wrong password twice: stop rather than loop.
-                self._report(exc, title="Cannot Open Document")
+                self._report(exc, title=tr("Cannot Open Document"))
                 return False
             return self.open_path(path, password=entered)
         except OrionPdfError as exc:
-            self._report(exc, title="Cannot Open Document")
+            self._report(exc, title=tr("Cannot Open Document"))
             self._recent.remove(path)
             return False
         except Exception as exc:  # pragma: no cover - unexpected engine failure
             log.exception("Unexpected error while opening %s", path)
-            self._report(exc, title="Cannot Open Document")
+            self._report(exc, title=tr("Cannot Open Document"))
             return False
 
         self._attach_session(session)
         self._recent.add(path)
         self._settings.set("last_directory", str(path.parent))
-        self._status.flash(f"Opened {path.name}")
+        self._status.flash(tr("Opened {name}").format(name=path.name))
         return True
 
     def close_document(self) -> bool:
@@ -458,7 +532,7 @@ class MainWindow(QMainWindow):
             return self.save_document_as()
         if not session.is_modified:
             # Spec §19: an unmodified document is not rewritten for nothing.
-            self._status.flash("No changes to save.")
+            self._status.flash(tr("No changes to save."))
             return True
         return self._write(session, session.path)
 
@@ -469,7 +543,7 @@ class MainWindow(QMainWindow):
         suggestion = session.path or Path(
             self._settings.get("last_directory", "") or str(Path.home())
         ) / "Untitled.pdf"
-        path, _ = QFileDialog.getSaveFileName(self, "Save PDF As", str(suggestion), PDF_FILTER)
+        path, _ = QFileDialog.getSaveFileName(self, tr("Save PDF As"), str(suggestion), PDF_FILTER)
         if not path:
             return False
         target = Path(path)
@@ -482,11 +556,11 @@ class MainWindow(QMainWindow):
         try:
             self._files.save_as(session, path)
         except OrionPdfError as exc:
-            self._report(exc, title="Cannot Save Document")
+            self._report(exc, title=tr("Cannot Save Document"))
             return False
         except Exception as exc:  # pragma: no cover - unexpected engine failure
             log.exception("Unexpected error while saving to %s", path)
-            self._report(exc, title="Cannot Save Document")
+            self._report(exc, title=tr("Cannot Save Document"))
             return False
         finally:
             QGuiApplication.restoreOverrideCursor()
@@ -495,7 +569,7 @@ class MainWindow(QMainWindow):
         self._settings.set("last_directory", str(path.parent))
         self._update_title()
         self._update_ui_state()
-        self._status.flash(f"Saved {path.name}")
+        self._status.flash(tr("Saved {name}").format(name=path.name))
         return True
 
     def _confirm_discard(self) -> bool:
@@ -505,7 +579,7 @@ class MainWindow(QMainWindow):
             return True
         answer = QMessageBox.warning(
             self,
-            "Unsaved Changes",
+            tr("Unsaved Changes"),
             f"“{session.display_name}” has unsaved changes.\n\nDo you want to save them?",
             QMessageBox.StandardButton.Save
             | QMessageBox.StandardButton.Discard
@@ -527,10 +601,10 @@ class MainWindow(QMainWindow):
         try:
             command = self._session.history.undo()
         except Exception as exc:  # pragma: no cover - defensive
-            self._report(exc, title="Cannot Undo")
+            self._report(exc, title=tr("Cannot Undo"))
             return
         if command is not None:
-            self._status.flash(f"Undid {command.text}")
+            self._status.flash(tr("Undid {what}").format(what=tr(command.text)))
         self._after_model_change()
 
     def redo(self) -> None:
@@ -539,10 +613,10 @@ class MainWindow(QMainWindow):
         try:
             command = self._session.history.redo()
         except Exception as exc:  # pragma: no cover - defensive
-            self._report(exc, title="Cannot Redo")
+            self._report(exc, title=tr("Cannot Redo"))
             return
         if command is not None:
-            self._status.flash(f"Redid {command.text}")
+            self._status.flash(tr("Redid {what}").format(what=tr(command.text)))
         self._after_model_change()
 
     def _copy_selection(self, *, cut: bool) -> None:
@@ -552,7 +626,8 @@ class MainWindow(QMainWindow):
         count = self._clipboard.copy(objects)
         if cut:
             self._delete_grouped_selection("Cut")
-        self._status.flash(f"{'Cut' if cut else 'Copied'} {count} object(s).")
+        template = tr("Cut {count} object(s).") if cut else tr("Copied {count} object(s).")
+        self._status.flash(template.format(count=count))
         self._update_ui_state()
 
     def paste(self) -> None:
@@ -560,7 +635,7 @@ class MainWindow(QMainWindow):
             return
         objects = self._clipboard.paste()
         if not objects:
-            self._status.flash("The clipboard has no Orion objects.")
+            self._status.flash(tr("The clipboard has no Orion objects."))
             return
         page_index = self._canvas.current_page
         page = self._session.document.page_at(page_index)
@@ -573,7 +648,7 @@ class MainWindow(QMainWindow):
             PasteObjectsCommand(self._session.document, page_index, objects, text="Paste")
         )
         self._canvas.select_objects(obj.id for obj in objects)
-        self._status.flash(f"Pasted {len(objects)} object(s).")
+        self._status.flash(tr("Pasted {count} object(s).").format(count=len(objects)))
 
     def duplicate_selection(self) -> None:
         session = self._session
@@ -672,7 +747,7 @@ class MainWindow(QMainWindow):
         try:
             data, image_format, natural = load_image_bytes(path)
         except UnsupportedImageError as exc:
-            QMessageBox.warning(self, "Cannot Insert Image", str(exc))
+            QMessageBox.warning(self, tr("Cannot Insert Image"), str(exc))
             return
 
         scale = IMAGE_PLACEMENT_SIZE / max(natural.width, natural.height, 1.0)
@@ -768,13 +843,13 @@ class MainWindow(QMainWindow):
             return
         if len(targets) >= document.page_count:
             QMessageBox.information(
-                self, "Cannot Delete", "A document must keep at least one page."
+                self, tr("Cannot Delete"), tr("A document must keep at least one page.")
             )
             return
         label = "this page" if len(targets) == 1 else f"these {len(targets)} pages"
         answer = QMessageBox.question(
             self,
-            "Delete Pages",
+            tr("Delete Pages"),
             f"Delete {label}? You can undo this afterwards.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Yes,
@@ -817,14 +892,14 @@ class MainWindow(QMainWindow):
         if self._session is None:
             return
         start = self._settings.get("last_directory", "") or str(Path.home())
-        path, _ = QFileDialog.getOpenFileName(self, "Import Pages From", start, PDF_FILTER)
+        path, _ = QFileDialog.getOpenFileName(self, tr("Import Pages From"), start, PDF_FILTER)
         if not path:
             return
         source_path = Path(path)
         try:
             source, pages = self._files.import_pages(self._session, source_path)
         except OrionPdfError as exc:
-            self._report(exc, title="Cannot Import Pages")
+            self._report(exc, title=tr("Cannot Import Pages"))
             return
 
         dialog = ImportPagesDialog(
@@ -839,14 +914,18 @@ class MainWindow(QMainWindow):
         try:
             chosen = [pages[index] for index in dialog.indices() if 0 <= index < len(pages)]
         except ValueError as exc:
-            QMessageBox.warning(self, "Cannot Import Pages", str(exc))
+            QMessageBox.warning(self, tr("Cannot Import Pages"), str(exc))
             return
         if not chosen:
             return
         self._session.history.push(
             ImportPagesCommand(self._session.document, dialog.insert_index, source, chosen)
         )
-        self._status.flash(f"Imported {len(chosen)} page(s) from {source_path.name}")
+        self._status.flash(
+            tr("Imported {count} page(s) from {name}").format(
+                count=len(chosen), name=source_path.name
+            )
+        )
 
     def extract_pages(self, indices: Sequence[int] | None = None) -> None:
         if self._session is None:
@@ -858,7 +937,7 @@ class MainWindow(QMainWindow):
         dialog = PageSelectionDialog(
             document.page_count,
             title="Extract Pages",
-            prompt="Pages to extract",
+            prompt=tr("Pages to extract"),
             initial=preset or f"1-{document.page_count}",
             parent=self,
         )
@@ -867,22 +946,26 @@ class MainWindow(QMainWindow):
         try:
             chosen = dialog.indices()
         except ValueError as exc:
-            QMessageBox.warning(self, "Cannot Extract Pages", str(exc))
+            QMessageBox.warning(self, tr("Cannot Extract Pages"), str(exc))
             return
 
         stem = (document.path.stem if document.path else "document") + "-extract"
         suggestion = (document.path.parent if document.path else Path.home()) / f"{stem}.pdf"
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save Extracted Pages", str(suggestion), PDF_FILTER
+            self, tr("Save Extracted Pages"), str(suggestion), PDF_FILTER
         )
         if not path:
             return
         try:
             output = self._export.extract(document, chosen, path)
         except OrionPdfError as exc:
-            self._report(exc, title="Cannot Extract Pages")
+            self._report(exc, title=tr("Cannot Extract Pages"))
             return
-        self._status.flash(f"Extracted {len(chosen)} page(s) to {output.name}")
+        self._status.flash(
+            tr("Extracted {count} page(s) to {name}").format(
+                count=len(chosen), name=output.name
+            )
+        )
 
     def split_document(self) -> None:
         if self._session is None:
@@ -899,11 +982,11 @@ class MainWindow(QMainWindow):
             else:
                 results = self._export.split_by_ranges(document, groups, dialog.output_dir)
         except (OrionPdfError, ValueError) as exc:
-            self._report(exc, title="Cannot Split Document")
+            self._report(exc, title=tr("Cannot Split Document"))
             return
         QMessageBox.information(
             self,
-            "Split Complete",
+            tr("Split Complete"),
             f"{len(results)} files were written to:\n{dialog.output_dir}",
         )
 
@@ -916,7 +999,9 @@ class MainWindow(QMainWindow):
         suggestion = Path(
             self._settings.get("last_directory", "") or str(Path.home())
         ) / "merged.pdf"
-        path, _ = QFileDialog.getSaveFileName(self, "Save Merged PDF", str(suggestion), PDF_FILTER)
+        path, _ = QFileDialog.getSaveFileName(
+            self, tr("Save Merged PDF"), str(suggestion), PDF_FILTER
+        )
         if not path:
             return
         try:
@@ -927,12 +1012,12 @@ class MainWindow(QMainWindow):
                 current_marker=CURRENT_DOCUMENT,
             )
         except OrionPdfError as exc:
-            self._report(exc, title="Cannot Merge Documents")
+            self._report(exc, title=tr("Cannot Merge Documents"))
             return
 
         answer = QMessageBox.question(
             self,
-            "Merge Complete",
+            tr("Merge Complete"),
             f"{output.name} was created.\n\nOpen it now?",
             QMessageBox.StandardButton.Open | QMessageBox.StandardButton.Close,
             QMessageBox.StandardButton.Open,
@@ -1084,11 +1169,13 @@ class MainWindow(QMainWindow):
             return
         indices = dialog.indices
         if not indices:
-            self._status.flash("That is not a page range this document has.")
+            self._status.flash(tr("That is not a page range this document has."))
             return
 
         directory = QFileDialog.getExistingDirectory(
-            self, "Export Pages Into", str(self._settings.get("last_directory", "") or Path.home())
+            self,
+            tr("Export Pages Into"),
+            str(self._settings.get("last_directory", "") or Path.home()),
         )
         if not directory:
             return
@@ -1103,7 +1190,7 @@ class MainWindow(QMainWindow):
                 dpi=dialog.dpi,
             )
         except OrionPdfError as exc:
-            self._report(exc, title="Cannot Export Images")
+            self._report(exc, title=tr("Cannot Export Images"))
             return
         finally:
             QGuiApplication.restoreOverrideCursor()
@@ -1126,7 +1213,7 @@ class MainWindow(QMainWindow):
         session.document.metadata = dialog.metadata
         session.document.set_modified(True)
         self._update_title()
-        self._status.flash("Document properties updated.")
+        self._status.flash(tr("Document properties updated."))
 
     # ------------------------------------------------------------------
     # Stamping a range of pages
@@ -1164,7 +1251,7 @@ class MainWindow(QMainWindow):
             return
         indices = dialog.indices
         if not indices:
-            self._status.flash("That is not a page range this document has.")
+            self._status.flash(tr("That is not a page range this document has."))
             return
 
         spec = dialog.spec
@@ -1230,7 +1317,7 @@ class MainWindow(QMainWindow):
             if suffix in SUPPORTED_EXTENSIONS and self._session is not None:
                 self._place_image(path, page_index, position)
                 return
-        self._status.flash("Drop a PDF file, or a PNG, JPEG or WEBP image.")
+        self._status.flash(tr("Drop a PDF file, or a PNG, JPEG or WEBP image."))
 
     # ------------------------------------------------------------------
     # Model change plumbing
@@ -1280,8 +1367,8 @@ class MainWindow(QMainWindow):
         redo = self._actions["edit.redo"]
         undo.setEnabled(history.can_undo)
         redo.setEnabled(history.can_redo)
-        undo.setText(f"&Undo {history.undo_text}".rstrip())
-        redo.setText(f"&Redo {history.redo_text}".rstrip())
+        undo.setText(f"{tr('&Undo')} {tr(history.undo_text)}".rstrip())
+        redo.setText(f"{tr('&Redo')} {tr(history.redo_text)}".rstrip())
 
         has_selection = bool(self._canvas.selected_objects())
         for key in ("edit.cut", "edit.copy", "edit.duplicate", "edit.delete",
@@ -1314,7 +1401,7 @@ class MainWindow(QMainWindow):
         menu.clear()
         entries = list(paths)
         if not entries:
-            action = menu.addAction("No recent files")
+            action = menu.addAction(tr("No recent files"))
             action.setEnabled(False)
             return
         for path in entries:
@@ -1356,13 +1443,13 @@ class MainWindow(QMainWindow):
         try:
             document = snapshot.load()
         except Exception as exc:
-            self._report(exc, title="Cannot Recover Document")
+            self._report(exc, title=tr("Cannot Recover Document"))
             return
         session = self._files.new_session(document, document.path)
         self._attach_session(session)
         document.set_modified(True)
         snapshot.discard()
-        self._status.flash("Recovered document — use Save As to write it to a file.")
+        self._status.flash(tr("Recovered document — use Save As to write it to a file."))
 
     # ------------------------------------------------------------------
     # Help
@@ -1384,8 +1471,8 @@ class MainWindow(QMainWindow):
         rows = self._actions.shortcut_table()
         body = "\n".join(f"{name:<28}{sequence}" for name, sequence in rows)
         box = QMessageBox(self)
-        box.setWindowTitle("Keyboard Shortcuts")
-        box.setText("Orion keyboard shortcuts")
+        box.setWindowTitle(tr("Keyboard Shortcuts"))
+        box.setText(tr("Orion keyboard shortcuts"))
         box.setDetailedText(body)
         box.setIcon(QMessageBox.Icon.Information)
         box.exec()
@@ -1464,6 +1551,9 @@ class MainWindow(QMainWindow):
 class _Placeholder(QWidget):
     """What the window shows when nothing is open."""
 
+    def retranslate(self) -> None:
+        self._hint.setText(tr("Open a PDF with Ctrl+O, or drop one here."))
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         layout = QVBoxLayout(self)
@@ -1479,7 +1569,7 @@ class _Placeholder(QWidget):
         subtitle.setProperty("role", "hint")
         layout.addWidget(subtitle)
 
-        hint = QLabel("Open a PDF with Ctrl+O, or drop one here.")
+        self._hint = hint = QLabel(tr("Open a PDF with Ctrl+O, or drop one here."))
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hint.setProperty("role", "hint")
         layout.addWidget(hint)
