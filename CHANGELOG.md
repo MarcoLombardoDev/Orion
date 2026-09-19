@@ -5,6 +5,22 @@ All notable changes to Orion are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.1] — 2026-09-19
+
+### Fixed
+
+- **The archive shipped CPython and not a word of its licence.** `licenses/`
+  inside the bundle is assembled by reading installed distribution metadata,
+  which can only see what pip put there. The interpreter and its standard
+  library arrive by another route, so nothing in that loop would ever find
+  them — and several megabytes of CPython travelled with no notice, while §11
+  of COMMERCIAL-LICENSE.md had a row for PSF-2.0 the whole time. The text is
+  now supplied from `licenses/` in the repository as
+  `cpython/Python-LICENSE.txt`, in its own folder because `python/` is where
+  the wheels go, and a test fails if it stops arriving.
+- `tools/licence_inventory.py` printed two of its messages in Italian in a tool
+  that is otherwise entirely in English.
+
 ## [1.7.0] — 2026-09-02
 
 Orion speaks Italian.

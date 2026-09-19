@@ -170,7 +170,7 @@ come back.
 The v1.0.0 archives contained no `LICENSE`, `COPYING` or `NOTICE` file at all,
 which LGPL-3.0 §4, the AGPL and every BSD and MIT notice in the bundle all
 require. [`tools/collect_licences.py`](tools/collect_licences.py) now assembles
-them and `orion.spec` ships them as `licenses/` — **100 files** in a Linux
+them and `orion.spec` ships them as `licenses/` — **101 files** in a Linux
 build.
 
 Two of the wheels needed care. **PySide6 declares LGPL-3.0 and ships no licence
@@ -181,6 +181,16 @@ additional permissions on top of GPL-3.0 and means little alone. And
 are named after the licence, one per library PDFium builds in — freetype, icu,
 libjpeg-turbo, libpng, libtiff, zlib and the rest. Collecting only files called
 LICENSE found none of them.
+
+And one text belongs to nobody the collector can see. **CPython is frozen into
+the bundle and is in no dependency list**: the loop that assembles this tree
+reads installed distribution metadata, which can only see what pip put there,
+while the interpreter and its standard library arrive by another route
+entirely. So an archive built from metadata alone shipped several megabytes of
+CPython and not a word of PSF-2.0, which asks for its notice to be retained —
+and §11 of COMMERCIAL-LICENSE.md had a row for it the whole time. It is
+supplied from [`licenses/`](licenses) as `cpython/Python-LICENSE.txt`, in its
+own folder because `python/` is where the wheels go.
 
 ## Full inventory
 

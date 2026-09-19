@@ -227,6 +227,28 @@ class TestLicenceCollection:
         assert os.path.isdir(supplied), "PySide6 got no licence directory"
         assert os.path.exists(os.path.join(supplied, "LGPL-3.0.txt"))
 
+    def test_the_interpreters_own_notice_is_supplied(self, tree: str) -> None:
+        """CPython is frozen into the bundle and is in no dependency list.
+
+        The loop that writes this tree reads installed distribution metadata,
+        which can only see what pip put there. The interpreter and its standard
+        library arrive by another route entirely, so an archive assembled from
+        metadata alone ships several megabytes of CPython and not a word of
+        PSF-2.0, which asks for its notice to be retained. It comes from
+        ALWAYS_SUPPLIED instead, and the index names it so a reader can tell
+        the difference between a text that was copied and one that was
+        supplied.
+        """
+        notice = os.path.join(tree, "cpython", "Python-LICENSE.txt")
+        assert os.path.exists(notice), "the interpreter's own notice is missing"
+        with open(notice, encoding="utf-8") as f:
+            assert "PYTHON SOFTWARE FOUNDATION LICENSE" in f.read()
+
+        with open(os.path.join(tree, "README.md"), encoding="utf-8") as f:
+            assert "cpython/Python-LICENSE.txt" in f.read(), (
+                "the notice is in the tree but the index does not list it"
+            )
+
     def test_lgpl3_never_travels_without_gpl3(self, tree: str) -> None:
         """LGPL-3.0 is a set of additional permissions on top of GPL-3.0.
 

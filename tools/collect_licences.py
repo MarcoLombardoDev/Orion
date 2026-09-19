@@ -67,6 +67,18 @@ SUPPLIED_TEXTS = {
     "shiboken6": ("LGPL-3.0.txt", "GPL-3.0.txt"),
 }
 
+#: Texts that belong in every archive and that no distribution owns. The
+#: interpreter and its standard library are frozen into this bundle and PSF-2.0
+#: asks for its notice to be retained, but CPython is not a wheel, so nothing
+#: in the loop below would ever find it: reading installed metadata can only
+#: see what pip installed.
+#:
+#: The folder is `cpython/` and not `python/` because `python/` is where the
+#: wheels go, and the two collided.
+ALWAYS_SUPPLIED = (
+    ("cpython", "Python-LICENSE.txt", "CPython — the interpreter and standard library"),
+)
+
 #: Runtime distributions, in the order a reader should meet them. Build-time
 #: tools are deliberately absent: they are not in the archive, so their terms
 #: do not belong in it. PyInstaller is the exception discussed in
@@ -235,6 +247,17 @@ def collect(repo: str, staging: str, binaries=()) -> str:
     shutil.copyfile(
         os.path.join(repo, "LICENSE"), os.path.join(staging, "Orion-LICENSE.txt")
     )
+
+    index += ["## The interpreter", ""]
+    for folder, canonical, description in ALWAYS_SUPPLIED:
+        target = os.path.join(staging, folder)
+        os.makedirs(target, exist_ok=True)
+        shutil.copyfile(
+            os.path.join(repo, "licenses", canonical),
+            os.path.join(target, canonical),
+        )
+        index.append(f"- **{description}** — `{folder}/{canonical}`")
+    index.append("")
 
     index += ["## Python packages", ""]
     python_dir = os.path.join(staging, "python")

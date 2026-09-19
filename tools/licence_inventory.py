@@ -522,7 +522,7 @@ def summarise(inventory: Inventory) -> None:
         print(f"{origin:8} {component:24} {len(entries):3}  {', '.join(licences)}")
     flagged = sorted({(e.component, e.flag) for e in inventory.entries if e.flag})
     if flagged:
-        print("\nda verificare:")
+        print("\nneeds review:")
         for component, note in flagged:
             print(f"  {component}: {note}")
     if inventory.unresolved:
@@ -638,7 +638,7 @@ def main(argv: list[str] | None = None) -> int:
         }
         with open(args.json, "w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=1, sort_keys=True)
-        print(f"scritto {args.json}")
+        print(f"wrote {args.json}")
 
     gaps = []
     if args.licences:
