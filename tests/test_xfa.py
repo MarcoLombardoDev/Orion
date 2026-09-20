@@ -32,8 +32,9 @@ from orion.xfa import (
     summarise_form,
     validate_converted_pdf,
 )
+from orion.xfa.converter import _split_for_caption
 from orion.xfa.layout import resolve_layout
-from orion.xfa.model import XfaFieldType, XfaScriptKind
+from orion.xfa.model import XfaField, XfaFieldType, XfaRect, XfaScriptKind
 from orion.xfa.parser import parse_measurement
 from orion.xfa.report import Fidelity, XfaConversionReport
 from orion.xfa.safe_xml import XmlRejected, parse_xml
@@ -46,6 +47,7 @@ from tests.xfa_fixtures import (
     build_xfa_pdf,
     dynamic_template,
     static_template,
+    typeface_template,
 )
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -743,6 +745,109 @@ class TestTheFileTheConverterWrites:
             assert spec.get("/DV") in (None, ""), name
             assert len(spec.get("/Opt") or []) >= 3, name
         assert "Laptop" not in _page_text(out)
+
+    def test_the_form_s_own_typeface_is_embedded_when_it_is_installed(
+        self, tmp_path
+    ):
+        """A form set in Arial should come out in Arial, not in a stand-in.
+
+        Run against whatever non-standard family this machine happens to have,
+        because the point is the mechanism and not one font: if the family is
+        installed, the converted file must carry it.
+        """
+        from orion.pdf.fonts import BASE14_FAMILIES, available_families
+
+        extra = [f for f in available_families() if f not in BASE14_FAMILIES]
+        if not extra:  # pragma: no cover - a machine with only the base-14
+            pytest.skip("no system fonts installed to embed")
+
+        family = extra[0]
+        source = build_xfa_pdf(tmp_path / "typeface.pdf", typeface_template(family))
+        out = tmp_path / "typeface-converted.pdf"
+        convert_xfa(source, out)
+
+        raw = out.read_bytes()
+        assert b"/FontFile2" in raw, "the family was not embedded"
+        assert family.replace(" ", "").encode() in raw
+        assert "Typeface sample" in _page_text(out)
+
+    def test_an_uninstalled_family_falls_back_without_complaint(self, tmp_path):
+        """Metric-compatible stand-in, and a file that still converts."""
+        source = build_xfa_pdf(
+            tmp_path / "missing.pdf", typeface_template("Nonexistent Sans")
+        )
+        out = tmp_path / "missing-converted.pdf"
+        assert convert_xfa(source, out).report.succeeded
+        assert "Typeface sample" in _page_text(out)
+
+    def test_labels_line_up_where_the_template_reserved_room_for_them(
+        self, tmp_path
+    ):
+        """``<caption reserve>`` is the design's own label column width.
+
+        Measuring the words instead started every box wherever its label
+        happened to end, so a column of fields arrived ragged.
+        """
+        from pypdf import PdfReader
+
+        template = dynamic_template().replace('reserve="60pt"', 'reserve="90pt"')
+        source = build_xfa_pdf(tmp_path / "reserve.pdf", template)
+        out = tmp_path / "reserve-converted.pdf"
+        convert_xfa(source, out)
+
+        reader = PdfReader(str(out))
+        lefts = {}
+        for page in reader.pages:
+            for annotation in page.get("/Annots") or []:
+                widget = annotation.get_object()
+                name = str(widget.get("/T", "")).rsplit(".", 1)[-1]
+                if name in ("applicant", "notes", "device"):
+                    lefts[name] = round(float(widget["/Rect"][0]), 2)
+        assert len(lefts) == 3
+        assert len(set(lefts.values())) == 1, f"boxes do not line up: {lefts}"
+
+    def test_a_label_above_the_field_does_not_land_on_top_of_it(self, tmp_path):
+        """``placement="top"`` takes height, not width.
+
+        Handled as a side taken out of the field's own box, the same way XFA
+        does it, so the widget shrinks rather than the label overlapping it.
+        """
+        field = XfaField(
+            name="a",
+            caption="Name",
+            caption_placement="top",
+            caption_reserve=12.0,
+            rect=XfaRect(x=0.0, y=0.0, width=200.0, height=40.0),
+        )
+        caption, box = _split_for_caption(field, 841.89)
+        assert caption is not None
+        caption_bottom = caption[1]
+        box_top = box[1] + box[3]
+        assert caption_bottom >= box_top, "the label sits over the box"
+        assert box[2] == 200.0, "a label above should not narrow the box"
+
+    def test_what_the_template_says_about_a_field_reaches_the_file(self, tmp_path):
+        """Required, read-only and the form's own help text.
+
+        All three were read out of the template from the start and none of
+        them was written into the PDF: a required field arrived optional.
+        """
+        from pypdf import PdfReader
+
+        source = build_reference_form(tmp_path / "flags.pdf")
+        out = tmp_path / "flags-converted.pdf"
+        convert_xfa(source, out)
+
+        fields = PdfReader(str(out)).get_fields() or {}
+        applicant = next(s for n, s in fields.items() if n.endswith("applicant"))
+        assert int(applicant.get("/Ff", 0)) & 2, "the required flag was not written"
+
+        notes = next(s for n, s in fields.items() if n.endswith("notes"))
+        assert int(notes.get("/Ff", 0)) & 4096, "the multiline flag was not written"
+
+        device = next(s for n, s in fields.items() if n.endswith("device"))
+        # open="userControl": the user may type an answer that is not listed.
+        assert int(device.get("/Ff", 0)) & 262144, "the drop-down is not editable"
 
     def test_the_default_resources_name_every_font_the_fields_use(self, tmp_path):
         """reportlab writes ``/Font`` twice in ``/DR``; readers keep one.

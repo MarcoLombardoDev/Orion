@@ -210,6 +210,15 @@ class XfaChoiceList:
     multi_select: bool = False
 
     @property
+    def editable(self) -> bool:
+        """May the user type an answer that is not in the list?
+
+        XFA's ``open="userControl"``. A drop-down converted without it becomes
+        a fixed list, and an answer the form allowed can no longer be given.
+        """
+        return self.open and not self.multi_select
+
+    @property
     def pairs(self) -> tuple[tuple[str, str], ...]:
         """(label, value), with the label standing in for a missing value."""
         values = self.values or self.labels
@@ -240,6 +249,14 @@ class XfaField:
     max_length: int = 0
     #: XFA ``picture`` clause — the display format, e.g. ``DD/MM/YYYY``.
     picture: str = ""
+    #: ``<assist><toolTip>``: the help the form itself offers for this field.
+    tooltip: str = ""
+    #: ``<caption reserve="…">`` in points: how much of the field's own box the
+    #: label takes. The template's answer, which is what lines every label in a
+    #: section up with every other; 0 means it did not say.
+    caption_reserve: float = 0.0
+    #: ``left`` (XFA's default), ``right``, ``top``, ``bottom``, ``inline``.
+    caption_placement: str = "left"
     validation_pattern: str = ""
     choices: XfaChoiceList | None = None
     binding: XfaBinding = field(default_factory=XfaBinding)

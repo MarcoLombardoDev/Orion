@@ -29,12 +29,18 @@ XFA                  AcroForm
 ===================  =========================================================
 textEdit             text field (multiline when the template says so)
 numericEdit          text field, digits-only format
-dateTimeEdit         text field, with the template's picture kept as its format
+dateTimeEdit         text field; the picture clause becomes the field's tooltip
 checkButton          checkbox, with its export value
 exclGroup            one radio group; each member a widget with its own value
-choiceList           combo box, or list box when it allows several
+choiceList           combo box — editable when XFA's ``open="userControl"`` —
+                     or list box when it allows several
 button               drawn, never live — see below
 ===================  =========================================================
+
+Required and read-only travel with the field, and so does the help text the
+form offers for it. A date's picture clause cannot be enforced without the
+scripting that a standard form has nowhere to put, so it is carried as words:
+the field can no longer *make* you write ``DD/MM/YYYY``, but it still says so.
 
 Buttons are deliberately not recreated as AcroForm buttons. An XFA button does
 whatever its script says, and the scripts do not survive (see
@@ -110,13 +116,45 @@ class ConversionResult:
         return self.report.succeeded
 
 
-def _font_name(font: XfaFont) -> str:
-    """The reportlab base font closest to what the template asked for.
+def _font_name(font: XfaFont, *, embed: bool = True) -> str:
+    """The font to draw *font* with, embedding the real one where it exists.
 
-    Only the base-14 are used. Embedding the form's actual typeface would mean
-    finding it on this machine and taking on its licence, which is a decision
-    Orion leaves to the user elsewhere and should not make silently here.
+    A form's typeface is part of how it reads, and the reference document is
+    set in Arial and Arial Narrow — neither of which is a base-14 font. So the
+    static layer asks Orion's own font resolver, which finds the family
+    installed on this machine and embeds a subset of it exactly as the editor
+    does for a text object the user types. A family that is not installed
+    falls back to the metric-compatible base-14 below, which is why Arial and
+    Helvetica share a row: the text still occupies the same width.
+
+    **Form fields are the exception**, hence *embed*. reportlab refuses any
+    font that is not one of the standard 14 when it builds a widget — it
+    raises rather than substitutes — so a field the user types into is drawn
+    with the base-14 stand-in. The visible difference is confined to text
+    somebody types after the conversion; everything the form itself prints is
+    in the form's own face.
     """
+    if embed:
+        resolved = _embedded_font(font)
+        if resolved:
+            return resolved
+    return _base14_name(font)
+
+
+def _embedded_font(font: XfaFont) -> str:
+    """The installed face for this family, or "" if there is not one."""
+    try:
+        from orion.pdf.fonts import FontRequest, resolve
+
+        found = resolve(FontRequest(font.family.strip(), font.bold, font.italic))
+    except Exception:  # pragma: no cover - a font scan is never worth a failure
+        log.debug("Could not resolve the font %r", font.family, exc_info=True)
+        return ""
+    return "" if found.substituted or not found.embedded else found.name
+
+
+def _base14_name(font: XfaFont) -> str:
+    """The standard-14 font closest to what the template asked for."""
     base = _BASE_FONTS.get(font.family.strip().lower(), "Helvetica")
     if base == "Times-Roman":
         if font.bold and font.italic:
@@ -126,13 +164,50 @@ def _font_name(font: XfaFont) -> str:
         if font.italic:
             return "Times-Italic"
         return "Times-Roman"
+    if base == "Courier":
+        if font.bold and font.italic:
+            return "Courier-BoldOblique"
+        if font.bold:
+            return "Courier-Bold"
+        if font.italic:
+            return "Courier-Oblique"
+        return "Courier"
     if font.bold and font.italic:
-        return f"{base}-BoldOblique"
+        return "Helvetica-BoldOblique"
     if font.bold:
-        return f"{base}-Bold"
+        return "Helvetica-Bold"
     if font.italic:
-        return f"{base}-Oblique"
-    return base
+        return "Helvetica-Oblique"
+    return "Helvetica"
+
+
+def _tooltip(field: XfaField) -> str:
+    """What to show when the pointer rests on the field.
+
+    The template's own help text, and the format it expects. The format is
+    worth carrying because it is the one piece of a date field's behaviour
+    that survives as words: the field itself can no longer enforce
+    ``DD/MM/YYYY``, but it can still say so.
+    """
+    parts = [field.tooltip.strip()] if field.tooltip.strip() else []
+    picture = _plain_picture(field.picture)
+    if picture:
+        # A picture clause is usually a format — DD/MM/YYYY — but a text field
+        # often carries a quoted literal instead, which is the form prompting
+        # the user rather than telling them a shape. Calling that "Format"
+        # would turn a helpful sentence into a nonsensical one.
+        literal = picture.startswith("'") and picture.endswith("'") and len(picture) > 1
+        parts.append(picture.strip("'") if literal else f"Format: {picture}")
+    return " — ".join(part for part in parts if part)
+
+
+def _plain_picture(picture: str) -> str:
+    """``num{zzz9}`` and ``date{DD/MM/YYYY}`` reduced to what they show."""
+    if not picture:
+        return ""
+    inner = re.search(r"\{([^}]*)\}", picture)
+    text = (inner.group(1) if inner else picture).strip()
+    return text if text and text.lower() not in ("null", "none") else ""
 
 
 def _safe_name(name: str, used: set[str]) -> str:
@@ -152,15 +227,49 @@ def _safe_name(name: str, used: set[str]) -> str:
     return candidate
 
 
-def _caption_width(field: XfaField) -> float:
-    """How much room the caption takes to the left of the box.
+def _split_for_caption(
+    field: XfaField, page_height: float
+) -> tuple[tuple[float, float, float, float] | None, tuple[float, float, float, float]]:
+    """Divide a field's box into the label's part and the widget's part.
 
-    XFA puts a field's label inside the field's own rectangle by default,
-    reserving space on one side. Drawing the caption on top of the widget is
-    the usual way this goes wrong, so the widget is narrowed instead.
+    XFA keeps a field's label *inside* the field's own rectangle and says how
+    much room it takes with ``reserve`` — the template's own measurement,
+    which is what lines every label in a section up with every other. Orion
+    used to measure the text instead, so the boxes started wherever the words
+    happened to end and a column of labels arrived ragged.
+
+    ``placement`` decides which side is taken. Left is XFA's default and by
+    far the common case; the others are handled because a form that uses them
+    would otherwise have its labels drawn on top of its own fields.
+
+    Returns ``(caption_rect, box_rect)`` in PDF coordinates, the first being
+    ``None`` when there is no caption to draw.
     """
+    x, y, width, height = rect_to_pdf(field.rect, page_height)
     if not field.caption:
-        return 0.0
+        return None, (x, y, width, height)
+
+    placement = (field.caption_placement or "left").lower()
+    if placement in ("top", "bottom"):
+        reserve = field.caption_reserve or field.font.size * 1.25
+        reserve = min(reserve, max(height - 8.0, 0.0))
+        if reserve <= 0:
+            return None, (x, y, width, height)
+        if placement == "top":
+            return (x, y + height - reserve, width, reserve), (x, y, width, height - reserve)
+        return (x, y, width, reserve), (x, y + reserve, width, height - reserve)
+
+    reserve = field.caption_reserve or _measured_caption(field)
+    reserve = min(reserve, max(width - 8.0, 0.0))
+    if reserve <= 0:
+        return None, (x, y, width, height)
+    if placement == "right":
+        return (x + width - reserve, y, reserve, height), (x, y, width - reserve, height)
+    return (x, y, reserve, height), (x + reserve, y, width - reserve, height)
+
+
+def _measured_caption(field: XfaField) -> float:
+    """Room for the label when the template does not say how much it needs."""
     from reportlab.pdfbase.pdfmetrics import stringWidth
 
     width = stringWidth(field.caption, _font_name(field.font), field.font.size)
@@ -254,24 +363,26 @@ def _draw_wrapped(pdf, text, x, y, width, height, font: XfaFont, font_name, alig
             pdf.drawString(x, baseline, line)
 
 
-def _draw_field_caption(pdf, field: XfaField, page_height: float, reserve: float) -> None:
-    if not field.caption or reserve <= 0:
+def _draw_field_caption(pdf, field: XfaField, rect) -> None:
+    """The field's label, inside the part of the box reserved for it."""
+    if not field.caption or rect is None:
         return
-    x, y, _width, height = rect_to_pdf(field.rect, page_height)
+    x, y, width, height = rect
+    font_name = _font_name(field.font)
     pdf.saveState()
     pdf.setFillColorRGB(*field.font.color)
-    pdf.setFont(_font_name(field.font), field.font.size)
-    pdf.drawString(x, y + height - field.font.size, field.caption)
+    pdf.setFont(font_name, field.font.size)
+    _draw_wrapped(
+        pdf, field.caption, x, y, max(width, 1.0), height, field.font, font_name, "left"
+    )
     pdf.restoreState()
 
 
 def _draw_field_as_static(pdf, field: XfaField, page_height: float) -> None:
     """A field that will not be interactive, drawn so it is not simply lost."""
-    reserve = _caption_width(field)
-    _draw_field_caption(pdf, field, page_height, reserve)
-    x, y, width, height = rect_to_pdf(field.rect, page_height)
-    box_x = x + reserve
-    box_width = max(width - reserve, 1.0)
+    caption_rect, (box_x, y, box_width, height) = _split_for_caption(field, page_height)
+    _draw_field_caption(pdf, field, caption_rect)
+    box_width = max(box_width, 1.0)
 
     pdf.saveState()
     if field.fill_color is not None:
@@ -325,12 +436,12 @@ def _add_widget(
 ) -> bool:
     """Create the AcroForm widget for *field*. True when one was made."""
     form = pdf.acroForm
-    reserve = _caption_width(field)
-    x, y, width, height = rect_to_pdf(field.rect, page_height)
-    box_x = x + reserve
-    box_width = max(width - reserve, 8.0)
-    box_height = max(height, 8.0)
-    font_name = _font_name(field.font)
+    _caption, (box_x, y, box_width, box_height) = _split_for_caption(field, page_height)
+    box_width = max(box_width, 8.0)
+    box_height = max(box_height, 8.0)
+    # reportlab raises on any other font when it builds a widget, so this one
+    # call asks for the stand-in rather than the embedded face.
+    font_name = _font_name(field.font, embed=False)
     size = max(field.font.size, 4.0)
 
     common = {
@@ -341,7 +452,18 @@ def _add_widget(
         "fillColor": _grey(field.fill_color) if field.fill_color else None,
         "textColor": _grey(field.font.color),
         "forceBorder": field.border_width > 0,
+        "tooltip": _tooltip(field) or None,
     }
+
+    # Both were read out of the template from the start and neither was ever
+    # written into the file. A field the form marked as required arrived
+    # optional, and one it marked read-only arrived editable — the kind of
+    # loss that only shows up when somebody submits the form.
+    state = []
+    if field.read_only:
+        state.append("readOnly")
+    if field.mandatory:
+        state.append("required")
 
     if field.field_type in (XfaFieldType.TEXT, XfaFieldType.NUMERIC, XfaFieldType.DATE):
         form.textfield(
@@ -351,7 +473,7 @@ def _add_widget(
             height=box_height,
             fontName=font_name,
             fontSize=size,
-            fieldFlags="multiline" if field.multiline else "",
+            fieldFlags=" ".join([*state, *(["multiline"] if field.multiline else [])]),
             maxlen=field.max_length or None,
             **common,
         )
@@ -363,6 +485,7 @@ def _add_widget(
             checked=_checked(field),
             size=min(box_height, box_width),
             buttonStyle="check",
+            fieldFlags=" ".join(state),
             **common,
         )
         return True
@@ -377,6 +500,7 @@ def _add_widget(
             size=min(box_height, box_width),
             buttonStyle="circle",
             shape="circle",
+            fieldFlags=" ".join(["radio", *state]),
             **common,
         )
         return True
@@ -409,7 +533,17 @@ def _add_widget(
             chosen = options[0][1]
             blank_choices.add(name)
 
-        maker = form.listbox if field.choices.multi_select else form.choice
+        if field.choices.multi_select:
+            maker = form.listbox
+            flags = [*state, "multiSelect"]
+        else:
+            maker = form.choice
+            # A list the user may type into as well as pick from — XFA's
+            # open="userControl". Without the flag it becomes a fixed list and
+            # an answer the form allowed can no longer be given.
+            flags = ["combo", *state]
+            if field.choices.editable:
+                flags.append("edit")
         maker(
             name=name,
             value=chosen,
@@ -418,6 +552,7 @@ def _add_widget(
             height=box_height,
             fontName=font_name,
             fontSize=size,
+            fieldFlags=" ".join(flags),
             **common,
         )
         return True
@@ -722,7 +857,7 @@ def _write(
                     if field.field_type is XfaFieldType.RADIO
                     else _safe_name(field.qualified_name, used_names)
                 )
-                _draw_field_caption(pdf, field, page.height, _caption_width(field))
+                _draw_field_caption(pdf, field, _split_for_caption(field, page.height)[0])
                 try:
                     made = _add_widget(
                         pdf, field, page.height, name, radio_names, blank_choices

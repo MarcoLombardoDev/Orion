@@ -365,7 +365,14 @@ def _parse_field(node: Element, parent_som: str, font: XfaFont) -> XfaField | Xf
     som = _som(parent_som, name)
     field_type, ui_node = _field_type(node)
     own_font = _font_of(node, font)
-    caption = _text_of(_child(_child(node, "caption"), "value")) if _child(node, "caption") else ""
+    caption_node = _child(node, "caption")
+    caption = _text_of(_child(caption_node, "value")) if caption_node is not None else ""
+    caption_reserve = (
+        parse_measurement(caption_node.get("reserve")) if caption_node is not None else 0.0
+    )
+    caption_placement = (
+        (caption_node.get("placement") or "left") if caption_node is not None else "left"
+    )
     scripts = _scripts_of(node, som)
 
     if field_type is XfaFieldType.BUTTON:
@@ -415,6 +422,11 @@ def _parse_field(node: Element, parent_som: str, font: XfaFont) -> XfaField | Xf
         mandatory=mandatory,
         max_length=int(parse_measurement(edit.get("maxChars"), 0)) if edit is not None else 0,
         picture=picture,
+        caption_reserve=caption_reserve,
+        caption_placement=caption_placement,
+        tooltip=_text_of(_child(_child(node, "assist"), "toolTip"))
+        if _child(node, "assist") is not None
+        else "",
         choices=_choices_of(node, ui_node) if field_type is XfaFieldType.CHOICE else None,
         binding=XfaBinding(
             expression=binding.get("ref", "") if binding is not None else "",

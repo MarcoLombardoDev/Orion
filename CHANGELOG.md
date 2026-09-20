@@ -97,6 +97,27 @@ several things only that file could have shown:
   every reader keeps one of the two — the one they drop being the font that
   every field asks for. The two are merged before the file is finished.
 
+Then a second pass over what else was being left on the table:
+
+- **The form's own typeface** is now embedded when the machine has it, exactly
+  as Orion embeds a font for text you type, so a form set in Arial comes out in
+  Arial rather than in a stand-in. A family that is not installed falls back to
+  the metric-compatible standard font, which occupies the same width. The
+  fields you type into are the one exception — the PDF library refuses any
+  font but the standard fourteen when it builds a widget — so the difference is
+  confined to text added after the conversion.
+- **Required, read-only and the form's help text** were read out of the
+  template from the first version and never written into the PDF. A field the
+  form marked as required arrived optional. All three now travel, and a date's
+  format is carried as the field's tooltip, which is the only form a standard
+  PDF can keep it in.
+- **Drop-downs that let you type your own answer** (`open="userControl"`) stay
+  that way instead of becoming fixed lists.
+- **Labels line up where the form put them.** A caption's width is the one the
+  template reserves, not the width of its words, so a column of fields starts
+  at one edge instead of wherever each label happened to end; labels placed
+  above or beside a field are handled rather than drawn over it.
+
 Appearance and behaviour are also scored more carefully: a field that is drawn
 in the right place but cannot be typed into is a loss of behaviour, and used to
 count against the appearance as well.

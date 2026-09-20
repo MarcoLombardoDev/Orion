@@ -352,6 +352,9 @@ PDF with no fields at all. Useful when you only need to read or print it.
 | **Automatic calculations and checks** | **Lost** |
 | **Buttons** | **Shown, but they no longer do anything** |
 | **Logos and pictures** | **Left out** |
+| Fonts | Kept, and embedded when your machine has the typeface |
+| Required and read-only fields | Kept |
+| The help text a field shows on hover | Kept |
 
 Pictures are a case of their own: a form does not usually keep them inside the
 file, it points at them by file name on the machine it was designed on. Orion

@@ -42,6 +42,7 @@ __all__ = [
     "build_xfa_pdf",
     "dynamic_template",
     "static_template",
+    "typeface_template",
 ]
 
 XFA_TEMPLATE_NS = "http://www.xfa.org/schema/xfa-template/3.0/"
@@ -413,6 +414,30 @@ def awkward_template() -> str:
         </subform>
       </subform>
     </subform>
+  </subform>
+</template>"""
+
+
+def typeface_template(family: str) -> str:
+    """A one-field form set in *family*, for testing what font comes out."""
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<template xmlns="{XFA_TEMPLATE_NS}">
+  <subform name="form1" layout="position" w="595.28pt" h="841.89pt">
+    <pageSet>
+      <pageArea name="Page1">
+        <medium short="595.28pt" long="841.89pt" orientation="portrait"/>
+        <contentArea x="36pt" y="36pt" w="523.28pt" h="769.89pt"/>
+      </pageArea>
+    </pageSet>
+    <draw name="heading" x="0pt" y="0pt" w="400pt" h="20pt">
+      <value><text>Typeface sample</text></value>
+      <font typeface="{family}" size="14pt"/>
+    </draw>
+    <field name="who" x="0pt" y="30pt" w="300pt" h="20pt">
+      <ui><textEdit/></ui>
+      <caption reserve="80pt"><value><text>Name</text></value></caption>
+      <font typeface="{family}" size="10pt"/>
+    </field>
   </subform>
 </template>"""
 
