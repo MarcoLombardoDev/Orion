@@ -111,6 +111,25 @@ def _classify_load_failure(path: Path, password: str | None, exc: Exception) -> 
     )
 
 
+def _init_forms(doc, path: Path) -> None:
+    """Switch on pdfium's form layer so form fields draw their contents.
+
+    Without it a page renders the *page*, and an interactive field is drawn as
+    an empty box: pdfium keeps widget appearances behind a form-fill
+    environment that has to be asked for. Orion never asked, so every ordinary
+    PDF form has been opening blank — visible now because a converted XFA is
+    nothing but form fields, though it was just as true before.
+
+    Failure is not an error. A document with no form has nothing to set up,
+    and one whose form pdfium dislikes should still open and render; the only
+    consequence is the blank boxes that were there anyway.
+    """
+    try:
+        doc.init_forms()
+    except Exception:  # pragma: no cover - depends on the document's form
+        log.debug("No form layer for %s", path, exc_info=True)
+
+
 def open_pdf(path: str | Path, password: str | None = None) -> OpenedPdf:
     """Open *path*, raising a typed, user-presentable error on failure."""
     path = Path(path)
@@ -146,6 +165,7 @@ def open_pdf(path: str | Path, password: str | None = None) -> OpenedPdf:
         doc.close()
         raise PdfCorruptError(f"“{path.name}” contains no pages.")
 
+    _init_forms(doc, path)
     log.info("Opened %s (%d pages)", path, count)
     return OpenedPdf(path=path, doc=doc, lock=threading.RLock())
 

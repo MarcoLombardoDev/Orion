@@ -62,6 +62,9 @@ ACTIONS: tuple[ActionSpec, ...] = (
     ActionSpec("file.clear_recent", "Clear Recent Files", "", "", "Forget the list of recently opened files", needs_document=False),
     ActionSpec("file.export_images", "Export as &Images…", "export_image", "", "Save pages as PNG or JPEG files"),
     ActionSpec("file.properties", "Document &Properties…", "properties", "", "Read and edit the document's title, author and keywords"),
+    # needs_document=False on purpose: converting a form is how you open one,
+    # so requiring a document first would disable it exactly when it is wanted.
+    ActionSpec("file.convert_form", "Convert &Form to Standard PDF…", "convert_form", "", "Turn an XFA form into a PDF you can fill in and edit", needs_document=False),
     ActionSpec("file.quit", "&Quit", "", "Ctrl+Q", "Close Orion", needs_document=False),
     # -- Edit ------------------------------------------------------------
     ActionSpec("edit.undo", "&Undo", "undo", "Ctrl+Z", "Undo the last change"),

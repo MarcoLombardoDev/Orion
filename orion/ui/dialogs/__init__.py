@@ -23,6 +23,7 @@ from orion.ui.dialogs.properties_dialog import DocumentPropertiesDialog
 from orion.ui.dialogs.recovery_dialog import RecoveryDialog
 from orion.ui.dialogs.split_dialog import SplitDialog
 from orion.ui.dialogs.stamp_dialogs import PageNumberDialog, WatermarkDialog
+from orion.ui.dialogs.xfa_dialog import XfaPromptDialog, XfaReportDialog
 
 __all__ = [
     "AboutDialog",
@@ -39,4 +40,6 @@ __all__ = [
     "RecoveryDialog",
     "SplitDialog",
     "WatermarkDialog",
+    "XfaPromptDialog",
+    "XfaReportDialog",
 ]

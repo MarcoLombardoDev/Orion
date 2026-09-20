@@ -315,6 +315,7 @@ class MainWindow(QMainWindow):
         connect("tools.edit_note", lambda: self._canvas.edit_selected_note())
         connect("file.export_images", self.export_images)
         connect("file.properties", self.edit_document_properties)
+        connect("file.convert_form", self.convert_form_document)
         connect("tools.watermark", self.add_watermark)
         connect("tools.page_numbers", self.add_page_numbers)
         # Help
@@ -485,6 +486,11 @@ class MainWindow(QMainWindow):
     def open_path(self, path: Path, *, password: str | None = None) -> bool:
         if not self._confirm_discard():
             return False
+        if password is None:
+            redirected = self._offer_xfa_conversion(path)
+            if redirected is None:
+                return False
+            path = redirected
         try:
             session = self._files.open(path, password)
         except PdfPasswordRequired as exc:
@@ -1214,6 +1220,142 @@ class MainWindow(QMainWindow):
         session.document.set_modified(True)
         self._update_title()
         self._status.flash(tr("Document properties updated."))
+
+    # ------------------------------------------------------------------
+    # XFA forms
+    # ------------------------------------------------------------------
+    def _offer_xfa_conversion(self, path: Path) -> Path | None:
+        """Ask what to do about an XFA form, before it is opened.
+
+        Returns the path to open — the converted file, or the original when
+        the user asked to look at it as it is — or None to abandon the open.
+
+        Done here rather than after opening because an XFA document is not
+        usefully open: its pages are a placeholder, so showing it first and
+        offering afterwards would mean showing the user a blank page and then
+        explaining it. Detection reads the file's structure and costs one
+        parse, which is why it is cheap enough to do on every open.
+        """
+        from orion.xfa import PdfFormType, inspect_form
+
+        try:
+            info = inspect_form(path)
+        except Exception:  # pragma: no cover - detection must never block an open
+            log.debug("Could not check %s for an XFA form", path, exc_info=True)
+            return path
+        if not info.is_xfa:
+            return path
+
+        log.info("%s carries an XFA form (%s)", path.name, info.reason)
+        summary = self._summarise_xfa(info)
+
+        from orion.ui.dialogs import XfaPromptDialog
+
+        dialog = XfaPromptDialog(path.name, summary, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return None
+        if dialog.choice == XfaPromptDialog.READ_ONLY:
+            if info.form_type is PdfFormType.XFA_DYNAMIC:
+                self._status.flash(
+                    tr("Opened as read-only. This kind of form shows a "
+                       "placeholder rather than its contents.")
+                )
+            return path
+        return self._run_xfa_conversion(path, dialog.mode)
+
+    @staticmethod
+    def _summarise_xfa(info):
+        """Count what is in the form, tolerating a template that will not parse."""
+        from orion.xfa import parse_xfa, summarise_form
+
+        try:
+            return summarise_form(parse_xfa(info.packets))
+        except Exception:  # pragma: no cover - the dialog copes with None
+            log.debug("Could not summarise the XFA form", exc_info=True)
+            return None
+
+    def _run_xfa_conversion(self, path: Path, mode) -> Path | None:
+        """Convert *path*, show what happened, and hand back the new file."""
+        from orion.ui.dialogs import XfaReportDialog
+        from orion.xfa import convert_xfa_file, validate_converted_pdf
+
+        try:
+            result = convert_xfa_file(path, mode=mode)
+        except Exception as exc:  # pragma: no cover - the converter reports its own
+            log.exception("Converting %s failed", path)
+            self._report(exc, title=tr("Cannot Convert Form"))
+            return None
+
+        if not result.succeeded or result.output is None:
+            XfaReportDialog(result.report, self).exec()
+            return None
+
+        check = validate_converted_pdf(
+            result.output,
+            expect_pages=result.report.pages,
+            expect_interactive=mode.wants_fields and result.report.converted_fields > 0,
+        )
+        for issue in check.issues:
+            result.report.add(issue.severity, issue.message, issue.subject)
+
+        XfaReportDialog(result.report, self).exec()
+        if not check.ok:
+            return None
+        self._status.flash(
+            tr("Converted to {name}").format(name=result.output.name)
+        )
+        return result.output
+
+    def convert_form_document(self) -> None:
+        """Convert a form from the File menu, without opening it first."""
+        from orion.xfa import inspect_form
+
+        start = str(self._settings.get("last_directory", "") or Path.home())
+        chosen, _ = QFileDialog.getOpenFileName(
+            self, tr("Convert Form"), start, PDF_FILTER
+        )
+        if not chosen:
+            return
+        path = Path(chosen)
+        info = inspect_form(path)
+        if not info.is_xfa:
+            QMessageBox.information(
+                self,
+                tr("Nothing to Convert"),
+                tr("“{name}” does not contain an XFA form. Orion can already "
+                   "open it as it is.").format(name=path.name),
+            )
+            return
+        if not self._confirm_discard():
+            return
+        from orion.ui.dialogs import XfaPromptDialog
+
+        dialog = XfaPromptDialog(path.name, self._summarise_xfa(info), self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        if dialog.choice == XfaPromptDialog.READ_ONLY:
+            self._open_without_asking(path)
+            return
+        converted = self._run_xfa_conversion(path, dialog.mode)
+        if converted is not None:
+            self._open_without_asking(converted)
+
+    def _open_without_asking(self, path: Path) -> bool:
+        """Open *path*, skipping the XFA offer.
+
+        Needed because the offer has already been made and answered; going
+        through it again would ask the same question twice.
+        """
+        try:
+            session = self._files.open(path)
+        except OrionPdfError as exc:
+            self._report(exc, title=tr("Cannot Open Document"))
+            return False
+        self._attach_session(session)
+        self._recent.add(path)
+        self._settings.set("last_directory", str(path.parent))
+        self._status.flash(tr("Opened {name}").format(name=path.name))
+        return True
 
     # ------------------------------------------------------------------
     # Stamping a range of pages

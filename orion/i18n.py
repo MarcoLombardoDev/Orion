@@ -463,4 +463,65 @@ _CATALOGUE: dict[str, str] = {
     'Change Line Spacing': 'Cambia interlinea',
     'Change Aspect Ratio': 'Cambia proporzioni',
     'Change Redaction Colour': "Cambia colore dell'oscuramento",
+    # -- XFA forms ------------------------------------------------------
+    'Automatic rules not carried over: {count}': 'Regole automatiche non trasferite: {count}',
+    'Cannot Convert Form': 'Impossibile convertire il modulo',
+    'Conversion complete': 'Conversione completata',
+    'Convert': 'Converti',
+    'Convert Form': 'Converti modulo',
+    'Convert to a document that cannot be filled in': 'Converti in un documento non compilabile',
+    'Converted to {name}': 'Convertito in {name}',
+    'Convert &Form to Standard PDF…': 'Converti &modulo in PDF standard…',
+    'Turn an XFA form into a PDF you can fill in and edit': (
+        'Trasforma un modulo XFA in un PDF compilabile e modificabile'
+    ),
+    'Fields found: {count}': 'Campi trovati: {count}',
+    'Fields you can fill in: {count}': 'Campi compilabili: {count}',
+    'Form document': 'Documento con modulo',
+    'Keep as many fields as possible (recommended)': (
+        'Conserva il maggior numero di campi (consigliato)'
+    ),
+    'Kept as part of the page: {count}': 'Mantenuti come parte della pagina: {count}',
+    'Make every field fillable': 'Rendi compilabili tutti i campi',
+    'Nothing to Convert': 'Niente da convertire',
+    'Open read-only': 'Apri in sola lettura',
+    'Opened as read-only. This kind of form shows a placeholder rather than its contents.': (
+        "Aperto in sola lettura. Questo tipo di modulo mostra un segnaposto invece del suo "
+        "contenuto."
+    ),
+    'Orion found: {parts}.': 'Orion ha trovato: {parts}.',
+    'Pages: {count}': 'Pagine: {count}',
+    'Rows kept from repeating sections: {count}': (
+        'Righe conservate dalle sezioni ripetibili: {count}'
+    ),
+    'The form could not be converted.': 'Non è stato possibile convertire il modulo.',
+    'The form was converted and everything came across.': (
+        'Il modulo è stato convertito ed è arrivato tutto.'
+    ),
+    "The form was converted. It looks the same and its fields work, but some of what it used to"
+    " do automatically could not be carried over — see below.": (
+        "Il modulo è stato convertito. L'aspetto è lo stesso e i campi funzionano, ma una parte"
+        " di ciò che faceva automaticamente non è stata trasferita — vedi sotto."
+    ),
+    'The original file is not changed. The conversion is saved as a new document beside it.': (
+        "Il file originale non viene modificato. La conversione è salvata come nuovo documento "
+        "accanto a esso."
+    ),
+    "This document uses an XFA form. Orion can convert it into a standard PDF you can fill in "
+    "and edit.": (
+        "Questo documento usa un modulo XFA. Orion può convertirlo in un PDF standard "
+        "compilabile e modificabile."
+    ),
+    'This part of the form could not be converted.': (
+        'Questa parte del modulo non è stata convertita.'
+    ),
+    'Worth knowing:': 'Da sapere:',
+    '{count} automatic rules': '{count} regole automatiche',
+    '{count} dates': '{count} date',
+    '{count} fields': '{count} campi',
+    '{count} lists': '{count} elenchi',
+    '{count} repeating sections': '{count} sezioni ripetibili',
+    '“{name}” does not contain an XFA form. Orion can already open it as it is.': (
+        "“{name}” non contiene un modulo XFA. Orion può già aprirlo così com'è."
+    ),
 }

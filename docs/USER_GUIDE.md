@@ -304,6 +304,67 @@ Watermark and `epg` finds Export Pages. Commands that cannot run right now —
 Save with nothing open, Delete with nothing selected — are left out rather than
 shown greyed, so what the list offers is what will work.
 
+## Forms that will not open (XFA)
+
+Some PDFs — usually official forms produced with Adobe LiveCycle — are not
+really PDFs. The file is a shell, and the form lives inside it as XML in a
+format called **XFA**. Adobe has abandoned it, browsers never supported it,
+and most editors cannot touch it, which is why these documents open as a page
+saying *"If this message is not eventually replaced by the proper contents of
+this document…"*.
+
+Orion opens one and offers to convert it:
+
+* **Convert** — rebuilds the form as an ordinary PDF: the same layout, with
+  fields you can fill in and edit with the rest of Orion's tools.
+* **Open read-only** — shows the file as it is, placeholder and all.
+* **Cancel** — does nothing.
+
+You can also convert without opening first, with **File ▸ Convert Form to
+Standard PDF**.
+
+**The original file is never changed.** The conversion is written as a new
+document beside it, named after the original with `-converted` on the end.
+
+### Choosing how much to convert
+
+**Keep as many fields as possible** is the default and is almost always what
+you want: every field that can be made fillable is, and anything that cannot
+is kept as part of the page so the form still looks right.
+
+**Make every field fillable** is the same thing said more insistently; it
+differs only for unusual forms.
+
+**Convert to a document that cannot be filled in** produces a plain, readable
+PDF with no fields at all. Useful when you only need to read or print it.
+
+### What comes across, and what does not
+
+| | |
+|---|---|
+| Layout, captions, boxes, rules, fonts | Kept |
+| Text boxes, numbers, dates | Become fillable fields |
+| Tick boxes and either/or choices | Become checkboxes and radio buttons |
+| Drop-down lists | Become drop-downs, with all their options |
+| Values already filled in | Kept |
+| Rows already present in a repeating table | Kept |
+| **Adding new rows to a repeating table** | **Lost** |
+| **Automatic calculations and checks** | **Lost** |
+| **Buttons** | **Shown, but they no longer do anything** |
+
+The last three are not an oversight. An XFA form carries a small program, and
+standard PDF forms have nowhere to put it — there is no equivalent of a
+section that grows when you press a button. Orion keeps everything the form
+*contains* and tells you plainly what it can no longer *do*.
+
+### The summary afterwards
+
+After converting, Orion shows what happened: how many fields it found, how
+many are fillable, how many rows it kept, and what it could not carry over.
+It reports the appearance and the behaviour **separately**, because a form
+can come through looking perfect while having lost its arithmetic — and that
+is exactly the case worth knowing about before you send it to anybody.
+
 ## Saving
 
 **Ctrl/Cmd+S** saves; **Ctrl/Cmd+Shift+S** saves under a new name.

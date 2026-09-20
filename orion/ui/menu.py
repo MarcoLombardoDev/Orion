@@ -40,6 +40,8 @@ _STRUCTURE: tuple[tuple[str, tuple[str | None, ...]], ...] = (
             "file.merge",
             "file.export_images",
             SEPARATOR,
+            "file.convert_form",
+            SEPARATOR,
             "file.properties",
             SEPARATOR,
             "file.close",

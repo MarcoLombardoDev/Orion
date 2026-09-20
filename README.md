@@ -76,6 +76,10 @@ your original file is never touched until you press Save.
   All written as standard PDF annotations, so other readers understand them.
 - **Redaction** — drag a box over anything that must not survive. The covered
   content is deleted from the saved page, not hidden behind a rectangle.
+- **XFA forms** — the LiveCycle forms that open as "if this message is not
+  eventually replaced…" everywhere else. Orion reads the form out of the file,
+  rebuilds its layout, and writes an ordinary PDF with real, fillable fields.
+  The original is never touched, and a summary says exactly what came across.
 - **Watermarks and page numbers** — stamp a word across a run of pages, or
   number them from a `Page {n} of {total}` template, in any of six positions.
   Both are real text, and ordinary objects afterwards.

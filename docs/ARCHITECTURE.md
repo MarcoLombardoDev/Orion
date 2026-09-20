@@ -175,6 +175,18 @@ Orion/
 │   │   ├── writer.py          Document -> PDF (atomic write)
 │   │   └── operations.py      merge / split / extract / import (file level)
 │   │
+│   ├── xfa/                   ── XFA forms (Qt-free)
+│   │   ├── detector.py        what kind of form a PDF carries, from its structure
+│   │   ├── safe_xml.py        XML from an untrusted file: DOCTYPE refused outright
+│   │   ├── model.py           XfaDocument/Subform/Field/Script — no PDF library
+│   │   ├── parser.py          the template and datasets packets -> the model
+│   │   ├── layout.py          template -> pages; materialises existing instances
+│   │   ├── converter.py       draws the static layer, creates the AcroForm fields
+│   │   ├── analyzer.py        classifies scripts. Never executes one
+│   │   ├── validator.py       reopens the output with pypdf and checks it
+│   │   ├── report.py          visual and functional fidelity, kept apart
+│   │   └── engine.py          provider seam: native, page-copy fallback, refusal
+│   │
 │   ├── commands/              ── undo-redo (Qt-free)
 │   │   ├── base.py            Command ABC, MacroCommand
 │   │   ├── history.py         History (undo/redo stacks, clean marker)

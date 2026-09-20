@@ -5,6 +5,72 @@ All notable changes to Orion are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] — 2026-09-20
+
+Orion opens the forms that nothing else will.
+
+### Added
+- **XFA form conversion.** Some PDFs are not really PDFs: the file is a shell
+  and the form lives inside it as XML, in a format called XFA that Adobe
+  abandoned, browsers never implemented, and pdfium — which Orion renders
+  with — is not compiled to support. These documents open everywhere as a page
+  reading *"If this message is not eventually replaced by the proper contents
+  of this document…"*, and no ordinary editor will touch them.
+
+  Orion now recognises one on open and offers to rebuild it as a standard PDF:
+  the same layout, with real AcroForm fields that it and every other reader can
+  fill in. Text boxes, numbers, dates, checkboxes, either/or groups and
+  drop-downs all become their AcroForm equivalent, keeping position, size,
+  font, value, options, required and read-only. Values already in the form are
+  kept, and so are the rows already present in a repeating table.
+
+  **The original file is never modified.** Every conversion writes a new
+  document beside it.
+
+  Three modes: keep as many fields as possible (the default), make everything
+  fillable, or produce a plain document with no fields at all.
+
+- **A conversion summary that does not oversell itself.** Appearance and
+  behaviour are reported as two separate figures, because the usual outcome is
+  a form that looks identical and has lost its arithmetic — and collapsing
+  that into one "95% converted" would hide the only part the user needs to
+  check. Every count is measured from the document in hand.
+
+### How it works, and what it cannot do
+The hard case is a *dynamic* XFA, where the PDF pages carry nothing but the
+placeholder: there is no appearance to preserve, so rasterising the original —
+which is what the few tools that try do — preserves an apology. Orion instead
+reads the XFA template, works out the layout itself the way a real XFA viewer
+would, and draws it. That is the only approach that keeps anything.
+
+What is deliberately not carried over is the form's *programming*: automatic
+calculations, validation rules, sections that grow when a button is pressed.
+An XFA form addresses a live object model — subforms, instance managers, SOM
+expressions — that a standard PDF form does not have, so a translated script
+would compile and refer to nothing. Buttons are drawn rather than recreated,
+because a button that looks live and does nothing is worse than one that
+plainly is not. The summary names each loss in terms of what the user will
+notice.
+
+No new dependency was needed. pypdf reads the XFA package, reportlab draws the
+page and creates the fields; both were already here.
+
+### Security
+XFA packets are XML from an untrusted file, so the parser refuses rather than
+mitigates: a `<!DOCTYPE` declaration is rejected outright, which closes XXE,
+billion-laughs and quadratic-blowup in one rule, since all three need one and
+no real XFA has one. External references are refused, entity declarations are
+refused, and there are size and depth caps. **No XFA script is ever executed** —
+not during parsing, analysis or conversion. They are read as text, classified,
+and reported.
+
+### Fixed
+- **Interactive PDF forms now show their contents.** pdfium keeps form field
+  appearances behind a form-fill environment that has to be asked for, and
+  Orion never asked — so every ordinary AcroForm has been opening with empty
+  boxes. Found while checking that a converted XFA was visible in Orion
+  itself; it was just as true before, for any form.
+
 ## [1.7.1] — 2026-09-19
 
 ### Fixed

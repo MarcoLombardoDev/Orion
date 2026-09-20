@@ -30,7 +30,7 @@ import orion
 PACKAGE_ROOT = Path(orion.__file__).resolve().parent
 
 #: Packages that must never import Qt, at module level or inside a function.
-QT_FREE_PACKAGES = ("document", "commands", "utils", "pdf")
+QT_FREE_PACKAGES = ("document", "commands", "utils", "pdf", "xfa")
 
 #: Modules whose import must not pull Qt in, even transitively.
 QT_FREE_IMPORTS = (

@@ -1831,3 +1831,136 @@ class TestTheCommandPalette:
         pump(qapp)
         available = [a for a in window._actions.all() if a.isEnabled() and a.text()]
         assert len(rank_actions(list(window._actions.all()), "")) == len(available)
+
+
+class TestXfaInTheWindow:
+    """Opening an XFA form, and being offered something useful about it."""
+
+    @staticmethod
+    def _xfa(tmp_path):
+        from tests.xfa_fixtures import build_reference_form
+
+        return build_reference_form(tmp_path / "form.pdf")
+
+    def test_opening_one_offers_the_conversion(self, window, qapp, tmp_path, monkeypatch):
+        """The offer has to come *before* the document opens.
+
+        A dynamic XFA's pages are a placeholder, so opening first and asking
+        afterwards would show the user a blank page and then explain it.
+        """
+        from orion.ui.dialogs import xfa_dialog
+
+        asked = {}
+
+        def fake_exec(self):
+            asked["summary"] = True
+            self._choice = xfa_dialog.XfaPromptDialog.CANCELLED
+            return 0  # rejected
+
+        monkeypatch.setattr(xfa_dialog.XfaPromptDialog, "exec", fake_exec)
+        assert window.open_path(self._xfa(tmp_path)) is False
+        assert asked, "the user was never asked"
+        assert window.session is None, "the form was opened anyway"
+
+    def test_choosing_read_only_opens_the_original(self, window, qapp, tmp_path, monkeypatch):
+        from orion.ui.dialogs import xfa_dialog
+
+        source = self._xfa(tmp_path)
+
+        def fake_exec(self):
+            self._choice = xfa_dialog.XfaPromptDialog.READ_ONLY
+            return 1
+
+        monkeypatch.setattr(xfa_dialog.XfaPromptDialog, "exec", fake_exec)
+        assert window.open_path(source) is True
+        pump(qapp)
+        assert window.session is not None
+        assert window.session.path == source
+
+    def test_converting_opens_the_new_document_and_leaves_the_original(
+        self, window, qapp, tmp_path, monkeypatch
+    ):
+        from orion.ui.dialogs import xfa_dialog
+
+        source = self._xfa(tmp_path)
+        before = source.read_bytes()
+
+        def accept(self):
+            self._choice = xfa_dialog.XfaPromptDialog.CONVERT
+            return 1
+
+        monkeypatch.setattr(xfa_dialog.XfaPromptDialog, "exec", accept)
+        monkeypatch.setattr(xfa_dialog.XfaReportDialog, "exec", lambda self: 1)
+
+        assert window.open_path(source) is True
+        pump(qapp)
+        assert window.session is not None
+        assert window.session.path != source, "the original was opened, not the conversion"
+        assert window.session.path.exists()
+        assert source.read_bytes() == before, "the original was modified"
+
+    def test_the_converted_document_is_editable_in_orion(
+        self, window, qapp, tmp_path, monkeypatch
+    ):
+        """The point of the whole feature: Orion's own tools work on the result."""
+        from orion.document.objects import TextObject
+        from orion.ui.dialogs import xfa_dialog
+
+        def accept(self):
+            self._choice = xfa_dialog.XfaPromptDialog.CONVERT
+            return 1
+
+        monkeypatch.setattr(xfa_dialog.XfaPromptDialog, "exec", accept)
+        monkeypatch.setattr(xfa_dialog.XfaReportDialog, "exec", lambda self: 1)
+        window.open_path(self._xfa(tmp_path))
+        pump(qapp)
+
+        _drag(window, Tool.TEXT, (60.0, 400.0), (260.0, 430.0))
+        pump(qapp)
+        texts = [o for o in window.session.document[0].objects if isinstance(o, TextObject)]
+        assert texts, "a text box could not be added to the converted form"
+
+    def test_an_ordinary_pdf_is_opened_without_being_asked_about(
+        self, window, qapp, sample_pdf, monkeypatch
+    ):
+        """Detection runs on every open; it must stay out of the way."""
+        from orion.ui.dialogs import xfa_dialog
+
+        def explode(self):  # pragma: no cover - must never run
+            raise AssertionError("the XFA dialog appeared for a plain PDF")
+
+        monkeypatch.setattr(xfa_dialog.XfaPromptDialog, "exec", explode)
+        assert window.open_path(sample_pdf) is True
+        pump(qapp)
+        assert window.session is not None
+
+    def test_the_prompt_lists_what_the_form_holds(self, window, qapp, tmp_path):
+        from orion.ui.dialogs import XfaPromptDialog
+        from orion.xfa import inspect_form, parse_xfa, summarise_form
+
+        document = parse_xfa(inspect_form(self._xfa(tmp_path)).packets)
+        dialog = XfaPromptDialog("form.pdf", summarise_form(document), window)
+        try:
+            labels = [w.text() for w in dialog.findChildren(QLabel)]
+            assert any("fields" in text or "campi" in text for text in labels)
+            assert dialog.mode is not None
+        finally:
+            dialog.deleteLater()
+
+    def test_the_report_dialog_does_not_overstate_the_result(self, window, tmp_path):
+        """A conversion that lost the form's behaviour must not read as complete."""
+        from orion.ui.dialogs import XfaReportDialog
+        from orion.xfa import convert_xfa
+
+        result = convert_xfa(self._xfa(tmp_path), tmp_path / "out.pdf")
+        dialog = XfaReportDialog(result.report, window)
+        try:
+            headline = dialog.findChildren(QLabel)[0].text().lower()
+            assert "could not be carried over" in headline or "non è stata trasferita" in headline
+        finally:
+            dialog.deleteLater()
+
+    def test_the_convert_action_exists_and_needs_no_document(self, window):
+        action = window._actions["file.convert_form"]
+        assert action is not None
+        assert action.isEnabled(), "converting a form is how you open one"
