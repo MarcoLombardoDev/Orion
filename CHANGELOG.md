@@ -64,6 +64,43 @@ refused, and there are size and depth caps. **No XFA script is ever executed** �
 not during parsing, analysis or conversion. They are read as text, classified,
 and reported.
 
+### Tested against a real form
+The feature was finished against a genuine LiveCycle document — a one-page
+request form with nineteen fields, a growable table and seven scripts — and
+several things only that file could have shown:
+
+- Most of a real form declares a **minimum** height and no height at all. Read
+  literally, every one of those elements is zero high, and a flowed section
+  stacks all of them on the same line; the lower half of the form arrived as
+  three rows of overlapping words. The minimum is the size the form opens at,
+  so that is the size that is laid out.
+- **Tables** lay their rows out across, not down, and the cells take their
+  width and position from the table's own column list rather than from
+  anything they carry themselves.
+- A page's **header, footer and title** live in the page area rather than in
+  the form, so walking the form alone produced a document with its masthead
+  missing.
+- A **drop-down with nothing chosen** could not be written at all: the
+  library refuses one. It is now written with the first option selected and
+  then emptied — value, default value *and* the drawn appearance, because
+  clearing the first two alone leaves a form that reads "SMARTPHONE" on screen
+  and reports itself empty to everything that opens it.
+- Fields the form **hides until a script reveals them** are now shown, since
+  the script that would reveal them is not coming across and the field would
+  otherwise be lost for good. The summary counts them. A static conversion
+  still shows what the form showed.
+- **Pictures** are pointed at by file name — in this document a Windows path
+  on the author's machine. Orion does not open what a document names, so the
+  space is left blank and counted as an appearance the page lost, rather than
+  dropped in silence.
+- The library writes the form's default resources with the same key twice, and
+  every reader keeps one of the two — the one they drop being the font that
+  every field asks for. The two are merged before the file is finished.
+
+Appearance and behaviour are also scored more carefully: a field that is drawn
+in the right place but cannot be typed into is a loss of behaviour, and used to
+count against the appearance as well.
+
 ### Fixed
 - **Interactive PDF forms now show their contents.** pdfium keeps form field
   appearances behind a form-fill environment that has to be asked for, and

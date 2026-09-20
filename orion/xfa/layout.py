@@ -23,6 +23,11 @@ XFA lays out in two modes and the tree mixes them freely:
   its own ``y`` is an offset from that running position rather than from the
   parent's origin. A flowed subform's height is what its content came to, not
   what the attribute claims.
+* **table** and **row** — a table flows its rows downwards like ``tb``; a row
+  flows its cells *across*, each to the right of the last. Cells almost never
+  carry an ``x``, because their position is the sum of the widths before them.
+  Treating a row as positioned puts every cell at the same place, which reads
+  as one line of overlapping words where the table should be.
 
 Repeatable subforms are materialised here, once per instance that the form
 already has. That is the honest half of the dynamic story: the instances that
@@ -52,6 +57,11 @@ from orion.xfa.model import (
 __all__ = ["LaidOutForm", "PlacedPage", "paginate", "rect_to_pdf", "resolve_layout"]
 
 log = logging.getLogger(__name__)
+
+#: What to give a table row whose cells all declare a width and no height.
+#: Roughly one line of 10pt text with room around it, which is what such a
+#: row comes out as in a real viewer.
+DEFAULT_ROW_HEIGHT = 18.0
 
 #: A guard against a template that would otherwise paginate forever.
 MAX_PAGES = 200
@@ -93,6 +103,15 @@ class LaidOutForm:
     @property
     def draws(self) -> list[XfaDraw]:
         return [d for page in self.pages for d in page.draws]
+
+
+def _sized(rect: XfaRect, height: float = 0.0, width: float = 0.0) -> XfaRect:
+    """*rect*, filled out with a height or width it does not have of its own."""
+    if height > 0 and rect.height <= 0:
+        rect = XfaRect(rect.x, rect.y, rect.width, height)
+    if width > 0 and rect.width <= 0:
+        rect = XfaRect(rect.x, rect.y, width, rect.height)
+    return rect
 
 
 def _default_page(pages: list[XfaPageArea], index: int) -> XfaPageArea:
@@ -142,6 +161,11 @@ class _Layout:
         page = PlacedPage(width=area.width, height=area.height)
         self.result.pages.append(page)
         self._cursor = area.margin_top
+        # The page's own furniture goes down first, at the page corner rather
+        # than inside the content area, and again on every page: that is what
+        # makes it furniture rather than content.
+        if area.furniture.content:
+            self._walk(area.furniture, 0.0, 0.0, 0)
         return page
 
     @property
@@ -157,25 +181,55 @@ class _Layout:
         return self._page.height - area.margin_top - self._cursor
 
     # -- placing -----------------------------------------------------------
-    def _place_field(self, item: XfaField, dx: float, dy: float, instance: int) -> None:
+    def _place_field(
+        self,
+        item: XfaField,
+        dx: float,
+        dy: float,
+        instance: int,
+        height: float = 0.0,
+        width: float = 0.0,
+        hidden: bool = False,
+    ) -> None:
         placed = XfaField(**{k: getattr(item, k) for k in item.__slots__})
-        placed.rect = item.rect.translated(dx, dy)
+        placed.rect = _sized(item.rect.translated(dx, dy), height, width)
         placed.page = self._page_index
         placed.instance = instance
+        placed.hidden = item.hidden or hidden
         self._page.fields.append(placed)
 
-    def _place_button(self, item: XfaButton, dx: float, dy: float, instance: int) -> None:
+    def _place_button(
+        self,
+        item: XfaButton,
+        dx: float,
+        dy: float,
+        instance: int,
+        height: float = 0.0,
+        width: float = 0.0,
+        hidden: bool = False,
+    ) -> None:
         placed = XfaButton(**{k: getattr(item, k) for k in item.__slots__})
-        placed.rect = item.rect.translated(dx, dy)
+        placed.rect = _sized(item.rect.translated(dx, dy), height, width)
         placed.page = self._page_index
         placed.instance = instance
+        placed.hidden = item.hidden or hidden
         self._page.buttons.append(placed)
 
-    def _place_draw(self, item: XfaDraw, dx: float, dy: float, instance: int) -> None:
+    def _place_draw(
+        self,
+        item: XfaDraw,
+        dx: float,
+        dy: float,
+        instance: int,
+        height: float = 0.0,
+        width: float = 0.0,
+        hidden: bool = False,
+    ) -> None:
         placed = XfaDraw(**{k: getattr(item, k) for k in item.__slots__})
-        placed.rect = item.rect.translated(dx, dy)
+        placed.rect = _sized(item.rect.translated(dx, dy), height, width)
         placed.page = self._page_index
         placed.instance = instance
+        placed.hidden = item.hidden or hidden
         self._page.draws.append(placed)
 
     # -- the walk ----------------------------------------------------------
@@ -197,17 +251,73 @@ class _Layout:
             bottom = max(bottom, child.rect.y + self._content_height(child))
         return bottom
 
-    def _walk(self, subform: XfaSubform, dx: float, dy: float, instance: int) -> float:
+    def _content_width(self, subform: XfaSubform) -> float:
+        """How wide a subform's content comes to — a row's cursor step."""
+        if subform.rect.width > 0:
+            return subform.rect.width
+        right = 0.0
+        for child in subform.content:
+            if isinstance(child, XfaSubform):
+                right = max(right, child.rect.x + self._content_width(child))
+            else:
+                rect = getattr(child, "rect", XfaRect())
+                right = max(right, rect.x + rect.width)
+        return right
+
+    @staticmethod
+    def _column(columns: tuple[float, ...], index: int) -> float:
+        """The width of column *index*, or 0 when the table does not say."""
+        return columns[index] if index < len(columns) else 0.0
+
+    def _row_height(self, subform: XfaSubform) -> float:
+        """How tall one table row is: its tallest cell.
+
+        Cells in a row routinely declare a width and no height at all, so
+        without this they would be placed as zero-height boxes — present in
+        the file and impossible to click.
+        """
+        if subform.rect.height > 0:
+            return subform.rect.height
+        tallest = 0.0
+        for child in subform.content:
+            if isinstance(child, XfaSubform):
+                tallest = max(tallest, self._content_height(child))
+            else:
+                tallest = max(tallest, getattr(child, "rect", XfaRect()).height)
+        return tallest if tallest > 0 else DEFAULT_ROW_HEIGHT
+
+    def _walk(
+        self,
+        subform: XfaSubform,
+        dx: float,
+        dy: float,
+        instance: int,
+        columns: tuple[float, ...] = (),
+        hidden: bool = False,
+    ) -> float:
         """Lay out *subform* at (*dx*, *dy*) and return the height it used.
 
         A **positioned** subform places every child at the child's own
         coordinates. A **flowed** one stacks them in document order, each
         below the last — and that includes fields and draws, not only nested
         subforms, which is why the model keeps a single ordered ``content``
-        list rather than only the typed ones.
+        list rather than only the typed ones. A **row** does the same thing
+        sideways, which is the one case where the running cursor is an ``x``.
+
+        *columns* is the enclosing table's column widths, handed down because
+        a row's cells take their width and their position from the table and
+        carry neither themselves. *hidden* travels the same way: a subform the
+        template hides hides everything inside it, and the converter needs to
+        know that about each element rather than about its ancestry.
         """
-        flowed = subform.layout.lower() in ("tb", "lr-tb")
+        hidden = hidden or subform.hidden
+        mode = subform.layout.lower()
+        across = mode in ("row", "lr")
+        flowed = mode in ("tb", "lr-tb", "table")
         used = subform.rect.height if subform.rect.height > 0 else 0.0
+        row_height = self._row_height(subform) if across else 0.0
+        below = subform.column_widths if mode == "table" else ()
+        cell = 0
         cursor = 0.0
 
         for child in subform.content:
@@ -216,10 +326,19 @@ class _Layout:
                 if child.is_repeatable:
                     self.result.instances[child.som] = count
                 for index in range(count):
+                    who = index if count > 1 else instance
+                    if across:
+                        width = self._column(columns, cell) or self._content_width(child)
+                        left = dx + cursor + child.rect.x
+                        height = self._walk(
+                            child, left, dy + child.rect.y, who, (), hidden
+                        )
+                        cursor += child.rect.x + width
+                        cell += 1
+                        used = max(used, child.rect.y + height)
+                        continue
                     top = dy + (cursor if flowed else 0.0) + child.rect.y
-                    height = self._walk(
-                        child, dx + child.rect.x, top, index if count > 1 else instance
-                    )
+                    height = self._walk(child, dx + child.rect.x, top, who, below, hidden)
                     if flowed:
                         cursor += child.rect.y + max(height, 0.0)
                         used = max(used, cursor)
@@ -227,14 +346,23 @@ class _Layout:
                         used = max(used, child.rect.y + height)
                 continue
 
+            left = dx + (cursor if across else 0.0)
             top = dy + (cursor if flowed else 0.0)
+            height = row_height if across else 0.0
+            column = self._column(columns, cell) if across else 0.0
             if isinstance(child, XfaField):
-                self._place_field(child, dx, top, instance)
+                self._place_field(child, left, top, instance, height, column, hidden)
             elif isinstance(child, XfaButton):
-                self._place_button(child, dx, top, instance)
+                self._place_button(child, left, top, instance, height, column, hidden)
             elif isinstance(child, XfaDraw):
-                self._place_draw(child, dx, top, instance)
+                self._place_draw(child, left, top, instance, height, column, hidden)
             else:  # pragma: no cover - the model has no other child kind
+                continue
+
+            if across:
+                cursor += child.rect.x + (column or max(child.rect.width, 0.0))
+                cell += 1
+                used = max(used, child.rect.y + max(child.rect.height, row_height))
                 continue
 
             reach = child.rect.y + max(child.rect.height, 0.0)

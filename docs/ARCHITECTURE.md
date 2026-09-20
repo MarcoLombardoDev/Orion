@@ -347,6 +347,18 @@ check; nothing in V1 depends on it.
 7. **Very large documents.** Page geometry is computed lazily and thumbnails are
    rendered on demand, so opening is O(1) in page count apart from reading the
    page sizes.
+8. **XFA layout is computed, not read.** A dynamic XFA's PDF pages carry only a
+   placeholder, so `xfa/layout.py` has to work out where everything goes the
+   way a viewer would — and a template says much less than it looks like it
+   does. Real forms size most elements with `minH`/`minW` rather than `h`/`w`,
+   flow their sections top-to-bottom, run table rows across using the table's
+   `columnWidths`, and keep the page's header and footer in the page area
+   rather than in the form tree. Each of those is a rule in one module, and
+   each has a test built from the shape that broke it (`TestTheShapesARealForm
+   IsMadeOf`). The risk is that a template uses a shape none of them cover; the
+   containment is that an element whose size or position cannot be worked out
+   is still drawn, and the conversion report counts what could not be
+   reproduced instead of claiming a clean result.
 
 ## 9. Deliberately out of scope for V1
 

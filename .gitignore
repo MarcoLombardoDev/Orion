@@ -40,3 +40,8 @@ Thumbs.db
 *.orion.tmp
 *.orion-recovery.json
 *.orion-recovery.json.meta
+
+# Reference documents for the XFA tests
+# Real forms belonging to whoever sent them; the tests skip when they are not
+# here, so they stay out of a public repository.
+tests/data/

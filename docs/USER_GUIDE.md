@@ -351,8 +351,21 @@ PDF with no fields at all. Useful when you only need to read or print it.
 | **Adding new rows to a repeating table** | **Lost** |
 | **Automatic calculations and checks** | **Lost** |
 | **Buttons** | **Shown, but they no longer do anything** |
+| **Logos and pictures** | **Left out** |
 
-The last three are not an oversight. An XFA form carries a small program, and
+Pictures are a case of their own: a form does not usually keep them inside the
+file, it points at them by file name on the machine it was designed on. Orion
+does not open files a document asks it to, so the space is left blank and the
+summary says how many were lost.
+
+Fields that the form only shows in certain cases — a date that appears once
+you tick a box — are **always shown** in the converted document. The rule that
+decided when to show them is part of the form's programming and cannot come
+across, so a hidden field would be one nothing could ever reveal again. A
+document converted with *cannot be filled in* is the exception: it stands in
+for the printed form, so it shows what the form showed.
+
+The three losses above are not an oversight. An XFA form carries a small program, and
 standard PDF forms have nowhere to put it — there is no equivalent of a
 section that grows when you press a button. Orion keeps everything the form
 *contains* and tells you plainly what it can no longer *do*.

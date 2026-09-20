@@ -35,18 +35,35 @@ from orion.xfa import (
 from orion.xfa.layout import resolve_layout
 from orion.xfa.model import XfaFieldType, XfaScriptKind
 from orion.xfa.parser import parse_measurement
-from orion.xfa.report import Fidelity
+from orion.xfa.report import Fidelity, XfaConversionReport
 from orion.xfa.safe_xml import XmlRejected, parse_xml
 from orion.xfa.validator import opens_in_orion
 from tests.xfa_fixtures import (
     build_acroform_pdf,
+    build_awkward_form,
     build_plain_pdf,
     build_reference_form,
     build_xfa_pdf,
+    dynamic_template,
     static_template,
 )
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
+
+
+def _page_text(path) -> str:
+    """The text a reader finds on the first page of *path*.
+
+    Read with pdfium rather than with the model, so the assertion is about the
+    file somebody will open and not about what the converter believes it wrote.
+    """
+    import pypdfium2 as pdfium
+
+    document = pdfium.PdfDocument(str(path))
+    try:
+        return document[0].get_textpage().get_text_range()
+    finally:
+        document.close()
 
 #: The document this feature was asked for. Not in the repository — it is
 #: somebody's real form — so the tests that need it skip until it is put here.
@@ -493,6 +510,35 @@ class TestTheReport:
         assert report.visual_fidelity is Fidelity.FULL
         assert report.functional_fidelity is Fidelity.PARTIAL
 
+    def test_a_field_kept_as_static_is_not_a_loss_of_appearance(self):
+        """Drawn but not fillable is a loss of behaviour, and only that.
+
+        The real reference form has three protected signature fields. They are
+        painted onto the page exactly where they belong, so the document looks
+        right; what they lost is the ability to be typed into. Charging that to
+        the appearance would report a faithfully reproduced form as visually
+        partial — the single misleading number this class exists to prevent.
+        """
+        report = XfaConversionReport(
+            output_file="out.pdf",
+            total_xfa_fields=19,
+            converted_fields=16,
+            static_elements=16,
+            unsupported_elements=3,
+        )
+        assert report.visual_fidelity is Fidelity.FULL
+        assert report.functional_fidelity is not Fidelity.FULL
+
+    def test_something_that_could_not_be_drawn_is_a_loss_of_appearance(self):
+        report = XfaConversionReport(
+            output_file="out.pdf",
+            total_xfa_fields=4,
+            converted_fields=4,
+            static_elements=6,
+            undrawn_elements=4,
+        )
+        assert report.visual_fidelity in (Fidelity.PARTIAL, Fidelity.LOW)
+
     def test_losing_the_dynamic_behaviour_is_stated(self, converted):
         text = " ".join(str(e) for e in converted.report.entries).lower()
         assert "script" in text
@@ -579,6 +625,143 @@ class TestTheEngineChoice:
     def test_a_converted_document_is_no_longer_xfa(self, converted):
         """Otherwise Orion would offer to convert its own output for ever."""
         assert detect_form_type(converted.output) is PdfFormType.ACROFORM
+
+
+# == 15b: the shapes the real document turned out to be made of ============
+class TestTheShapesARealFormIsMadeOf:
+    """Regressions, every one of them found by converting the genuine file.
+
+    A fixture built to be tidy never produced any of these; the document did.
+    """
+
+    @pytest.fixture(scope="class")
+    def awkward(self, tmp_path_factory):
+        return build_awkward_form(tmp_path_factory.mktemp("awkward") / "awkward.pdf")
+
+    @pytest.fixture(scope="class")
+    def laid_out(self, awkward):
+        return resolve_layout(parse_xfa(inspect_form(awkward).packets))
+
+    def test_a_field_with_only_a_minimum_height_still_has_one(self, laid_out):
+        """``minH`` and no ``h`` is how most of a real flowed form is written."""
+        assert all(f.rect.height > 0 for f in laid_out.fields)
+
+    def test_flowed_fields_stack_instead_of_piling_up(self, laid_out):
+        """The bug this is named after put six fields on the same line."""
+        by_name = {f.name: f for f in laid_out.fields}
+        first, second = by_name["first"], by_name["second"]
+        assert second.rect.y >= first.rect.y + first.rect.height
+
+    def test_table_cells_sit_side_by_side_at_the_table_s_columns(self, laid_out):
+        by_name = {f.name: f for f in laid_out.fields}
+        device, kind, from_ = by_name["device"], by_name["kind"], by_name["from"]
+        assert device.rect.y == kind.rect.y == from_.rect.y
+        assert (device.rect.width, kind.rect.width, from_.rect.width) == (100.0, 150.0, 90.0)
+        assert kind.rect.x == device.rect.x + 100.0
+        assert from_.rect.x == kind.rect.x + 150.0
+
+    def test_the_headings_line_up_with_the_cells_beneath_them(self, laid_out):
+        headings = {d.text: d for d in laid_out.draws if d.text in ("Device", "Kind", "From")}
+        by_name = {f.name: f for f in laid_out.fields}
+        assert headings["Device"].rect.x == by_name["device"].rect.x
+        assert headings["Kind"].rect.x == by_name["kind"].rect.x
+        assert headings["From"].rect.x == by_name["from"].rect.x
+
+    def test_hiding_a_subform_hides_what_is_inside_it(self, laid_out):
+        by_name = {f.name: f for f in laid_out.fields}
+        assert by_name["conditional"].hidden
+        assert by_name["alsoHidden"].hidden
+        assert not by_name["first"].hidden
+
+    def test_a_hidden_field_is_kept_when_fields_are_kept(self, awkward, tmp_path):
+        """Nothing can reveal it any more, so hiding it would lose it for good."""
+        out = tmp_path / "kept.pdf"
+        report = convert_xfa(awkward, out, mode=ConversionMode.KEEP_FIELDS).report
+        assert report.hidden_fields_shown == 2
+        names = validate_converted_pdf(out).field_names
+        assert any(name.endswith("conditional") for name in names)
+
+    def test_a_static_copy_shows_what_the_form_showed(self, awkward, tmp_path):
+        out = tmp_path / "static.pdf"
+        report = convert_xfa(awkward, out, mode=ConversionMode.STATIC).report
+        assert report.hidden_fields_shown == 0
+        text = _page_text(out)
+        assert "Only sometimes" not in text
+        assert "First" in text
+
+    def test_the_page_s_own_furniture_is_drawn(self, awkward, tmp_path):
+        """The header and footer live in the page area, not in the form tree."""
+        out = tmp_path / "furniture.pdf"
+        convert_xfa(awkward, out)
+        assert "Internal form - version 2" in _page_text(out)
+
+    def test_a_field_in_the_page_header_is_filled_from_the_data(self, laid_out):
+        title = next(f for f in laid_out.fields if f.name == "Title")
+        assert title.value == "REAL TITLE FROM THE DATA"
+
+    def test_an_image_is_never_fetched_and_never_silently_dropped(
+        self, awkward, tmp_path
+    ):
+        """The href is a path on the form author's machine. It stays unopened.
+
+        Counting it is the other half: a page missing its logo is a page that
+        does not look like the form, and the appearance figure has to say so.
+        """
+        out = tmp_path / "image.pdf"
+        report = convert_xfa(awkward, out).report
+        assert report.undrawn_elements == 1
+        assert any("image" in w.message.lower() for w in report.warnings)
+        assert report.visual_fidelity is not Fidelity.FULL
+
+
+class TestTheFileTheConverterWrites:
+    """Checks on the bytes, not on the model that produced them."""
+
+    def test_an_unset_drop_down_is_empty_in_every_way(self, tmp_path):
+        """reportlab will not write a choice field with no value in it.
+
+        Working around that by preselecting the first option and stripping it
+        afterwards is only honest if *everything* goes: the value, the default
+        value and the appearance stream that still draws it. A form that looks
+        filled in and reports itself empty is worse than one that crashed.
+        """
+        from pypdf import PdfReader
+
+        source = build_xfa_pdf(tmp_path / "blank.pdf", dynamic_template(), data={})
+        out = tmp_path / "blank-converted.pdf"
+        convert_xfa(source, out)
+
+        reader = PdfReader(str(out))
+        choices = {
+            name: spec
+            for name, spec in (reader.get_fields() or {}).items()
+            if str(spec.get("/FT")) == "/Ch"
+        }
+        assert choices, "the fixture has a choice field"
+        for name, spec in choices.items():
+            assert spec.get("/V") in (None, ""), name
+            assert spec.get("/DV") in (None, ""), name
+            assert len(spec.get("/Opt") or []) >= 3, name
+        assert "Laptop" not in _page_text(out)
+
+    def test_the_default_resources_name_every_font_the_fields_use(self, tmp_path):
+        """reportlab writes ``/Font`` twice in ``/DR``; readers keep one.
+
+        The one they drop is the one the fields' ``/DA`` asks for, which
+        leaves a viewer with no font to redraw a field's text with.
+        """
+        from pypdf import PdfReader
+
+        source = build_xfa_pdf(tmp_path / "fonts.pdf", dynamic_template())
+        out = tmp_path / "fonts-converted.pdf"
+        convert_xfa(source, out)
+
+        raw = out.read_bytes()
+        block = raw[raw.index(b"/DR") : raw.index(b"/DR") + 400]
+        assert block.count(b"/Font") == 1, "the duplicate key is back"
+
+        resources = PdfReader(str(out)).trailer["/Root"]["/AcroForm"]["/DR"]
+        assert "/Helv" in resources["/Font"]
 
 
 # == 16: the real document =================================================

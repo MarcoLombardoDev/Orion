@@ -257,6 +257,9 @@ class XfaField:
     border_width: float = 0.0
     border_color: tuple[float, float, float] = (0.0, 0.0, 0.0)
     fill_color: tuple[float, float, float] | None = None
+    #: The template hides this until something reveals it — see
+    #: :func:`orion.xfa.parser.is_hidden`.
+    hidden: bool = False
 
     @property
     def has_scripts(self) -> bool:
@@ -298,6 +301,7 @@ class XfaButton:
     scripts: tuple[XfaScript, ...] = ()
     parent_som: str = ""
     instance: int = 0
+    hidden: bool = False
 
 
 @dataclass(slots=True)
@@ -307,8 +311,13 @@ class XfaSubform:
     name: str = ""
     som: str = ""
     rect: XfaRect = field(default_factory=XfaRect)
-    #: ``position`` places children by coordinate; ``tb``/``lr-tb`` flow them.
+    #: ``position`` places children by coordinate; ``tb``/``lr-tb`` flow them;
+    #: ``table`` stacks rows and ``row`` runs its cells across.
     layout: str = "position"
+    #: A table's column widths in points, in order. Cells take their width and
+    #: their horizontal position from these rather than from their own ``x``,
+    #: which they normally do not have.
+    column_widths: tuple[float, ...] = ()
     occur: XfaOccur = field(default_factory=XfaOccur)
     children: list[XfaSubform] = field(default_factory=list)
     fields: list[XfaField] = field(default_factory=list)
@@ -324,6 +333,9 @@ class XfaSubform:
     #: True when this subform begins a new page in the template.
     page_break_before: bool = False
     instance: int = 0
+    #: The template hides this subform, and everything in it, until something
+    #: reveals it.
+    hidden: bool = False
 
     @property
     def is_repeatable(self) -> bool:
@@ -366,6 +378,7 @@ class XfaDraw:
     fill_color: tuple[float, float, float] | None = None
     parent_som: str = ""
     instance: int = 0
+    hidden: bool = False
 
 
 @dataclass(slots=True)
@@ -377,6 +390,11 @@ class XfaPageArea:
     height: float = 841.89
     margin_left: float = 0.0
     margin_top: float = 0.0
+    #: What the page itself carries rather than the form: the header band, the
+    #: logo, the page number. XFA calls a page area's own children furniture,
+    #: and it repeats on every page the area is used for. Positioned against
+    #: the page corner, not against the content area.
+    furniture: XfaSubform = field(default_factory=XfaSubform)
 
 
 @dataclass(slots=True)
@@ -404,16 +422,26 @@ class XfaDocument:
     warnings: list[str] = field(default_factory=list)
 
     @property
+    def _containers(self) -> list[XfaSubform]:
+        """The form's tree, and every page area's furniture with it.
+
+        Page furniture is part of the document even though it sits outside the
+        subform tree — the title in a page's header is a field like any other,
+        and the data packet has a value for it.
+        """
+        return [self.template.root] + [area.furniture for area in self.template.pages]
+
+    @property
     def fields(self) -> list[XfaField]:
-        return self.template.root.all_fields()
+        return [f for container in self._containers for f in container.all_fields()]
 
     @property
     def buttons(self) -> list[XfaButton]:
-        return self.template.root.all_buttons()
+        return [b for container in self._containers for b in container.all_buttons()]
 
     @property
     def draws(self) -> list[XfaDraw]:
-        return self.template.root.all_draws()
+        return [d for container in self._containers for d in container.all_draws()]
 
     @property
     def scripts(self) -> list[XfaScript]:

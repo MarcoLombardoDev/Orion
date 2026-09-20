@@ -54,7 +54,7 @@ from orion.xfa.model import (
 )
 from orion.xfa.safe_xml import XmlRejected, local_name, parse_xml
 
-__all__ = ["parse_measurement", "parse_xfa"]
+__all__ = ["is_hidden", "parse_measurement", "parse_xfa"]
 
 log = logging.getLogger(__name__)
 
@@ -142,12 +142,50 @@ def _text_of(node: Element | None) -> str:
 
 
 def _rect_of(node: Element) -> XfaRect:
+    """The box an element declares, in points.
+
+    An element that grows with its content carries ``minW``/``minH`` and no
+    ``w``/``h`` at all — which is how most of a real flowed form is written.
+    Reading only ``w``/``h`` gives such an element a height of zero, and a
+    flowed parent then stacks every one of its children on the same line: the
+    whole lower half of a form collapsed into three overlapping rows. The
+    minimum is the size the form opens at, so it is the size to lay out.
+    """
     return XfaRect(
         x=parse_measurement(node.get("x")),
         y=parse_measurement(node.get("y")),
-        width=parse_measurement(node.get("w")),
-        height=parse_measurement(node.get("h")),
+        width=max(parse_measurement(node.get("w")), parse_measurement(node.get("minW"))),
+        height=max(parse_measurement(node.get("h")), parse_measurement(node.get("minH"))),
     )
+
+
+def is_hidden(node: Element) -> bool:
+    """Does the template hide this element when the form opens?
+
+    ``presence="hidden"`` and ``presence="inactive"`` both mean "not on the
+    page", and a real form uses them heavily: a field appears only once a
+    script decides it applies. Orion records the fact rather than acting on
+    it, because what to do about it depends on the conversion mode — see
+    :mod:`orion.xfa.converter`. ``invisible`` is deliberately not in this
+    list: it means the element takes its space and draws nothing, so it is
+    still part of the layout.
+    """
+    return node.get("presence") in ("hidden", "inactive")
+
+
+def _column_widths_of(node: Element) -> tuple[float, ...]:
+    """``columnWidths="36mm 39mm 39mm 39mm"`` -> the widths in points.
+
+    A table declares its columns once and its rows then declare nothing but
+    their cells, so this is the only place the geometry of a table exists.
+    """
+    raw = node.get("columnWidths")
+    if not raw:
+        return ()
+    widths = [parse_measurement(part) for part in raw.split()]
+    # A zero-width column is kept: dropping it would shift every cell after
+    # it one column to the left.
+    return tuple(widths) if any(w > 0 for w in widths) else ()
 
 
 def _colour_of(text: str | None, default=(0.0, 0.0, 0.0)) -> tuple[float, float, float]:
@@ -340,6 +378,7 @@ def _parse_field(node: Element, parent_som: str, font: XfaFont) -> XfaField | Xf
             font=own_font,
             scripts=scripts,
             parent_som=parent_som,
+            hidden=is_hidden(node),
         )
 
     value_node = _child(node, "value")
@@ -387,6 +426,7 @@ def _parse_field(node: Element, parent_som: str, font: XfaFont) -> XfaField | Xf
         border_width=border_width,
         border_color=border_colour,
         fill_color=fill_colour,
+        hidden=is_hidden(node),
     )
 
     # A checkbox whose UI declares more than two states is a radio member in
@@ -484,6 +524,7 @@ def _parse_draw(node: Element, parent_som: str, font: XfaFont) -> XfaDraw:
         line_color=line_colour,
         fill_color=fill_colour,
         parent_som=parent_som,
+        hidden=is_hidden(node),
     )
 
 
@@ -496,9 +537,11 @@ def _parse_subform(node: Element, parent_som: str, font: XfaFont, depth: int = 0
         som=som,
         rect=_rect_of(node),
         layout=node.get("layout", "position"),
+        column_widths=_column_widths_of(node),
         occur=_occur_of(node),
         scripts=_scripts_of(node, som),
         page_break_before=_child(node, "breakBefore") is not None,
+        hidden=is_hidden(node),
     )
 
     for child in node:
@@ -595,8 +638,39 @@ def _parse_page_areas(template_root: Element) -> list[XfaPageArea]:
         if content is not None:
             area.margin_left = parse_measurement(content.get("x"), 0.0)
             area.margin_top = parse_measurement(content.get("y"), 0.0)
+        area.furniture = _parse_furniture(page_set, area.name)
         pages.append(area)
     return pages
+
+
+def _parse_furniture(page_set: Element, page_name: str) -> XfaSubform:
+    """A page area's own contents: the header, the logo, the page number.
+
+    These sit outside the form's subform tree — they belong to the page rather
+    than to the data — and a converter that walks only the tree produces a form
+    with its masthead missing. They are positioned against the page corner, so
+    the container is a positioned subform at the origin.
+    """
+    furniture = XfaSubform(name=page_name, som=page_name, layout="position")
+    font = XfaFont()
+    for child in page_set:
+        tag = local_name(child.tag)
+        if tag in ("subform", "area"):
+            nested = _parse_subform(child, page_name, font)
+            furniture.children.append(nested)
+            furniture.content.append(nested)
+        elif tag == "field":
+            parsed = _parse_field(child, page_name, font)
+            if isinstance(parsed, XfaButton):
+                furniture.buttons.append(parsed)
+            else:
+                furniture.fields.append(parsed)
+            furniture.content.append(parsed)
+        elif tag == "draw":
+            drawn = _parse_draw(child, page_name, font)
+            furniture.draws.append(drawn)
+            furniture.content.append(drawn)
+    return furniture
 
 
 def _collect_data(node: Element, prefix: str, into: dict[str, str]) -> None:

@@ -236,6 +236,12 @@ def _count_lines(report: XfaConversionReport) -> list[str]:
                 count=report.unsupported_elements
             )
         )
+    if report.hidden_fields_shown:
+        lines.append(
+            tr("Fields shown here that the form used to hide: {count}").format(
+                count=report.hidden_fields_shown
+            )
+        )
     if report.scripts_found:
         lines.append(
             tr("Automatic rules not carried over: {count}").format(

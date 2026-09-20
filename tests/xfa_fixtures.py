@@ -34,7 +34,9 @@ from pathlib import Path
 
 __all__ = [
     "XFA_TEMPLATE_NS",
+    "awkward_template",
     "build_acroform_pdf",
+    "build_awkward_form",
     "build_plain_pdf",
     "build_reference_form",
     "build_xfa_pdf",
@@ -325,6 +327,104 @@ def build_xfa_pdf(
     with open(path, "wb") as handle:
         writer.write(handle)
     return path
+
+
+def awkward_template() -> str:
+    """The shapes the real reference document turned out to be made of.
+
+    Every one of these broke the converter when it first met the genuine file,
+    so each is here to keep it broken-once:
+
+    * fields that declare ``minH`` and no ``h`` at all, inside a flowed
+      subform — the whole lower half of a form collapses onto one line without
+      that fallback;
+    * a table with ``columnWidths`` whose rows carry cells with no ``x``;
+    * fields and a subform the template hides until a script reveals them;
+    * page furniture — a title, a footer and a logo — which lives in the page
+      area rather than in the form's own tree;
+    * an image whose ``href`` points at a file on somebody else's machine.
+    """
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<template xmlns="{XFA_TEMPLATE_NS}">
+  <subform name="form1" layout="tb" w="595.28pt" h="841.89pt">
+    <pageSet>
+      <pageArea name="Page1">
+        <medium short="595.28pt" long="841.89pt" orientation="portrait"/>
+        <contentArea x="36pt" y="72pt" w="523.28pt" h="700pt"/>
+        <draw name="footer" x="36pt" y="800pt" w="300pt" h="12pt">
+          <value><text>Internal form - version 2</text></value>
+          <font typeface="Helvetica" size="7pt"/>
+        </draw>
+        <draw name="logo" x="36pt" y="20pt" w="80pt" h="30pt">
+          <ui><imageEdit/></ui>
+          <value><image contentType="image/png" href="..\\Assets\\Logo.png"/></value>
+        </draw>
+        <subform name="banner" layout="position" x="130pt" y="20pt" w="400pt" h="30pt">
+          <field name="Title" access="readOnly" x="0pt" y="0pt" w="400pt" h="24pt">
+            <ui><textEdit/></ui>
+            <value><text>DOCUMENT TITLE</text></value>
+            <font typeface="Helvetica" size="13pt" weight="bold"/>
+          </field>
+        </subform>
+      </pageArea>
+    </pageSet>
+
+    <subform name="flowed" layout="tb" w="500pt">
+      <subform name="one" layout="tb" w="500pt">
+        <field name="first" minH="18pt" w="500pt">
+          <ui><textEdit/></ui>
+          <caption reserve="100pt"><value><text>First</text></value></caption>
+        </field>
+      </subform>
+      <subform name="two" layout="tb" w="500pt">
+        <field name="second" minH="18pt" w="500pt">
+          <ui><textEdit/></ui>
+          <caption reserve="100pt"><value><text>Second</text></value></caption>
+        </field>
+      </subform>
+      <subform name="three" layout="tb" w="500pt" presence="hidden">
+        <field name="conditional" minH="18pt" w="500pt">
+          <ui><textEdit/></ui>
+          <caption reserve="100pt"><value><text>Only sometimes</text></value></caption>
+        </field>
+      </subform>
+      <field name="alsoHidden" minH="18pt" w="500pt" presence="hidden">
+        <ui><textEdit/></ui>
+        <caption reserve="100pt"><value><text>Hidden too</text></value></caption>
+      </field>
+
+      <subform layout="table" columnWidths="100pt 150pt 90pt" name="table">
+        <subform layout="row" name="headings">
+          <draw name="c1"><value><text>Device</text></value></draw>
+          <draw name="c2"><value><text>Kind</text></value></draw>
+          <draw name="c3"><value><text>From</text></value></draw>
+        </subform>
+        <subform layout="row" name="line">
+          <occur min="1" max="-1" initial="1"/>
+          <field name="device" minH="18pt">
+            <ui><textEdit/></ui>
+          </field>
+          <field name="kind" minH="18pt">
+            <ui><textEdit/></ui>
+          </field>
+          <field name="from" minH="18pt">
+            <ui><textEdit/></ui>
+          </field>
+        </subform>
+      </subform>
+    </subform>
+  </subform>
+</template>"""
+
+
+def build_awkward_form(path: Path) -> Path:
+    """The awkward template, with a title the datasets packet supplies."""
+    return build_xfa_pdf(
+        path,
+        awkward_template(),
+        data={"Title": "REAL TITLE FROM THE DATA", "first": "already filled in"},
+        dynamic=True,
+    )
 
 
 def build_reference_form(path: Path) -> Path:

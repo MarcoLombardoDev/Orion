@@ -109,7 +109,17 @@ class XfaConversionReport:
     total_xfa_fields: int = 0
     converted_fields: int = 0
     static_elements: int = 0
+    #: Fields that were drawn on the page but could not be made fillable.
+    #: They are visible and correctly placed, so this is a loss of behaviour
+    #: and not of appearance — the two are counted apart on purpose.
     unsupported_elements: int = 0
+    #: Elements that have no representation in the output at all. This is the
+    #: only count that means the result *looks* wrong.
+    undrawn_elements: int = 0
+
+    #: Fields the template hid and the conversion shows anyway, because the
+    #: rule that would have revealed them could not come across.
+    hidden_fields_shown: int = 0
 
     scripts_found: int = 0
     scripts_converted: int = 0
@@ -161,15 +171,26 @@ class XfaConversionReport:
         Driven by what had to be dropped rather than by what was drawn: the
         static layer is redrawn from the template, so the question is whether
         anything in it had no representation at all.
+
+        A field that could not be made fillable does **not** count against
+        this. It was still drawn, in the right place, with its value and its
+        caption — the page looks exactly as it should. What it lost is the
+        ability to be typed into, and that belongs to
+        :attr:`functional_fidelity`. Counting it here would have reported a
+        faithfully reproduced form as visually partial, which is the sort of
+        wrong number this class exists to avoid.
         """
         if self.errors:
             return Fidelity.LOW
         drawn = self.static_elements
-        if self.unsupported_elements == 0:
+        if self.undrawn_elements == 0:
             return Fidelity.FULL if drawn or self.converted_fields else Fidelity.HIGH
-        total = max(1, drawn + self.unsupported_elements)
-        lost = self.unsupported_elements / total
-        if lost < 0.05:
+        total = max(1, drawn + self.undrawn_elements)
+        lost = self.undrawn_elements / total
+        # One logo missing from a page of twenty elements is a page that looks
+        # right with a hole in it, which is "high" and not "partial"; a quarter
+        # of the page gone is not a reproduction of it at all.
+        if lost < 0.10:
             return Fidelity.HIGH
         if lost < 0.25:
             return Fidelity.PARTIAL
@@ -213,7 +234,16 @@ class XfaConversionReport:
             f"Elements kept as static content: {self.static_elements}",
         ]
         if self.unsupported_elements:
-            lines.append(f"Elements that could not be reproduced: {self.unsupported_elements}")
+            lines.append(
+                f"Fields kept as part of the page: {self.unsupported_elements}"
+            )
+        if self.undrawn_elements:
+            lines.append(f"Elements that could not be reproduced: {self.undrawn_elements}")
+        if self.hidden_fields_shown:
+            lines.append(
+                f"Fields the form used to show only in certain cases: "
+                f"{self.hidden_fields_shown} (always shown here)"
+            )
         if self.scripts_found:
             lines.append(
                 f"Scripts found: {self.scripts_found} "

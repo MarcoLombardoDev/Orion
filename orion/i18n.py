@@ -482,6 +482,8 @@ _CATALOGUE: dict[str, str] = {
         'Conserva il maggior numero di campi (consigliato)'
     ),
     'Kept as part of the page: {count}': 'Mantenuti come parte della pagina: {count}',
+    'Fields shown here that the form used to hide: {count}':
+        'Campi mostrati qui che il modulo teneva nascosti: {count}',
     'Make every field fillable': 'Rendi compilabili tutti i campi',
     'Nothing to Convert': 'Niente da convertire',
     'Open read-only': 'Apri in sola lettura',

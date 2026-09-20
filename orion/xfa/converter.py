@@ -167,6 +167,10 @@ def _caption_width(field: XfaField) -> float:
     return min(width + 6.0, max(field.rect.width * 0.5, 0.0))
 
 
+class _NotReproducible(Exception):
+    """This element has no representation in a standard PDF."""
+
+
 def _draw_static(pdf, item: XfaDraw, page_height: float) -> None:
     """Paint one non-interactive element."""
     x, y, width, height = rect_to_pdf(item.rect, page_height)
@@ -200,11 +204,12 @@ def _draw_static(pdf, item: XfaDraw, page_height: float) -> None:
         return
 
     if item.kind == "image":
-        # No image data reaches the model: XFA holds it base64 in the datasets
-        # packet under a href the template points at, and reproducing that is
-        # beyond what this pass claims. The space is left blank rather than
-        # filled with something invented.
-        return
+        # A template points at its images with an href — in the reference form
+        # a Windows path, "..\\Assets\\Logo2019.png", on a machine that is not
+        # this one. Orion does not open what a document names, so the space is
+        # left blank; the caller counts it as something the page lost, which
+        # is the honest word for it.
+        raise _NotReproducible("image")
 
     if not item.text:
         return
@@ -315,7 +320,9 @@ def _checked(field: XfaField) -> bool:
     return value in ("1", "on", "true", "yes", (field.export_value or "").strip().lower())
 
 
-def _add_widget(pdf, field: XfaField, page_height: float, name: str, radio_state) -> bool:
+def _add_widget(
+    pdf, field: XfaField, page_height: float, name: str, radio_state, blank_choices: set[str]
+) -> bool:
     """Create the AcroForm widget for *field*. True when one was made."""
     form = pdf.acroForm
     reserve = _caption_width(field)
@@ -384,6 +391,24 @@ def _add_widget(pdf, field: XfaField, page_height: float, name: str, radio_state
             if value == current:
                 chosen = value
                 break
+
+        # reportlab (through 5.0.1) cannot make an *empty* choice field: in
+        # `AcroForm._textfield` the `lbextras` dict is only built inside
+        # `if value:`, and the appearance stream is then built with
+        # `**lbextras`, so a blank list raises UnboundLocalError. A blank list
+        # is the normal state of an unfilled form, so this is not an edge
+        # case — it is every drop-down in every form nobody has filled in yet.
+        #
+        # Worked around by creating the widget with its first option selected
+        # and recording the name; `_clear_blank_choices` then strips /V and /I
+        # from those fields in the finished file. Preselecting one and leaving
+        # it would be worse than the crash: the form would come back saying
+        # the user had chosen something they never chose.
+        blank = not chosen
+        if blank:
+            chosen = options[0][1]
+            blank_choices.add(name)
+
         maker = form.listbox if field.choices.multi_select else form.choice
         maker(
             name=name,
@@ -398,6 +423,145 @@ def _add_widget(pdf, field: XfaField, page_height: float, name: str, radio_state
         return True
 
     return False
+
+
+def _merge_default_fonts(path: Path) -> None:
+    """Fold reportlab's two ``/Font`` entries in ``/DR`` into one.
+
+    reportlab writes the form's default resources as
+    ``/DR << /Font << /HeBo … >> /Font << /Helv … >> >>`` — the same key
+    twice, which no PDF dictionary may have. Readers keep whichever they meet
+    first and drop the other, so the font named in every widget's ``/DA``
+    disappears from the resources that are supposed to supply it, and a viewer
+    regenerating a field's appearance has nothing to draw the text with.
+
+    The repair is made in place and padded back to the same length, because
+    every cross-reference offset after this point is a byte count: a shorter
+    dictionary would leave the whole table pointing a few bytes past where the
+    objects are.
+    """
+    try:
+        raw = path.read_bytes()
+        start = raw.find(b"/DR <<")
+        if start < 0:
+            return
+        end = _dictionary_end(raw, raw.index(b"<<", start))
+        if end < 0:
+            return
+
+        block = raw[start:end]
+        entries = list(re.finditer(rb"/Font\s*<<(.*?)>>", block, re.S))
+        if len(entries) < 2:
+            return
+        merged = b"/Font <<" + b" ".join(e.group(1).strip() for e in entries) + b">>"
+        rebuilt = block[: entries[0].start()] + merged + block[entries[-1].end() :]
+        for entry in entries[1:-1]:
+            rebuilt = rebuilt.replace(entry.group(0), b"")
+        if len(rebuilt) > len(block):  # pragma: no cover - merging only shortens
+            return
+        rebuilt += b" " * (len(block) - len(rebuilt))
+        path.write_bytes(raw[:start] + rebuilt + raw[end:])
+    except Exception:  # pragma: no cover - the duplicate is cosmetic at worst
+        log.warning("Could not merge the form's default font resources", exc_info=True)
+
+
+def _dictionary_end(raw: bytes, start: int) -> int:
+    """The offset just past the ``>>`` that closes the dictionary at *start*."""
+    depth = 0
+    index = start
+    while index < len(raw):
+        if raw[index : index + 2] == b"<<":
+            depth += 1
+            index += 2
+        elif raw[index : index + 2] == b">>":
+            depth -= 1
+            index += 2
+            if depth == 0:
+                return index
+        else:
+            index += 1
+    return -1
+
+
+def _blank_appearance(widget, writer):
+    """A drop-down drawn empty: its box, and nothing in it.
+
+    The appearance stream reportlab built still *draws* the placeholder, so
+    clearing the value alone leaves a field that reads "SMARTPHONE" to the eye
+    and reports nothing chosen to anything that opens the file. Asking viewers
+    to rebuild the appearance instead (``/NeedAppearances``) is worse again:
+    they rebuild every widget in the document, and the borders drawn for the
+    text fields go with them. So the box is redrawn here, from the widget's own
+    colours, and only for the fields that need it.
+    """
+    from pypdf.generic import (
+        ArrayObject,
+        DecodedStreamObject,
+        DictionaryObject,
+        FloatObject,
+        NameObject,
+    )
+
+    rect = [float(v) for v in widget.get("/Rect", [0, 0, 0, 0])]
+    width = max(abs(rect[2] - rect[0]), 1.0)
+    height = max(abs(rect[3] - rect[1]), 1.0)
+
+    look = widget.get("/MK") or {}
+    border = [float(c) for c in (look.get("/BC") or [])]
+    background = [float(c) for c in (look.get("/BG") or [])]
+    line = float((widget.get("/BS") or {}).get("/W", 1.0) or 0.0)
+
+    ops: list[str] = []
+    if len(background) == 3:
+        ops.append(f"{background[0]} {background[1]} {background[2]} rg")
+        ops.append(f"0 0 {width} {height} re f")
+    if len(border) == 3 and line > 0:
+        inset = line / 2.0
+        ops.append(f"{border[0]} {border[1]} {border[2]} RG")
+        ops.append(f"{line} w")
+        ops.append(f"{inset} {inset} {width - line} {height - line} re S")
+
+    stream = DecodedStreamObject()
+    stream.set_data(("\n".join(ops) + "\n").encode("latin-1", "replace"))
+    stream[NameObject("/Type")] = NameObject("/XObject")
+    stream[NameObject("/Subtype")] = NameObject("/Form")
+    stream[NameObject("/BBox")] = ArrayObject(
+        [FloatObject(0), FloatObject(0), FloatObject(width), FloatObject(height)]
+    )
+    stream[NameObject("/Resources")] = DictionaryObject()
+    return DictionaryObject({NameObject("/N"): writer._add_object(stream)})
+
+
+def _clear_blank_choices(path: Path, names: set[str]) -> None:
+    """Undo the placeholder selection forced on us by reportlab.
+
+    Removing ``/V``, ``/DV`` and ``/I`` leaves the field exactly as an
+    untouched drop-down should be: its options intact, nothing chosen. The
+    default value matters as much as the value, because a viewer that finds no
+    value falls back to it and shows the placeholder anyway — and the drawn
+    appearance matters as much as both, which is what
+    :func:`_blank_appearance` replaces.
+    """
+    if not names:
+        return
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import NameObject
+
+    try:
+        writer = PdfWriter(clone_from=PdfReader(str(path)))
+        for page in writer.pages:
+            for annotation in page.get("/Annots") or []:
+                widget = annotation.get_object()
+                if str(widget.get("/T", "")) not in names:
+                    continue
+                for key in ("/V", "/DV", "/I"):
+                    if key in widget:
+                        del widget[NameObject(key)]
+                widget[NameObject("/AP")] = _blank_appearance(widget, writer)
+        with open(path, "wb") as handle:
+            writer.write(handle)
+    except Exception:  # pragma: no cover - a preselected list beats no file
+        log.warning("Could not clear the placeholder choice values", exc_info=True)
 
 
 def _grey(colour):
@@ -500,29 +664,57 @@ def _write(
 
     used_names: set[str] = set()
     radio_names = _RadioNames(used_names)
+    blank_choices: set[str] = set()
     converted = 0
     static = 0
+    # Fields that ended up on the page but not fillable: a loss of behaviour.
     unsupported = 0
+    # Elements that never made it onto the page at all: a loss of appearance.
+    undrawn = 0
+    # Fields the template hides and this conversion shows anyway.
+    hidden_shown = 0
+    # What kind of element had to be left out, and how many of each.
+    lost_kinds: dict[str, int] = {}
 
     pdf = canvas.Canvas(str(output_path), pagesize=(form.pages[0].width, form.pages[0].height))
     pdf.setTitle(output_path.stem)
+
+    # A real form hides fields until a script decides they apply — four of
+    # them in a form of nineteen is normal. The scripts are not coming with
+    # us, so in a mode that keeps fields the hidden ones are shown: a field
+    # nothing can ever reveal again is a field the user has lost. A static
+    # copy is a different promise — it stands in for the printed form — so
+    # there the template's own answer is kept.
+    show_hidden = mode.wants_fields
 
     for page in form.pages:
         pdf.setPageSize((page.width, page.height))
 
         for drawn in page.draws:
+            if drawn.hidden and not show_hidden:
+                continue
             try:
                 _draw_static(pdf, drawn, page.height)
                 static += 1
+            except _NotReproducible:
+                undrawn += 1
+                lost_kinds[drawn.kind] = lost_kinds.get(drawn.kind, 0) + 1
             except Exception:  # pragma: no cover - one bad element is not fatal
                 log.warning("Could not draw a static element", exc_info=True)
-                unsupported += 1
+                undrawn += 1
+                lost_kinds[drawn.kind] = lost_kinds.get(drawn.kind, 0) + 1
 
         for button in page.buttons:
+            if button.hidden and not show_hidden:
+                continue
             _draw_button(pdf, button, page.height)
             static += 1
 
         for field in page.fields:
+            if field.hidden:
+                if not show_hidden:
+                    continue
+                hidden_shown += 1
             interactive = mode.wants_fields and field.is_interactive
             if interactive:
                 name = (
@@ -532,7 +724,9 @@ def _write(
                 )
                 _draw_field_caption(pdf, field, page.height, _caption_width(field))
                 try:
-                    made = _add_widget(pdf, field, page.height, name, radio_names)
+                    made = _add_widget(
+                        pdf, field, page.height, name, radio_names, blank_choices
+                    )
                 except Exception:  # pragma: no cover - reportlab refusing a widget
                     log.warning("Could not create a widget for %s", field.som, exc_info=True)
                     made = False
@@ -546,15 +740,33 @@ def _write(
                 )
             _draw_field_as_static(pdf, field, page.height)
             static += 1
-            if mode.wants_fields and not field.is_interactive:
+            if mode.wants_fields:
+                # Reached either because the field is not fillable by nature
+                # (protected, or a type with no AcroForm equivalent) or
+                # because the widget could not be built. Both leave a field
+                # the user cannot type into, which is the same loss.
                 unsupported += 1
 
         pdf.showPage()
 
     pdf.save()
+    _merge_default_fonts(output_path)
+    _clear_blank_choices(output_path, blank_choices)
     report.converted_fields = converted
     report.static_elements = static
     report.unsupported_elements = unsupported
+    report.undrawn_elements = undrawn
+    report.hidden_fields_shown = hidden_shown
+    for kind, count in sorted(lost_kinds.items()):
+        if kind == "image":
+            report.warn(
+                f"{count} image(s) in the form could not be reproduced. The "
+                "form keeps its pictures outside the document and points at "
+                "them by file name, and Orion does not open files a document "
+                "asks it to."
+            )
+        else:  # pragma: no cover - any other kind is a drawing failure
+            report.warn(f"{count} {kind} element(s) could not be reproduced.")
 
 
 def _describe_losses(
@@ -600,6 +812,14 @@ def _describe_losses(
             f"The form has sections that could grow on demand ({detail}). The "
             "rows already in the form were kept; new ones can no longer be "
             "added by the document itself."
+        )
+
+    if report.hidden_fields_shown:
+        report.info(
+            f"{report.hidden_fields_shown} field(s) that the form showed only "
+            "in certain cases are always shown here. The rule that decided "
+            "when to show them could not be carried over, and a field nothing "
+            "can reveal again would be a field you had lost."
         )
 
     unsupported = [f for f in form.fields if not f.field_type.is_interactive]
