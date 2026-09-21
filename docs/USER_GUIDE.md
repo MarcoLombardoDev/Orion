@@ -313,6 +313,8 @@ and most editors cannot touch it, which is why these documents open as a page
 saying *"If this message is not eventually replaced by the proper contents of
 this document…"*.
 
+![A converted form in Orion](images/orion-forms.png)
+
 Orion opens one and offers to convert it:
 
 * **Convert** — rebuilds the form as an ordinary PDF: the same layout, with

@@ -161,6 +161,86 @@ def _populate(window) -> None:
     window._canvas.rebuild()
 
 
+def _form_screenshot(application, settings_dir: Path, scratch: Path) -> None:
+    """A converted XFA form, with its fields and its words as objects.
+
+    The other two pictures show Orion marking up a document; this one shows
+    the thing it does that nothing else does — take a form that opens
+    everywhere as a placeholder and turn it into a page whose fields, captions
+    and headings can all be picked up and moved.
+
+    The sample comes from the test fixtures because that is the only place in
+    the repository that can build a real XFA package: no library writes one,
+    and a second copy of that code here would drift from the one the tests
+    exercise. The two dialogs are answered in code for the same reason the
+    document is generated rather than opened from disk — a screenshot tool
+    that waits for a click is a screenshot tool nobody runs.
+    """
+    from orion.services.settings import Settings
+    from orion.ui.canvas import ZoomMode
+    from orion.ui.dialogs import xfa_dialog
+    from orion.ui.main_window import MainWindow
+    from orion.ui.theme import ThemeMode
+    from tests.xfa_fixtures import build_reference_form
+
+    def accept(dialog):
+        dialog._choice = xfa_dialog.XfaPromptDialog.CONVERT
+        return 1
+
+    original_prompt = xfa_dialog.XfaPromptDialog.exec
+    original_report = xfa_dialog.XfaReportDialog.exec
+    xfa_dialog.XfaPromptDialog.exec = accept
+    xfa_dialog.XfaReportDialog.exec = lambda dialog: 1
+    try:
+        source = build_reference_form(scratch / "device-request.pdf")
+        window = MainWindow(Settings(settings_dir / "settings-form.json"))
+        window.resize(*SIZE)
+        window.show()
+        application.processEvents()
+        if not window.open_path(source):
+            print("could not open the form sample", file=sys.stderr)
+            return
+        for _ in range(40):
+            application.processEvents()
+
+        window._apply_theme(ThemeMode.LIGHT)
+        # Fit width rather than fit page: this form fills the top of a sheet
+        # of A4, and fitting the whole page puts it in the corner of a lot of
+        # white paper.
+        window._canvas.set_zoom_mode(ZoomMode.FIT_WIDTH)
+        for _ in range(40):
+            application.processEvents()
+
+        # Three captions from the same column, so the panel shows what a group
+        # offers — align, arrange, opacity, and none of the per-object
+        # geometry — and the selection reads as something worth aligning.
+        from orion.document.objects import TextObject
+
+        page = window.session.document[0]
+        wanted = ("Applicant", "Notes", "Device")
+        captions = [
+            obj
+            for obj in page.objects
+            if isinstance(obj, TextObject) and obj.text.strip() in wanted
+        ]
+        if captions:
+            window._canvas.select_objects([obj.id for obj in captions])
+        for _ in range(40):
+            application.processEvents()
+
+        target = OUTPUT / "orion-forms.png"
+        window.grab().save(str(target), "PNG")
+        print(f"wrote {target.relative_to(REPO)}")
+
+        window._autosave_timer.stop()
+        window._detach_session()
+        window.close()
+        application.processEvents()
+    finally:
+        xfa_dialog.XfaPromptDialog.exec = original_prompt
+        xfa_dialog.XfaReportDialog.exec = original_report
+
+
 def main() -> int:
     from PySide6.QtWidgets import QApplication
 
@@ -206,6 +286,8 @@ def main() -> int:
         window._detach_session()
         window.close()
         application.processEvents()
+
+        _form_screenshot(application, scratch_path, scratch_path)
     return 0
 
 

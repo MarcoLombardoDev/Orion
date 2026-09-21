@@ -23,6 +23,14 @@ any other reader can open.
 | **Light theme** — the editor with the tool palette and the properties panel | **Dark theme** — the same document |
 | ![Orion, light theme](docs/images/orion-light.png) | ![Orion, dark theme](docs/images/orion-dark.png) |
 
+**A converted form.** This document is an XFA form: everywhere else it opens as
+a page saying *"if this message is not eventually replaced…"*. Orion rebuilt it
+as an ordinary PDF, and on the canvas every part of it is an object — the
+fields, the captions, the headings — so three labels can be selected and lined
+up like anything else.
+
+![A converted XFA form in Orion, with its fields and captions as objects](docs/images/orion-forms.png)
+
 ---
 
 ## Table of Contents
@@ -54,6 +62,13 @@ reader can open.
 It is **not** a wrapper around a web service. Everything happens on your machine, and
 your original file is never touched until you press Save.
 
+It also opens the documents that nothing else will. An **XFA form** — the kind
+that shows *"if this message is not eventually replaced…"* in every browser and
+most readers — is rebuilt as an ordinary PDF you can fill in, with a summary
+that states plainly what came across and what could not. On the page afterwards
+there is nothing you cannot pick up: its fields, its captions and its headings
+are all objects.
+
 ## Features
 
 **Viewing**
@@ -78,8 +93,20 @@ your original file is never touched until you press Save.
   content is deleted from the saved page, not hidden behind a rectangle.
 - **XFA forms** — the LiveCycle forms that open as "if this message is not
   eventually replaced…" everywhere else. Orion reads the form out of the file,
-  rebuilds its layout, and writes an ordinary PDF with real, fillable fields.
-  The original is never touched, and a summary says exactly what came across.
+  works out the layout the way an XFA viewer would, and writes an ordinary PDF
+  with real, fillable fields: text, numbers, dates, tick boxes, either/or
+  groups and drop-downs, keeping position, size, font, value, options, required
+  and read-only, along with the rows already in a repeating table.
+
+  Print, save and reset **buttons still work** — through the actions PDF has
+  for them, not through carried-over script. The rest of a form's programming
+  (calculations, rules, sections that grow on demand) cannot come across, and
+  the summary afterwards says so in as many words: appearance and behaviour are
+  reported as two separate figures, never averaged into one flattering number.
+  The original file is never touched.
+
+  **No XFA script is ever executed** — not while parsing, analysing or
+  converting — and nothing a document points at is fetched or opened.
 - **Watermarks and page numbers** — stamp a word across a run of pages, or
   number them from a `Page {n} of {total}` template, in any of six positions.
   Both are real text, and ordinary objects afterwards.
@@ -88,8 +115,17 @@ your original file is never touched until you press Save.
 - Select one or many; drag-select; Ctrl/Cmd-click to extend a selection
 - Move, resize from eight handles, and rotate freely (hold Shift to snap)
 - Arrow keys nudge, Shift+arrows nudge further
+- **Align** a selection left, right, top or bottom — everything moves to the
+  outermost edge already in the selection, and nothing is resized
 - Cut, copy, paste and duplicate — including between two Orion windows
-- Bring to front and send to back
+- Bring to front and send to back, on one object or a whole selection
+- **Form fields are objects too.** The fields of any PDF form — converted or
+  not — can be selected, moved, resized and deleted, and they keep everything
+  that makes them fields: name, options, required, read-only, tooltip. The
+  widget in the file is moved rather than rebuilt.
+- **The page's own text can be made movable**, from the button under Pan on the
+  tool palette: every line becomes a text box where it already is. A converted
+  form arrives that way, because Orion drew those words itself.
 - Unlimited, per-action undo and redo
 
 **Pages**
@@ -378,8 +414,12 @@ Not yet, but planned:
 - Several documents open at once, in tabs
 - Embedding arbitrary TrueType fonts in text objects (1.0 uses the base-14 PDF fonts)
 - Optional OCR through Tesseract, as a separate module
-- Form field editing
-- Editing the *original* text of a PDF, not only the text Orion adds
+- **Filling in** form fields from Orion. Their geometry is already editable —
+  a field can be moved, resized and deleted — but typing a value into one is a
+  reader's job for now.
+- Reflowing the *original* text of a PDF. A line, or a whole page, can be taken
+  over and retyped where it stands; what is not there is a word processor's
+  idea of a paragraph that rewraps as you type.
 
 Explicitly out of scope, permanently: AI features, cloud sync, accounts, telemetry.
 

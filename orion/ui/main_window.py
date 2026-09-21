@@ -419,6 +419,7 @@ class MainWindow(QMainWindow):
             apply_theme(app, theme)
         set_icon_theme(theme)
         self._actions.refresh_icons()
+        self._properties.refresh_icons()
         self._canvas.apply_theme(theme)
         self._pages_panel.apply_theme(theme)
         self._sync_theme_actions()

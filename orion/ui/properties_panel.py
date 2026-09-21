@@ -125,6 +125,19 @@ class PropertiesPanel(QWidget):
         self.setMinimumWidth(286)
         self.show_selection([], 0)
 
+    def refresh_icons(self) -> None:
+        """Re-tint the panel's own buttons after a theme change.
+
+        The toolbar and the menus are built from ``QAction``s and the registry
+        re-tints those; these are plain buttons the panel owns, so nobody was
+        telling them. They kept the colour they were created with, which after
+        a switch to the dark theme and back left the align and delete icons
+        drawn in the other theme's text colour — pale grey on white.
+        """
+        for edge, button in getattr(self, "_align_buttons", {}).items():
+            button.setIcon(icon(f"align_{edge}"))
+        self._delete.setIcon(icon("delete"))
+
     def retranslate(self) -> None:
         """Rebuild every section in the current language.
 
