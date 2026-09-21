@@ -40,6 +40,7 @@ from orion import APP_NAME, APP_SUBTITLE
 from orion.commands.base import MacroCommand
 from orion.commands.object_commands import (
     AddObjectCommand,
+    AlignObjectsCommand,
     DeleteObjectsCommand,
     PasteObjectsCommand,
     RaiseObjectCommand,
@@ -237,6 +238,7 @@ class MainWindow(QMainWindow):
         self._thumbnails.context_action.connect(self._on_thumbnail_action)
 
         self._properties.arrange_requested.connect(self._arrange_selection)
+        self._properties.align_requested.connect(self.align_selection)
         self._properties.delete_requested.connect(self.delete_selection)
 
         self._search.hits_changed.connect(self._canvas.set_search_hits)
@@ -272,6 +274,8 @@ class MainWindow(QMainWindow):
         connect("edit.select_all", lambda: self._canvas.select_all_on_current_page())
         connect("edit.deselect", lambda: self._canvas.clear_selection())
         connect("edit.text_movable", self.make_page_text_movable)
+        for edge in ("left", "right", "top", "bottom"):
+            connect(f"edit.align_{edge}", lambda which=edge: self.align_selection(which))
         connect("edit.bring_front", lambda: self._arrange_selection(True))
         connect("edit.send_back", lambda: self._arrange_selection(False))
         # View
@@ -743,6 +747,35 @@ class MainWindow(QMainWindow):
         finally:
             history.end_macro()
 
+    def align_selection(self, edge: str) -> None:
+        """Line the selected objects up on one edge of the selection.
+
+        Per page, because objects on two pages have no shared edge to line up
+        against — and one undo step for the lot, since a person who aligns six
+        boxes and changes their mind wants the six back, not six presses of
+        Ctrl+Z.
+        """
+        if self._session is None:
+            return
+        pages = {
+            index: ids
+            for index, ids in self._canvas.selection_by_page().items()
+            if len(ids) > 1
+        }
+        if not pages:
+            return
+
+        history = self._session.history
+        history.begin_macro(tr("Align"))
+        try:
+            for page_index, ids in pages.items():
+                history.push(
+                    AlignObjectsCommand(self._session.document, page_index, ids, edge)
+                )
+        finally:
+            history.end_macro()
+        self._properties.refresh()
+
     # -- images ------------------------------------------------------------
     def insert_image(self) -> None:
         if self._session is None:
@@ -1117,6 +1150,11 @@ class MainWindow(QMainWindow):
         "edit.cut",
         "edit.copy",
         "edit.duplicate",
+        None,
+        "edit.align_left",
+        "edit.align_right",
+        "edit.align_top",
+        "edit.align_bottom",
         None,
         "edit.bring_front",
         "edit.send_back",
@@ -1564,6 +1602,14 @@ class MainWindow(QMainWindow):
         for key in ("edit.cut", "edit.copy", "edit.duplicate", "edit.delete",
                     "edit.bring_front", "edit.send_back"):
             self._actions[key].setEnabled(has_selection)
+        # Alignment needs something to align *to*: one object is already
+        # lined up with itself, so the four entries are offered but dead
+        # until there are two.
+        can_align = any(
+            len(ids) > 1 for ids in self._canvas.selection_by_page().values()
+        )
+        for edge in ("left", "right", "top", "bottom"):
+            self._actions[f"edit.align_{edge}"].setEnabled(can_align)
         self._actions["edit.paste"].setEnabled(not self._clipboard.is_empty)
         selection = self._canvas.selected_objects()
         self._actions["tools.edit_text"].setEnabled(

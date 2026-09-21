@@ -266,6 +266,29 @@ ICONS: dict[str, tuple[Shape, ...]] = {
         Poly(((0.20, 0.78), (0.20, 0.44), (0.36, 0.20), (0.64, 0.16), (0.82, 0.34),
               (0.82, 0.60))),
     ),
+    # Alignment: the rule the objects line up against, and two bars of
+    # different lengths pushed against it — which is what the result looks
+    # like, and the reason the icons read at sixteen pixels.
+    "align_left": (
+        Line(0.16, 0.14, 0.16, 0.86),
+        Box(0.24, 0.24, 0.60, 0.18, filled=True),
+        Box(0.24, 0.58, 0.38, 0.18, filled=True),
+    ),
+    "align_right": (
+        Line(0.84, 0.14, 0.84, 0.86),
+        Box(0.16, 0.24, 0.60, 0.18, filled=True),
+        Box(0.38, 0.58, 0.38, 0.18, filled=True),
+    ),
+    "align_top": (
+        Line(0.14, 0.16, 0.86, 0.16),
+        Box(0.24, 0.24, 0.18, 0.60, filled=True),
+        Box(0.58, 0.24, 0.18, 0.38, filled=True),
+    ),
+    "align_bottom": (
+        Line(0.14, 0.84, 0.86, 0.84),
+        Box(0.24, 0.16, 0.18, 0.60, filled=True),
+        Box(0.58, 0.38, 0.18, 0.38, filled=True),
+    ),
     "move_up": (
         Line(0.50, 0.84, 0.50, 0.22),
         Poly(((0.50, 0.14), (0.30, 0.40), (0.70, 0.40)), closed=True, filled=True),

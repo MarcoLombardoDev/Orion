@@ -14,6 +14,7 @@ import pytest
 
 from orion.commands import (
     AddObjectCommand,
+    AlignObjectsCommand,
     DeleteObjectsCommand,
     DeletePagesCommand,
     DuplicatePageCommand,
@@ -276,3 +277,69 @@ def test_separate_transform_gestures_stay_separate(document, history):
         TransformObjectsCommand(document, 0, second, third, text="Rotate", allow_merge=False)
     )
     assert history.depth == 2
+
+
+# -- alignment -----------------------------------------------------------
+def _at(x: float, y: float, width: float = 50.0, height: float = 30.0) -> ShapeObject:
+    return ShapeObject(rect=Rect.from_xywh(x, y, width, height), shape=ShapeKind.RECTANGLE)
+
+
+@pytest.fixture
+def scattered(document) -> list[ShapeObject]:
+    """Three boxes of different sizes, none of them lined up with another."""
+    shapes = [_at(10, 10), _at(30, 80, width=90), _at(50, 150, width=20, height=60)]
+    for shape in shapes:
+        document[0].add_object(shape)
+    return shapes
+
+
+def test_align_left_moves_everything_to_the_leftmost(document, history, scattered):
+    history.push(AlignObjectsCommand(document, 0, [s.id for s in scattered], "left"))
+    assert [s.rect.x0 for s in scattered] == [10.0, 10.0, 10.0]
+    # And only sideways: what was at one height is still at that height.
+    assert [s.rect.y0 for s in scattered] == [10.0, 80.0, 150.0]
+
+
+def test_align_right_uses_the_rightmost_edge(document, history, scattered):
+    history.push(AlignObjectsCommand(document, 0, [s.id for s in scattered], "right"))
+    assert [s.rect.x1 for s in scattered] == [120.0, 120.0, 120.0]
+
+
+def test_align_top_and_bottom(document, history, scattered):
+    history.push(AlignObjectsCommand(document, 0, [s.id for s in scattered], "top"))
+    assert [s.rect.y0 for s in scattered] == [10.0, 10.0, 10.0]
+    history.undo()
+    history.push(AlignObjectsCommand(document, 0, [s.id for s in scattered], "bottom"))
+    assert [s.rect.y1 for s in scattered] == [210.0, 210.0, 210.0]
+
+
+def test_aligning_keeps_every_size(document, history, scattered):
+    """Alignment moves things; it does not stretch them."""
+    sizes = [(s.rect.width, s.rect.height) for s in scattered]
+    history.push(AlignObjectsCommand(document, 0, [s.id for s in scattered], "right"))
+    assert [(s.rect.width, s.rect.height) for s in scattered] == sizes
+
+
+def test_aligning_can_be_undone(document, history, scattered):
+    before = [s.rect.as_tuple() for s in scattered]
+    history.push(AlignObjectsCommand(document, 0, [s.id for s in scattered], "bottom"))
+    history.undo()
+    assert [s.rect.as_tuple() for s in scattered] == before
+
+
+def test_a_locked_object_stays_where_it_is(document, history, scattered):
+    scattered[0].locked = True
+    history.push(AlignObjectsCommand(document, 0, [s.id for s in scattered], "left"))
+    assert scattered[0].rect.x0 == 10.0
+    assert scattered[1].rect.x0 == 30.0, "the others line up on the leftmost movable one"
+
+
+def test_aligning_one_object_does_nothing(document, history, scattered):
+    before = scattered[0].rect.as_tuple()
+    history.push(AlignObjectsCommand(document, 0, [scattered[0].id], "right"))
+    assert scattered[0].rect.as_tuple() == before
+
+
+def test_an_unknown_edge_is_refused(document, scattered):
+    with pytest.raises(ValueError):
+        AlignObjectsCommand(document, 0, [s.id for s in scattered], "middle")

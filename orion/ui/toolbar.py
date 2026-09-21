@@ -132,10 +132,15 @@ class ToolPalette(QToolBar):
 
     tool_selected = Signal(Tool)
 
-    #: Tools in the order they appear, with ``None`` marking a separator.
-    LAYOUT: tuple[Tool | None, ...] = (
+    #: Tools in the order they appear, with ``None`` marking a separator and
+    #: a string naming a plain command that belongs among them rather than at
+    #: the bottom. Making the page's text movable is one: it is something you
+    #: reach for while arranging a page, so it sits with the tools you are
+    #: arranging it with rather than in a menu.
+    LAYOUT: tuple[Tool | str | None, ...] = (
         Tool.SELECT,
         Tool.HAND,
+        "edit.text_movable",
         None,
         Tool.TEXT,
         Tool.IMAGE,
@@ -177,6 +182,14 @@ class ToolPalette(QToolBar):
         for entry in self.LAYOUT:
             if entry is None:
                 self.addSeparator()
+                continue
+            if not isinstance(entry, Tool):
+                # A command, not a tool: it does something now rather than
+                # arming the next click, so it stays out of the exclusive
+                # group that keeps exactly one tool checked. Tested by type
+                # and not by ``isinstance(entry, str)``, because Tool is a
+                # str enum and every tool would have matched that.
+                self.addAction(actions[entry])
                 continue
             action = actions.tool_action(entry)
             self._group.addAction(action)

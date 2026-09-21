@@ -15,11 +15,13 @@ makes adding a theme a data change rather than a code change.
 
 from __future__ import annotations
 
+import tempfile
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QPalette
+from PySide6.QtCore import QPointF, Qt
+from PySide6.QtGui import QColor, QPainter, QPalette, QPixmap, QPolygonF
 
 __all__ = ["ThemeMode", "Theme", "LIGHT", "DARK", "resolve_theme", "apply_theme"]
 
@@ -150,8 +152,69 @@ def build_palette(theme: Theme) -> QPalette:
     return palette
 
 
+#: Where the arrow images the stylesheet needs are written. A stylesheet can
+#: only point at a file, and Orion draws its icons in code, so the two are
+#: bridged by writing the pair out once per theme and colour.
+_ARROW_DIR: Path | None = None
+_ARROWS: dict[tuple[str, str], str] = {}
+
+
+def _arrow_image(theme: Theme, direction: str) -> str:
+    """A small triangle for a spin box's buttons, as a path a stylesheet can use.
+
+    Styling a ``QSpinBox`` at all makes Qt draw the whole widget through the
+    stylesheet, sub-controls included — and a sub-control the stylesheet says
+    nothing about is drawn with nothing in it. That is why the up and down
+    buttons of every numeric field were two empty notches: the box was styled,
+    the arrows were not, and Qt had no picture to put in them.
+    """
+    global _ARROW_DIR
+
+    key = (direction, theme.text_muted)
+    cached = _ARROWS.get(key)
+    if cached is not None:
+        return cached
+
+    if _ARROW_DIR is None:
+        _ARROW_DIR = Path(tempfile.mkdtemp(prefix="orion-theme-"))
+
+    size = 16
+    pixmap = QPixmap(size, size)
+    pixmap.fill(QColor(0, 0, 0, 0))
+    painter = QPainter(pixmap)
+    try:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setBrush(QColor(theme.text_muted))
+        painter.setPen(Qt.PenStyle.NoPen)
+        middle, half, height = size / 2.0, size * 0.28, size * 0.18
+        if direction == "up":
+            points = [
+                QPointF(middle, middle - height),
+                QPointF(middle - half, middle + height),
+                QPointF(middle + half, middle + height),
+            ]
+        else:
+            points = [
+                QPointF(middle, middle + height),
+                QPointF(middle - half, middle - height),
+                QPointF(middle + half, middle - height),
+            ]
+        painter.drawPolygon(QPolygonF(points))
+    finally:
+        painter.end()
+
+    path = _ARROW_DIR / f"spin-{direction}-{theme.name}.png"
+    pixmap.save(str(path), "PNG")
+    # Qt's stylesheet parser wants forward slashes on every platform.
+    url = str(path).replace("\\", "/")
+    _ARROWS[key] = url
+    return url
+
+
 def stylesheet(theme: Theme) -> str:
     """A restrained stylesheet: spacing and separators, not a skin."""
+    up_arrow = _arrow_image(theme, "up")
+    down_arrow = _arrow_image(theme, "down")
     return f"""
     QMainWindow, QDialog {{ background: {theme.window}; }}
     QToolBar {{
@@ -230,6 +293,40 @@ def stylesheet(theme: Theme) -> str:
     }}
     QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus,
     QPlainTextEdit:focus, QTextEdit:focus {{ border-color: {theme.accent}; }}
+    /* The two steppers, which Qt draws empty unless the stylesheet hands it
+       a picture — see _arrow_image. Sized and positioned here as well, so the
+       arrows sit inside the rounded border rather than over its corner. */
+    QSpinBox, QDoubleSpinBox {{ padding-right: 20px; }}
+    QSpinBox::up-button, QDoubleSpinBox::up-button {{
+        subcontrol-origin: border;
+        subcontrol-position: top right;
+        width: 18px;
+        margin: 1px 1px 0 0;
+        border-top-right-radius: 4px;
+        background: transparent;
+    }}
+    QSpinBox::down-button, QDoubleSpinBox::down-button {{
+        subcontrol-origin: border;
+        subcontrol-position: bottom right;
+        width: 18px;
+        margin: 0 1px 1px 0;
+        border-bottom-right-radius: 4px;
+        background: transparent;
+    }}
+    QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+    QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {{
+        background: {theme.surface_alt};
+    }}
+    QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{
+        image: url({up_arrow});
+        width: 9px;
+        height: 9px;
+    }}
+    QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
+        image: url({down_arrow});
+        width: 9px;
+        height: 9px;
+    }}
     QPushButton {{
         background: {theme.surface};
         border: 1px solid {theme.border};

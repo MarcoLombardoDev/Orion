@@ -362,6 +362,19 @@ standard PDF forms have nowhere to put it — there is no equivalent of a
 section that grows when you press a button. Orion keeps everything the form
 *contains* and tells you plainly what it can no longer *do*.
 
+### Lining objects up
+
+Select two or more objects and the Properties panel offers **Align**: left,
+right, top or bottom. Everything moves to the outermost edge already in the
+selection — align left and they all move to where the leftmost one is — and
+nothing is resized. The same four are in the right-click menu, next to Bring
+to Front and Send to Back, which now work on a whole selection rather than one
+object at a time.
+
+With several objects selected the panel shows only what a group actually has:
+opacity, alignment, arranging and Delete. X, Y, width, height and rotation
+belong to one object and are hidden until one is selected.
+
 ### Moving the text as well
 
 A converted form arrives with **its words as objects too**: every caption,
@@ -369,8 +382,8 @@ heading and rule of the page can be selected and dragged like anything you
 drew yourself. Nothing is retyped for you — the text stays exactly as it was —
 you can simply pick it up.
 
-For any other document this is a menu item rather than automatic:
-**Edit ▸ Make Page Text Movable**. It is worth knowing what it costs. A line
+For any other document there is a button for it on the tool palette, just
+below **Pan** — the one with the pencil over a page. It is worth knowing what it costs. A line
 taken over is redrawn by Orion when you save, in one of the built-in fonts and
 with Orion's own line breaking. For a form Orion converted that is a round
 trip, because Orion drew those words in the first place; for somebody else's

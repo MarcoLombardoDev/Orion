@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from typing import Any
+from typing import Any, ClassVar
 
 from orion.commands.base import Command
 from orion.document.document import Document
@@ -20,6 +20,7 @@ from orion.utils.geometry import Rect
 
 __all__ = [
     "AddObjectCommand",
+    "AlignObjectsCommand",
     "DeleteObjectsCommand",
     "MoveObjectsCommand",
     "TransformObjectsCommand",
@@ -252,6 +253,99 @@ class MoveObjectsCommand(_ObjectCommand):
             self._dy += other._dy
             return True
         return False
+
+
+class AlignObjectsCommand(_ObjectCommand):
+    """Line several objects up on one edge.
+
+    The edge is the outermost one already in the selection — align left and
+    everything moves to where the leftmost object already is — because that is
+    the alignment a person means when they point at a group of boxes and say
+    "line these up". Aligning to the page, or to the selection's centre, is a
+    different request and a different command.
+
+    Only the objects move; nothing is resized. Each one keeps its size and its
+    other coordinate, so aligning left leaves every object at the height it
+    was at. One object is a no-op rather than an error: a selection of one is
+    already aligned with itself, and offering the button and having it do
+    nothing is kinder than disabling it and explaining why.
+    """
+
+    text = "Align"
+
+    #: What each edge means, as the coordinate to make equal and how to pick
+    #: the one to make them equal *to*.
+    EDGES: ClassVar[tuple[str, ...]] = ("left", "right", "top", "bottom")
+
+    def __init__(
+        self,
+        document: Document,
+        page_index: int,
+        object_ids: Sequence[str],
+        edge: str,
+    ) -> None:
+        super().__init__(document, page_index)
+        if edge not in self.EDGES:
+            raise ValueError(f"Unknown alignment edge: {edge!r}")
+        self._ids = list(object_ids)
+        self._edge = edge
+        self._before: dict[str, Rect] = {}
+
+    def execute(self) -> None:
+        page = self._page
+        objects = [obj for obj in (page.find_object(i) for i in self._ids) if obj is not None]
+        movable = [obj for obj in objects if not obj.locked]
+        if len(movable) < 2:
+            return
+
+        self._before = {obj.id: obj.rect for obj in movable}
+        if self._edge == "left":
+            target = min(obj.rect.x0 for obj in movable)
+            for obj in movable:
+                self._move(obj, target - obj.rect.x0, 0.0)
+        elif self._edge == "right":
+            target = max(obj.rect.x1 for obj in movable)
+            for obj in movable:
+                self._move(obj, target - obj.rect.x1, 0.0)
+        elif self._edge == "top":
+            target = min(obj.rect.y0 for obj in movable)
+            for obj in movable:
+                self._move(obj, 0.0, target - obj.rect.y0)
+        else:
+            target = max(obj.rect.y1 for obj in movable)
+            for obj in movable:
+                self._move(obj, 0.0, target - obj.rect.y1)
+        self._notify()
+
+    def undo(self) -> None:
+        page = self._page
+        for object_id, rect in self._before.items():
+            obj = page.find_object(object_id)
+            if obj is None:
+                continue
+            self._move(obj, rect.x0 - obj.rect.x0, rect.y0 - obj.rect.y0)
+        self._notify()
+
+    @staticmethod
+    def _move(obj, dx: float, dy: float) -> None:
+        """Shift one object, geometry and all.
+
+        An annotation's quads and an ink stroke's points are its real shape —
+        the rect is derived from them — so moving the rect alone would leave a
+        highlight drawn where it was and selectable where it now is.
+        """
+        if not dx and not dy:
+            return
+        obj.rect = obj.rect.translated(dx, dy)
+        if getattr(obj, "quads", None):
+            obj.quads = [quad.translated(dx, dy) for quad in obj.quads]
+        if getattr(obj, "strokes", None):
+            from orion.utils.geometry import Point
+
+            obj.strokes = [
+                [Point(point.x + dx, point.y + dy) for point in stroke]
+                for stroke in obj.strokes
+            ]
 
 
 class TransformObjectsCommand(_ObjectCommand):

@@ -16,6 +16,7 @@ from orion.commands.base import Command, MacroCommand, NullCommand
 from orion.commands.history import History
 from orion.commands.object_commands import (
     AddObjectCommand,
+    AlignObjectsCommand,
     DeleteObjectsCommand,
     ModifyObjectCommand,
     MoveObjectsCommand,
@@ -44,6 +45,7 @@ __all__ = [
     "InsertPageCommand",
     "MacroCommand",
     "ModifyObjectCommand",
+    "AlignObjectsCommand",
     "MoveObjectsCommand",
     "MovePageCommand",
     "NullCommand",

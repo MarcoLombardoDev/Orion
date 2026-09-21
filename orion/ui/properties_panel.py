@@ -160,6 +160,7 @@ class PropertiesPanel(QWidget):
         self._note_group = self._build_note_section()
         self._redaction_group = self._build_redaction_section()
         self._geometry_group = self._build_geometry_section()
+        self._align_group = self._build_align_section()
         self._arrange_group = self._build_arrange_section()
         self._delete_group = self._build_delete_section()
 
@@ -170,6 +171,7 @@ class PropertiesPanel(QWidget):
             self._note_group,
             self._redaction_group,
             self._geometry_group,
+            self._align_group,
             self._arrange_group,
             self._delete_group,
         ):
@@ -369,6 +371,13 @@ class PropertiesPanel(QWidget):
         form.addRow(tr("Height"), self._height)
         form.addRow(tr("Rotation"), self._rotation)
         form.addRow(tr("Opacity"), self._opacity)
+
+        # Kept so the rows that mean nothing for a group can be taken out of
+        # the panel rather than greyed in it. X of six objects is not a
+        # number, and a box showing one object's X while six are selected is
+        # an invitation to type into it and wonder what happened.
+        self._geometry_form = form
+        self._single_rows = (self._x, self._y, self._width, self._height, self._rotation)
         return group
 
     def _build_arrange_section(self) -> QGroupBox:
@@ -380,6 +389,35 @@ class PropertiesPanel(QWidget):
         self._back.clicked.connect(lambda: self.arrange_requested.emit(False))
         layout.addWidget(self._front)
         layout.addWidget(self._back)
+        return group
+
+    def _build_align_section(self) -> QGroupBox:
+        """Line the selection up on one edge. Only useful for more than one.
+
+        The edge is the outermost one already in the selection: align left and
+        everything moves to where the leftmost object is. Four buttons rather
+        than a drop-down because it is a thing you do repeatedly while nudging
+        a layout into shape, and each press should be one press.
+        """
+        group = QGroupBox(tr("Align"))
+        layout = QHBoxLayout(group)
+        layout.setSpacing(6)
+
+        self._align_buttons: dict[str, QPushButton] = {}
+        for edge, label, hint in (
+            ("left", tr("Left"), tr("Line the objects up on the leftmost edge")),
+            ("right", tr("Right"), tr("Line the objects up on the rightmost edge")),
+            ("top", tr("Top"), tr("Line the objects up on the highest edge")),
+            ("bottom", tr("Bottom"), tr("Line the objects up on the lowest edge")),
+        ):
+            button = QPushButton(icon(f"align_{edge}"), "")
+            button.setToolTip(f"{label} — {hint}")
+            button.setAccessibleName(label)
+            button.clicked.connect(
+                lambda _checked=False, which=edge: self.align_requested.emit(which)
+            )
+            layout.addWidget(button)
+            self._align_buttons[edge] = button
         return group
 
     def _build_delete_section(self) -> QGroupBox:
@@ -400,6 +438,7 @@ class PropertiesPanel(QWidget):
         return group
 
     arrange_requested = Signal(bool)
+    align_requested = Signal(str)
     delete_requested = Signal()
 
     @staticmethod
@@ -441,6 +480,7 @@ class PropertiesPanel(QWidget):
             self._note_group,
             self._redaction_group,
             self._geometry_group,
+            self._align_group,
             self._arrange_group,
             self._delete_group,
         ):
@@ -452,15 +492,24 @@ class PropertiesPanel(QWidget):
         self._delete_group.setVisible(True)
 
         if single is None:
-            self._heading.setText(f"{len(self._objects)} objects selected")
+            self._heading.setText(
+                tr("{count} objects selected").format(count=len(self._objects))
+            )
             self._geometry_group.setVisible(True)
-            self._arrange_group.setVisible(False)
+            self._align_group.setVisible(True)
+            # Front and back work on a whole selection, and used to be offered
+            # only for one object — so raising two things meant raising them
+            # one at a time, in the right order, from the right-click menu.
+            self._arrange_group.setVisible(True)
+            self._set_single_rows_visible(False)
             with self._blocker:
                 self._show_multi_geometry()
             return
 
         self._heading.setText(single.display_name)
+        self._align_group.setVisible(False)
         self._arrange_group.setVisible(True)
+        self._set_single_rows_visible(True)
         with self._blocker:
             if isinstance(single, TextObject):
                 self._show_text(single)
@@ -572,18 +621,15 @@ class PropertiesPanel(QWidget):
         self._width.setEnabled(resizable and not obj.locked)
         self._height.setEnabled(resizable and not obj.locked)
 
+    def _set_single_rows_visible(self, visible: bool) -> None:
+        """Show or hide the geometry rows that only mean anything for one object."""
+        for box in self._single_rows:
+            self._geometry_form.setRowVisible(box, visible)
+
     def _show_multi_geometry(self) -> None:
-        bounds = self._objects[0].rect
-        for obj in self._objects[1:]:
-            bounds = bounds.united(obj.rect)
-        self._x.setValue(bounds.x0)
-        self._y.setValue(bounds.y0)
-        self._width.setValue(max(bounds.width, self._width.minimum()))
-        self._height.setValue(max(bounds.height, self._height.minimum()))
-        for box in (self._width, self._height, self._rotation):
-            box.setEnabled(False)
-        self._rotation.setValue(0.0)
+        """Only what a group really has: one opacity for all of them."""
         self._opacity.setValue(self._objects[0].opacity * 100.0)
+        self._opacity.setEnabled(not all(obj.locked for obj in self._objects))
 
     # ------------------------------------------------------------------
     # Applying edits

@@ -250,9 +250,13 @@ class TestTheToolPalette:
         """A palette entry with no action behind it is a dead button."""
         from orion.ui.toolbar import ToolPalette
 
-        for tool in ToolPalette.LAYOUT:
-            if tool is not None:
-                assert window._actions.tool_action(tool) is not None
+        for entry in ToolPalette.LAYOUT:
+            if entry is None:
+                continue
+            if isinstance(entry, Tool):
+                assert window._actions.tool_action(entry) is not None
+            else:
+                assert window._actions[entry] is not None
 
     def test_the_tools_menu_and_the_palette_hold_the_same_things(self, window):
         """Neither may offer something the other does not.
@@ -272,9 +276,13 @@ class TestTheToolPalette:
         in_menu = {a.text() for a in tools_menu.actions() if not a.isSeparator() and a.text()}
 
         on_palette = {
-            window._actions.tool_action(tool).text()
-            for tool in ToolPalette.LAYOUT
-            if tool is not None
+            (
+                window._actions.tool_action(entry)
+                if isinstance(entry, Tool)
+                else window._actions[entry]
+            ).text()
+            for entry in ToolPalette.LAYOUT
+            if entry is not None
         }
         on_palette |= {window._actions[key].text() for key in ToolPalette.COMMANDS}
 
@@ -282,6 +290,26 @@ class TestTheToolPalette:
             f"only in the menu: {sorted(in_menu - on_palette)}; "
             f"only on the palette: {sorted(on_palette - in_menu)}"
         )
+
+    def test_making_the_text_movable_is_a_palette_button(self, window):
+        """Asked for as a button under Pan rather than a line in a menu."""
+        from orion.ui.toolbar import ToolPalette
+
+        layout = list(ToolPalette.LAYOUT)
+        assert "edit.text_movable" in layout
+        assert layout.index("edit.text_movable") == layout.index(Tool.HAND) + 1
+        assert not window._actions["edit.text_movable"].icon().isNull()
+
+    def test_it_is_no_longer_in_the_edit_menu(self, window):
+        from orion.ui.menu import build_menu_bar
+
+        bar, _bundle = build_menu_bar(window, window._actions)
+        edit = next(
+            menu
+            for menu in bar.findChildren(type(bar.addMenu("x")))
+            if menu.title() == "&Edit"
+        )
+        assert "Make Page &Text Movable" not in {a.text() for a in edit.actions()}
 
     def test_the_palette_offers_the_two_stamps(self, window):
         """They open a dialog rather than arming a click, but they are Tools."""
@@ -1177,6 +1205,29 @@ class TestIconsReadAgainstWhatIsBehindThem:
                 f"{theme.name}: {token} is too close to the icon colour"
             )
 
+    def test_a_numeric_field_has_arrows_in_its_buttons(self, qapp):
+        """The reported bug: every +/- box showed two empty notches.
+
+        Styling a spin box at all makes Qt draw its sub-controls through the
+        stylesheet, and a sub-control the stylesheet says nothing about is
+        drawn with nothing in it. So the stylesheet has to hand Qt a picture,
+        and the picture has to be on disk where it can be pointed at.
+        """
+        import re
+        from pathlib import Path
+
+        from orion.ui.theme import DARK, LIGHT, stylesheet
+
+        for theme in (LIGHT, DARK):
+            sheet = stylesheet(theme)
+            for direction in ("up", "down"):
+                block = sheet.split(f"QSpinBox::{direction}-arrow", 1)
+                assert len(block) == 2, f"no {direction} arrow rule"
+                rule = block[1].split("}", 1)[0]
+                found = re.search(r"image: url\(([^)]+)\)", rule)
+                assert found, f"the {direction} arrow has no image"
+                assert Path(found.group(1)).exists(), "the image was never written"
+
     def test_the_checked_tool_is_tinted_rather_than_filled(self):
         """Filling it with the accent is what forced the second drawing."""
         from orion.ui.theme import DARK, stylesheet
@@ -1601,6 +1652,94 @@ class TestTheFontPicker:
         assert note.isVisible() and "embedded" in note.text()
 
 
+class TestTheSelectionPanel:
+    """What the panel offers for one object, and what it offers for six.
+
+    The fault: with six objects selected it showed X, Y, Width, Height and
+    Rotation — none of which is a property a group has. A box reading one
+    object's X while six are selected invites you to type into it.
+    """
+
+    def _boxes(self, window, qapp, sample_pdf, count: int):
+        window.open_path(sample_pdf)
+        pump(qapp)
+        for index in range(count):
+            _drag(
+                window,
+                Tool.RECTANGLE,
+                (40.0 + index * 25, 100.0 + index * 70),
+                (150.0 + index * 25, 150.0 + index * 70),
+            )
+            pump(qapp)
+        objects = list(window.session.document[0].objects)
+        window._canvas.select_objects([o.id for o in objects])
+        pump(qapp)
+        return objects
+
+    def test_one_object_shows_its_geometry(self, window, qapp, sample_pdf):
+        self._boxes(window, qapp, sample_pdf, 1)
+        panel = window._properties
+        assert panel._geometry_group.isVisible()
+        assert panel._x.isVisible() and panel._width.isVisible()
+        assert not panel._align_group.isVisible(), "nothing to align one object to"
+        assert panel._arrange_group.isVisible()
+
+    def test_several_objects_show_only_what_they_share(self, window, qapp, sample_pdf):
+        self._boxes(window, qapp, sample_pdf, 3)
+        panel = window._properties
+        assert panel._geometry_group.isVisible()
+        assert panel._opacity.isVisible(), "opacity applies to the whole selection"
+        for box in (panel._x, panel._y, panel._width, panel._height, panel._rotation):
+            assert not box.isVisible(), "a per-object field was offered for a group"
+
+    def test_front_and_back_work_on_a_group(self, window, qapp, sample_pdf):
+        """They were offered for one object only, so raising two meant two goes."""
+        objects = self._boxes(window, qapp, sample_pdf, 3)
+        panel = window._properties
+        assert panel._arrange_group.isVisible()
+
+        first = objects[0]
+        panel._front.click()
+        pump(qapp)
+        order = [o.id for o in window.session.document[0].objects]
+        assert first.id in order[-3:], "the selection was not brought forward"
+
+    def test_aligning_left_lines_them_up_on_the_leftmost(
+        self, window, qapp, sample_pdf
+    ):
+        objects = self._boxes(window, qapp, sample_pdf, 3)
+        leftmost = min(o.rect.x0 for o in objects)
+        window._properties._align_buttons["left"].click()
+        pump(qapp)
+
+        page = window.session.document[0]
+        assert {round(o.rect.x0, 3) for o in page.objects} == {round(leftmost, 3)}
+
+    def test_aligning_is_one_undo_step(self, window, qapp, sample_pdf):
+        objects = self._boxes(window, qapp, sample_pdf, 3)
+        before = [o.rect.as_tuple() for o in objects]
+        window._properties._align_buttons["bottom"].click()
+        pump(qapp)
+        window.undo()
+        pump(qapp)
+        after = [o.rect.as_tuple() for o in window.session.document[0].objects]
+        assert after == before
+
+    def test_the_alignment_actions_are_on_the_object_menu(self, window, qapp, sample_pdf):
+        """Where a user right-clicks the boxes they want lined up."""
+        self._boxes(window, qapp, sample_pdf, 2)
+        menu = window.canvas_menu()
+        assert menu is not None
+        labels = {action.text() for action in menu.actions() if action.text()}
+        assert {"Align &Left", "Align &Bottom"} <= labels
+        assert window._actions["edit.align_left"].isEnabled()
+
+    def test_aligning_is_dead_with_one_object_selected(self, window, qapp, sample_pdf):
+        """One object is already lined up with itself."""
+        self._boxes(window, qapp, sample_pdf, 1)
+        assert not window._actions["edit.align_left"].isEnabled()
+
+
 class TestDeleteFromThePropertiesPanel:
     """Delete, where the properties of the thing being deleted already are.
 
@@ -1628,10 +1767,8 @@ class TestDeleteFromThePropertiesPanel:
         assert window.session.document[0].objects == []
 
     def test_it_deletes_several_at_once(self, window, qapp, sample_pdf):
-        """Unlike Arrange, which is single-object, this is not."""
         self._select(window, qapp, sample_pdf, count=2)
         assert window._properties._delete_group.isVisible()
-        assert not window._properties._arrange_group.isVisible()
         window._properties._delete.click()
         pump(qapp)
         assert window.session.document[0].objects == []

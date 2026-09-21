@@ -76,7 +76,11 @@ ACTIONS: tuple[ActionSpec, ...] = (
     ActionSpec("edit.delete", "Delete", "delete", "Del", "Delete the selected objects", canvas_scoped=True),
     ActionSpec("edit.select_all", "Select &All on Page", "", "Ctrl+A", "Select every object on this page", canvas_scoped=True),
     ActionSpec("edit.deselect", "Deselect", "", "Esc", "Clear the selection", canvas_scoped=True),
-    ActionSpec("edit.text_movable", "Make Page &Text Movable", "", "", "Turn the document's own text into boxes you can move"),
+    ActionSpec("edit.text_movable", "Make Page &Text Movable", "edit_page_text", "", "Turn the document's own text into boxes you can move"),
+    ActionSpec("edit.align_left", "Align &Left", "align_left", "", "Line the objects up on the leftmost edge"),
+    ActionSpec("edit.align_right", "Align &Right", "align_right", "", "Line the objects up on the rightmost edge"),
+    ActionSpec("edit.align_top", "Align &Top", "align_top", "", "Line the objects up on the highest edge"),
+    ActionSpec("edit.align_bottom", "Align &Bottom", "align_bottom", "", "Line the objects up on the lowest edge"),
     ActionSpec("edit.bring_front", "Bring to &Front", "bring_front", "Ctrl+Shift+]", "Move the object above the others"),
     ActionSpec("edit.send_back", "Send to &Back", "send_back", "Ctrl+Shift+[", "Move the object below the others"),
     # -- View ------------------------------------------------------------

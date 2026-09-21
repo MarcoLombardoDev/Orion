@@ -144,6 +144,23 @@ _CATALOGUE: dict[str, str] = {
         "Non c'è altro testo di pagina da rendere spostabile.",
     "{count} lines of text can now be moved.":
         "Ora puoi spostare {count} righe di testo.",
+    "Align": "Allinea",
+    # "Left" and "Right" are already in this catalogue, for text alignment.
+    "Top": "In alto",
+    "Bottom": "In basso",
+    "Align &Left": "Allinea a &sinistra",
+    "Align &Right": "Allinea a &destra",
+    "Align &Top": "Allinea in &alto",
+    "Align &Bottom": "Allinea in &basso",
+    "Line the objects up on the leftmost edge":
+        "Allinea gli oggetti al bordo più a sinistra",
+    "Line the objects up on the rightmost edge":
+        "Allinea gli oggetti al bordo più a destra",
+    "Line the objects up on the highest edge":
+        "Allinea gli oggetti al bordo più in alto",
+    "Line the objects up on the lowest edge":
+        "Allinea gli oggetti al bordo più in basso",
+    "{count} objects selected": "{count} oggetti selezionati",
     "Bring to &Front": "Porta in &primo piano",
     "Move the object above the others": "Porta l'oggetto sopra gli altri",
     "Send to &Back": "Porta in &secondo piano",

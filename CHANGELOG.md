@@ -64,6 +64,24 @@ refused, and there are size and depth caps. **No XFA script is ever executed** �
 not during parsing, analysis or conversion. They are read as text, classified,
 and reported.
 
+### Lining things up
+Select more than one object and the Properties panel offers **Align** — left,
+right, top, bottom — which moves everything to the outermost edge already in
+the selection and resizes nothing. The same four are in the right-click menu.
+
+**Bring to Front** and **Send to Back** were offered for a single object only,
+so raising two things meant raising them one at a time in the right order;
+they now work on the whole selection, from the panel as well as the menu.
+
+And the panel stops offering what a group does not have. With six objects
+selected it showed X, Y, width, height and rotation — none of which is a
+property six objects share, and a box reading one object's X while six are
+selected invites you to type into it. Those rows are hidden until a single
+object is selected; opacity, which really does apply to all of them, stays.
+
+**Make Page Text Movable** moved from the Edit menu to a button on the tool
+palette, under Pan, where the tools for arranging a page already are.
+
 ### Everything on a converted form can be picked up
 The fields were made objects; the words were still scenery. A converted form
 now arrives with **its text as objects too** — every caption, heading and rule
@@ -220,6 +238,11 @@ in the right place but cannot be typed into is a loss of behaviour, and used to
 count against the appearance as well.
 
 ### Fixed
+- **Every numeric field showed two empty buttons.** Styling a spin box at all
+  makes Qt draw its sub-controls through the stylesheet, and a sub-control the
+  stylesheet says nothing about is drawn with nothing in it — so the up and
+  down steppers of X, Y, width, height, rotation, opacity, font size and every
+  other numeric field were two blank notches. They have their arrows back.
 - **Interactive PDF forms now show their contents.** pdfium keeps form field
   appearances behind a form-fill environment that has to be asked for, and
   Orion never asked — so every ordinary AcroForm has been opening with empty

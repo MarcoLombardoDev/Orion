@@ -63,8 +63,6 @@ _STRUCTURE: tuple[tuple[str, tuple[str | None, ...]], ...] = (
             "edit.select_all",
             "edit.deselect",
             SEPARATOR,
-            "edit.text_movable",
-            SEPARATOR,
             "edit.bring_front",
             "edit.send_back",
         ),
@@ -189,15 +187,18 @@ def _build_language_menu(menu: QMenu, actions: ActionRegistry) -> QMenu:
 
 
 def _add_tool_entries(menu: QMenu, actions: ActionRegistry) -> None:
-    groups: tuple[tuple[Tool, ...], ...] = (
-        (Tool.SELECT, Tool.HAND),
-        (Tool.TEXT, Tool.IMAGE),
-        (Tool.RECTANGLE, Tool.ELLIPSE, Tool.LINE, Tool.ARROW),
-        (Tool.HIGHLIGHT, Tool.UNDERLINE, Tool.STRIKEOUT, Tool.REDACT),
-        (Tool.FREEHAND, Tool.STICKY_NOTE),
-    )
-    for index, group in enumerate(groups):
-        if index:
+    """The Tools menu, built from the palette's own list.
+
+    It used to be a second copy of that list, kept in step by hand, with a
+    comment claiming they came from one place. They drifted — twice — which is
+    the whole reason the parity test exists, so now there really is one list.
+    """
+    from orion.ui.toolbar import ToolPalette
+
+    for entry in ToolPalette.LAYOUT:
+        if entry is None:
             menu.addSeparator()
-        for tool in group:
-            menu.addAction(actions.tool_action(tool))
+        elif isinstance(entry, Tool):
+            menu.addAction(actions.tool_action(entry))
+        else:
+            menu.addAction(actions[entry])
