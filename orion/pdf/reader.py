@@ -24,6 +24,7 @@ from orion.document.page import Page, PageSource
 from orion.pdf.annotation_import import ImportedAnnotations, import_annotations
 from orion.pdf.coordinates import PageGeometry
 from orion.pdf.errors import PdfCorruptError, PdfPasswordRequired, PdfReadError
+from orion.pdf.form_import import ImportedFields, import_form_fields
 from orion.utils.geometry import Size
 
 log = logging.getLogger(__name__)
@@ -225,7 +226,7 @@ def _read_annotations(
         log.warning("Could not read the annotations of %s", opened.path, exc_info=True)
         return {}
 
-    found: dict[int, ImportedAnnotations] = {}
+    found: dict[int, tuple[ImportedAnnotations, ImportedFields]] = {}
     for index in wanted:
         if index >= len(info) or not info[index][2]:
             continue
@@ -238,16 +239,17 @@ def _read_annotations(
                 rotation=int(pdf_page.get("/Rotate", 0) or 0),
             )
             imported = import_annotations(pdf_page, geometry)
+            fields = import_form_fields(pdf_page, geometry)
         except Exception:
             log.warning("Could not read the annotations of page %d", index, exc_info=True)
             continue
-        if imported.objects:
-            found[index] = imported
+        if imported.objects or fields.objects:
+            found[index] = (imported, fields)
     return found
 
 
 def _hide_owned_annotations(
-    opened: OpenedPdf, found: dict[int, ImportedAnnotations]
+    opened: OpenedPdf, found: dict[int, tuple[ImportedAnnotations, ImportedFields]]
 ) -> None:
     """Stop pdfium drawing the annotations the model has taken over.
 
@@ -265,10 +267,10 @@ def _hide_owned_annotations(
     writer opens the file again with pypdf, so nothing here reaches the disk.
     """
     with opened.lock:
-        for index, imported in found.items():
+        for index, (imported, fields) in found.items():
             try:
                 page = opened.doc[index]
-                for position in imported.indices:
+                for position in (*imported.indices, *fields.indices):
                     annotation = pdfium_raw.FPDFPage_GetAnnot(page.raw, position)
                     if not annotation:
                         continue
@@ -304,14 +306,15 @@ def build_pages(
     pages: list[Page] = []
     for index in wanted:
         size, rotation, _ = info[index]
-        imported = annotations.get(index, ImportedAnnotations())
+        imported, fields = annotations.get(index, (ImportedAnnotations(), ImportedFields()))
         pages.append(
             Page(
                 base_size=size,
                 source=PageSource(source_key, index),
                 source_rotation=rotation,
-                objects=list(imported.objects),
+                objects=[*imported.objects, *fields.objects],
                 imported_annotations=imported.indices,
+                imported_fields=fields.indices,
             )
         )
     return pages

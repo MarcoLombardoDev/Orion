@@ -32,9 +32,10 @@ from orion.xfa import (
     summarise_form,
     validate_converted_pdf,
 )
+from orion.xfa.checks import check_layout
 from orion.xfa.converter import _split_for_caption
-from orion.xfa.layout import resolve_layout
-from orion.xfa.model import XfaField, XfaFieldType, XfaRect, XfaScriptKind
+from orion.xfa.layout import LaidOutForm, PlacedPage, resolve_layout
+from orion.xfa.model import XfaDraw, XfaField, XfaFieldType, XfaRect, XfaScriptKind
 from orion.xfa.parser import parse_measurement
 from orion.xfa.report import Fidelity, XfaConversionReport
 from orion.xfa.safe_xml import XmlRejected, parse_xml
@@ -716,6 +717,100 @@ class TestTheShapesARealFormIsMadeOf:
         assert report.visual_fidelity is not Fidelity.FULL
 
 
+class TestTheLayoutIsChecked:
+    """The converter cannot see its own output, so it measures it.
+
+    Every one of these was a real fault once, found by opening the result and
+    looking at it. Measuring them means the next one is reported rather than
+    noticed.
+    """
+
+    def _page(self, fields=(), draws=()):
+        page = PlacedPage(width=595.276, height=841.89)
+        page.fields.extend(fields)
+        page.draws.extend(draws)
+        form = LaidOutForm(pages=[page])
+        return form
+
+    def test_two_fields_in_the_same_place_are_reported(self):
+        one = XfaField(name="one", som="f.one", rect=XfaRect(50, 50, 200, 20))
+        two = XfaField(name="two", som="f.two", rect=XfaRect(55, 52, 200, 20))
+        issues = check_layout(self._page(fields=[one, two]))
+        assert [i.kind for i in issues] == ["overlap"]
+        assert "two" in issues[0].message
+
+    def test_fields_that_merely_touch_are_left_alone(self):
+        """A table's cells share an edge by design."""
+        one = XfaField(name="one", rect=XfaRect(50, 50, 100, 20))
+        two = XfaField(name="two", rect=XfaRect(150, 50, 100, 20))
+        assert check_layout(self._page(fields=[one, two])) == []
+
+    def test_a_field_off_the_page_is_reported(self):
+        stray = XfaField(name="stray", som="f.stray", rect=XfaRect(560, 50, 200, 20))
+        issues = check_layout(self._page(fields=[stray]))
+        assert [i.kind for i in issues] == ["off_page"]
+
+    def test_text_that_cannot_fit_its_box_is_reported(self):
+        long_text = "A caption far longer than the room the form gave it " * 3
+        drawn = XfaDraw(kind="text", text=long_text, rect=XfaRect(50, 50, 80, 10))
+        issues = check_layout(self._page(draws=[drawn]))
+        assert [i.kind for i in issues] == ["overflow"]
+
+    def test_a_sound_conversion_reports_no_layout_problems(self, tmp_path):
+        source = build_awkward_form(tmp_path / "sound.pdf")
+        report = convert_xfa(source, tmp_path / "sound-converted.pdf").report
+        assert report.layout_problems == 0, [str(w) for w in report.warnings]
+
+
+class TestButtonsThatStillWork:
+    """Three of a form's buttons ask for something PDF can already do."""
+
+    @pytest.fixture
+    def converted_reference(self, tmp_path):
+        source = build_reference_form(tmp_path / "buttons.pdf")
+        out = tmp_path / "buttons-converted.pdf"
+        result = convert_xfa(source, out, mode=ConversionMode.EDITABLE)
+        return result, out
+
+    def test_a_print_button_becomes_a_print_action(self, tmp_path):
+        from pypdf import PdfReader
+
+        template = dynamic_template().replace(
+            'xfa.host.messageBox("submitting"); event.target.submitForm();',
+            "xfa.host.print(1, \"0\", \"0\", 0, 0, 0, 0, 0);",
+        )
+        source = build_xfa_pdf(tmp_path / "print.pdf", template)
+        out = tmp_path / "print-converted.pdf"
+        report = convert_xfa(source, out, mode=ConversionMode.EDITABLE).report
+
+        actions = []
+        for page in PdfReader(str(out)).pages:
+            for annotation in page.get("/Annots") or []:
+                widget = annotation.get_object()
+                if str(widget.get("/FT")) == "/Btn":
+                    actions.append(dict(widget.get("/A") or {}))
+        assert {"/S": "/Named", "/N": "/Print"} in [
+            {k: str(v) for k, v in a.items()} for a in actions
+        ]
+        assert report.live_buttons >= 1
+
+    def test_a_button_whose_job_was_a_script_is_not_pretended_to_work(
+        self, converted_reference
+    ):
+        """Adding a row is the form's own programming and cannot come across."""
+        result, _out = converted_reference
+        text = " ".join(str(e) for e in result.report.entries)
+        assert "no longer does anything" in text
+
+    def test_no_javascript_is_written_into_the_converted_file(
+        self, converted_reference
+    ):
+        """The actions are actions. Nothing here executes anything."""
+        _result, out = converted_reference
+        raw = out.read_bytes()
+        assert b"/JavaScript" not in raw and b"/JS" not in raw
+
+
 class TestTheFileTheConverterWrites:
     """Checks on the bytes, not on the model that produced them."""
 
@@ -848,6 +943,36 @@ class TestTheFileTheConverterWrites:
         device = next(s for n, s in fields.items() if n.endswith("device"))
         # open="userControl": the user may type an answer that is not listed.
         assert int(device.get("/Ff", 0)) & 262144, "the drop-down is not editable"
+
+    def test_the_text_of_the_converted_form_can_be_edited(self, tmp_path):
+        """Orion's page-text editing has to work on what the converter draws.
+
+        The static layer is the form: its headings, its captions, its rules.
+        If those arrive as something Orion cannot pick up, the conversion has
+        produced a picture of a form rather than a document.
+        """
+        from orion.pdf.coordinates import PageGeometry
+        from orion.pdf.reader import open_pdf
+        from orion.pdf.text_edit import read_text_lines
+
+        source = build_awkward_form(tmp_path / "editable.pdf")
+        out = tmp_path / "editable-converted.pdf"
+        convert_xfa(source, out)
+
+        opened = open_pdf(out)
+        try:
+            page = opened.doc[0]
+            box = page.get_mediabox()
+            geometry = PageGeometry(
+                width=box[2] - box[0], height=box[3] - box[1], rotation=0
+            )
+            lines = read_text_lines(page.raw, page.get_textpage().raw, geometry)
+        finally:
+            opened.close()
+
+        assert lines, "none of the converted text can be edited"
+        assert any("First" in line.text for line in lines)
+        assert all(line.font_size > 0 for line in lines)
 
     def test_the_default_resources_name_every_font_the_fields_use(self, tmp_path):
         """reportlab writes ``/Font`` twice in ``/DR``; readers keep one.

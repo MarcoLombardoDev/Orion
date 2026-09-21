@@ -34,6 +34,7 @@ __all__ = [
     "XfaField",
     "XfaFieldType",
     "XfaFont",
+    "XfaInsets",
     "XfaOccur",
     "XfaRect",
     "XfaScript",
@@ -89,6 +90,8 @@ class XfaButtonKind(str, Enum):
     SUBMIT = "submit"
     RESET = "reset"
     PRINT = "print"
+    #: Saves a copy of the document. ``app.execMenuItem("SaveAs")``.
+    SAVE = "save"
     #: Adds or removes instances of a repeatable section. No AcroForm equal.
     INSTANCE = "instance"
     SCRIPTED = "scripted"
@@ -124,6 +127,26 @@ class XfaRect:
     @property
     def is_empty(self) -> bool:
         return self.width <= 0.0 or self.height <= 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class XfaInsets:
+    """``<margin>``: the space between an element's box and its text.
+
+    Small numbers with a large effect. A field whose text is drawn hard
+    against its own border reads as a different form from one whose text sits
+    where the designer put it, and the reference document insets its captions
+    by nearly seven millimetres.
+    """
+
+    left: float = 0.0
+    top: float = 0.0
+    right: float = 0.0
+    bottom: float = 0.0
+
+    @property
+    def is_zero(self) -> bool:
+        return not (self.left or self.top or self.right or self.bottom)
 
 
 @dataclass(frozen=True, slots=True)
@@ -257,6 +280,15 @@ class XfaField:
     caption_reserve: float = 0.0
     #: ``left`` (XFA's default), ``right``, ``top``, ``bottom``, ``inline``.
     caption_placement: str = "left"
+    #: ``<margin>`` around the field's own text.
+    margins: XfaInsets = field(default_factory=XfaInsets)
+    #: ``<para hAlign/vAlign>`` for the value: ``left``/``center``/``right``
+    #: and ``top``/``middle``/``bottom``.
+    align: str = "left"
+    valign: str = "top"
+    #: The same two for the caption, which carries its own ``<para>``.
+    caption_align: str = "left"
+    caption_valign: str = "top"
     validation_pattern: str = ""
     choices: XfaChoiceList | None = None
     binding: XfaBinding = field(default_factory=XfaBinding)
@@ -390,6 +422,10 @@ class XfaDraw:
     font: XfaFont = field(default_factory=XfaFont)
     #: ``left``, ``center``, ``right``.
     align: str = "left"
+    #: ``top``, ``middle``, ``bottom``.
+    valign: str = "top"
+    #: ``<margin>`` around the text.
+    margins: XfaInsets = field(default_factory=XfaInsets)
     line_width: float = 0.0
     line_color: tuple[float, float, float] = (0.0, 0.0, 0.0)
     fill_color: tuple[float, float, float] | None = None

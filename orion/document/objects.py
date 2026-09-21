@@ -64,6 +64,8 @@ class ObjectKind(str, Enum):
     SHAPE = "shape"
     ANNOTATION = "annotation"
     REDACTION = "redaction"
+    #: A form field of the document itself, imported so it can be moved.
+    FORM_FIELD = "form_field"
 
 
 class Align(str, Enum):

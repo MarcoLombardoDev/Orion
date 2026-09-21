@@ -64,6 +64,63 @@ refused, and there are size and depth caps. **No XFA script is ever executed** �
 not during parsing, analysis or conversion. They are read as text, classified,
 and reported.
 
+### Form fields are objects now
+A form field was the one thing on a page that every editor draws and none lets
+you touch — and converting a form made that acute, because the fields land
+where the *template* put them and one that came out a millimetre off could not
+be nudged. Orion now reads a PDF's fields into the document the way it already
+read its annotations: select one, drag it, resize it, nudge it with the arrow
+keys, set its position to the point in the Properties panel, or delete it.
+
+The widget in the file is **moved**, not rebuilt. A field is its name, its
+options, its flags, its tooltip and its place in the form's field tree, none of
+which Orion models — so the only honest way to move one is to change the four
+numbers that say where it is and leave the rest alone. Deleting a field takes
+it out of the page *and* out of the form's field list, since a field removed
+from only one of the two is still found by every reader.
+
+This applies to any PDF with a form in it, not only to a converted one.
+
+### Buttons that still work
+A print button now prints, a save button saves a copy, and a reset button
+clears the form — in Orion and in any other reader. None of them is a script:
+PDF has had an action for each of those since long before XFA, so the button
+asks the reader to do the thing rather than carrying code that could not come
+across. Everything else a button did — adding a row, recalculating a total —
+is the form's own programming, is still drawn and still does nothing, and the
+summary names each one.
+
+### One question fewer
+Opening a form used to ask which of three conversion modes to use. Two of the
+answers behaved identically and the third produced a document that cannot be
+filled in, which is not what somebody who has just been told their form is
+unopenable is after. The dialog now converts every field it can, and the modes
+remain for **File ▸ Convert Form to Standard PDF**. The mode that keeps
+everything is also a real mode at last: a field the template marks read-only
+or protected arrives as a locked field rather than as paint, so it can be
+unlocked later.
+
+### The conversion checks its own work
+The converter cannot see what it drew, and the ways an XFA layout goes wrong
+are visual: two fields on top of one another, a label wider than the room
+reserved for it, something pushed off the edge of the page. Each of those was
+found once by opening the result and looking at it. They are measured now —
+nothing is silently corrected, since a converter that moved a field would be
+inventing a document nobody designed, but everything found is counted and
+said out loud, so a form that came out overlapping is reported as one.
+
+### Closer to the form it came from
+- **Vertical alignment.** Almost every caption in a real form asks to be
+  centred in its box and the buttons ask for the same. Everything used to be
+  drawn against the top of its box, which left the whole form sitting a
+  couple of points high.
+- **Margins.** A field's text is inset by the amounts the template gives —
+  nineteen points on one field of the reference form, which is the difference
+  between its label lining up with the two above it and starting half an inch
+  to their left.
+- **Alignment of headings** follows the template's own `hAlign`, so a centred
+  column heading arrives centred.
+
 ### Tested against a real form
 The feature was finished against a genuine LiveCycle document — a one-page
 request form with nineteen fields, a growable table and seven scripts — and

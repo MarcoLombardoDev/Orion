@@ -614,6 +614,27 @@ def test_canvas_transform_matches_the_model(rotation):
 
 
 # -- helpers -------------------------------------------------------------
+def _nudge(window, object_id: str, dx: float, dy: float) -> None:
+    """Move one object through the same command the canvas uses."""
+    from orion.commands.object_commands import MoveObjectsCommand
+
+    window.session.history.push(
+        MoveObjectsCommand(window.session.document, 0, [object_id], dx, dy)
+    )
+
+
+def _widget_left(path, name: str) -> float:
+    """Where a named widget's box starts in *path*, in PDF points."""
+    from pypdf import PdfReader
+
+    for pdf_page in PdfReader(str(path)).pages:
+        for annotation in pdf_page.get("/Annots") or []:
+            widget = annotation.get_object()
+            if str(widget.get("/T")) == name:
+                return float(widget["/Rect"][0])
+    raise AssertionError(f"no widget named {name}")
+
+
 def _drag(window, tool: Tool, start: tuple[float, float], end: tuple[float, float]) -> None:
     """Simulate press-move-release on the canvas in base page coordinates."""
     from PySide6.QtCore import QEvent, QPoint
@@ -1919,6 +1940,97 @@ class TestXfaInTheWindow:
         pump(qapp)
         texts = [o for o in window.session.document[0].objects if isinstance(o, TextObject)]
         assert texts, "a text box could not be added to the converted form"
+
+    def test_the_converted_form_s_fields_are_objects_that_can_be_moved(
+        self, window, qapp, tmp_path, monkeypatch
+    ):
+        """A field you can see and not pick up is scenery, not a field."""
+        from orion.document.forms import FormFieldObject
+        from orion.ui.dialogs import xfa_dialog
+
+        def accept(self):
+            self._choice = xfa_dialog.XfaPromptDialog.CONVERT
+            return 1
+
+        monkeypatch.setattr(xfa_dialog.XfaPromptDialog, "exec", accept)
+        monkeypatch.setattr(xfa_dialog.XfaReportDialog, "exec", lambda self: 1)
+        window.open_path(self._xfa(tmp_path))
+        pump(qapp)
+
+        page = window.session.document[0]
+        fields = [o for o in page.objects if isinstance(o, FormFieldObject)]
+        assert fields, "the converted form arrived with no field objects"
+        assert all(f.source_index >= 0 for f in fields)
+        assert page.imported_fields, "the page does not know where they came from"
+
+        before = fields[0].rect
+        window._canvas.select_objects([fields[0].id])
+        pump(qapp)
+        assert window._canvas.selected_objects(), "a field could not be selected"
+
+        _nudge(window, fields[0].id, 12.0, 8.0)
+        pump(qapp)
+        moved = next(
+            o for o in window.session.document[0].objects if o.id == fields[0].id
+        )
+        assert moved.rect.x0 == pytest.approx(before.x0 + 12.0)
+        assert moved.rect.y0 == pytest.approx(before.y0 + 8.0)
+
+    def test_moving_a_field_moves_the_real_one_in_the_saved_file(
+        self, window, qapp, tmp_path, monkeypatch
+    ):
+        """And the field keeps everything Orion does not model.
+
+        The widget dictionary is edited rather than rebuilt, so the drop-down
+        that arrives with eight options leaves with eight options.
+        """
+        from pypdf import PdfReader
+
+        from orion.document.forms import FormFieldObject
+        from orion.ui.dialogs import xfa_dialog
+
+        def accept(self):
+            self._choice = xfa_dialog.XfaPromptDialog.CONVERT
+            return 1
+
+        monkeypatch.setattr(xfa_dialog.XfaPromptDialog, "exec", accept)
+        monkeypatch.setattr(xfa_dialog.XfaReportDialog, "exec", lambda self: 1)
+        window.open_path(self._xfa(tmp_path))
+        pump(qapp)
+
+        converted = window.session.path
+        options_before = {
+            name: len(spec.get("/Opt") or [])
+            for name, spec in (PdfReader(str(converted)).get_fields() or {}).items()
+        }
+
+        page = window.session.document[0]
+        field = next(o for o in page.objects if isinstance(o, FormFieldObject))
+        _nudge(window, field.id, 20.0, 0.0)
+        pump(qapp)
+
+        out = tmp_path / "saved.pdf"
+        window._files.save_as(window.session, out)
+        pump(qapp)
+
+        reader = PdfReader(str(out))
+        rects = {
+            str(annotation.get_object().get("/T")): [
+                float(v) for v in annotation.get_object()["/Rect"]
+            ]
+            for pdf_page in reader.pages
+            for annotation in (pdf_page.get("/Annots") or [])
+            if str(annotation.get_object().get("/Subtype")) == "/Widget"
+        }
+        assert rects, "the saved file has no widgets left"
+        assert rects[field.name][0] == pytest.approx(
+            _widget_left(converted, field.name) + 20.0, abs=0.05
+        )
+        options_after = {
+            name: len(spec.get("/Opt") or [])
+            for name, spec in (reader.get_fields() or {}).items()
+        }
+        assert options_after == options_before, "a field lost its options in the move"
 
     def test_an_ordinary_pdf_is_opened_without_being_asked_about(
         self, window, qapp, sample_pdf, monkeypatch

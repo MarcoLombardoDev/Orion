@@ -59,6 +59,7 @@ from reportlab.pdfgen import canvas as rl_canvas
 
 from orion.document.annotations import AnnotationKind, AnnotationObject
 from orion.document.document import Document
+from orion.document.forms import FormFieldObject
 from orion.document.objects import (
     ImageObject,
     PageObject,
@@ -320,7 +321,85 @@ def _page_geometry(pdf_page: pypdf.PageObject) -> tuple[PageGeometry, float, flo
 # --------------------------------------------------------------------------
 # Object stamping
 # --------------------------------------------------------------------------
-def _drop_imported_annotations(pdf_page: pypdf.PageObject, page: Page) -> None:
+def _apply_form_fields(pdf_page: pypdf.PageObject, page: Page, geometry) -> list[int]:
+    """Move the page's widgets to wherever their objects ended up.
+
+    The widget dictionary is edited in place rather than rebuilt. A field is
+    its options, its flags, its tooltip, its default appearance and its place
+    in the form's field tree, and Orion models none of that — so the way to
+    move a field without destroying it is to change the four numbers that say
+    where it is and leave everything else alone.
+
+    Returns the indices of widgets whose object the user deleted, and the
+    references to them. The indices go to the caller to remove along with the
+    annotations it drops — together, because both index the same ``/Annots``
+    array and deleting from it twice in two passes would renumber it under the
+    second one. The references go to :func:`_drop_orphaned_fields`, because a
+    field is listed twice in a PDF and removing only the widget leaves the
+    other half in the form's field tree, where every reader still finds it.
+    """
+    if not page.imported_fields:
+        return [], []
+    annots = pdf_page.get("/Annots")
+    if not annots:
+        return [], []
+
+    kept = {
+        obj.source_index: obj
+        for obj in page.objects
+        if isinstance(obj, FormFieldObject) and obj.source_index >= 0
+    }
+    removed: list[int] = []
+    orphans: list[object] = []
+    for position in page.imported_fields:
+        if not 0 <= position < len(annots):  # pragma: no cover - source changed
+            log.warning("Imported form field %d is no longer in the page", position)
+            continue
+        obj = kept.get(position)
+        if obj is None:
+            removed.append(position)
+            orphans.append(annots[position])
+            continue
+        try:
+            widget = annots[position].get_object()
+            rect = to_pdf_rect(geometry, obj.rect)
+            widget[NameObject("/Rect")] = ArrayObject(
+                [FloatObject(round(value, 4)) for value in rect]
+            )
+        except Exception:  # pragma: no cover - a widget too damaged to move
+            log.warning("Could not move the form field at %d", position, exc_info=True)
+    return removed, orphans
+
+
+def _drop_orphaned_fields(writer: PdfWriter, orphans: list) -> None:
+    """Take the deleted widgets out of ``/AcroForm /Fields`` as well.
+
+    A form field lives in two places: the page's ``/Annots``, where it is
+    drawn, and the document's field tree, where it is looked up. Removing it
+    from one leaves a field every reader still lists — named, addressable and
+    invisible — which is worse than not removing it at all.
+    """
+    if not orphans:
+        return
+    try:
+        form = writer._root_object.get("/AcroForm")
+        fields = form.get_object().get("/Fields") if form is not None else None
+        if not fields:
+            return
+        doomed = {
+            (ref.idnum, ref.generation) for ref in orphans if hasattr(ref, "idnum")
+        }
+        for position in range(len(fields) - 1, -1, -1):
+            entry = fields[position]
+            if hasattr(entry, "idnum") and (entry.idnum, entry.generation) in doomed:
+                del fields[position]
+    except Exception:  # pragma: no cover - a form too damaged to prune
+        log.warning("Could not tidy the form's field list", exc_info=True)
+
+
+def _drop_imported_annotations(
+    pdf_page: pypdf.PageObject, page: Page, extra: list[int] | None = None
+) -> None:
     """Remove the annotations the model now owns from the copied page.
 
     They were read into :class:`AnnotationObject`s when the file was opened
@@ -334,12 +413,13 @@ def _drop_imported_annotations(pdf_page: pypdf.PageObject, page: Page) -> None:
     survive the copy because pypdf preserves ``/Annots`` order, which
     ``tests/test_annotation_import.py`` checks rather than assumes.
     """
-    if not page.imported_annotations:
+    extra = list(extra or [])
+    if not page.imported_annotations and not extra:
         return
     annots = pdf_page.get("/Annots")
     if not annots:
         return
-    for position in sorted(page.imported_annotations, reverse=True):
+    for position in sorted({*page.imported_annotations, *extra}, reverse=True):
         if 0 <= position < len(annots):
             del annots[position]
         else:  # pragma: no cover - the source changed under the document
@@ -355,9 +435,18 @@ def _stamp_page(writer: PdfWriter, index: int, page: Page) -> None:
     """
     pdf_page = writer.pages[index]
     geometry, origin_x, origin_y = _page_geometry(pdf_page)
-    _drop_imported_annotations(pdf_page, page)
+    # Widgets move before anything is dropped: both live in /Annots, and the
+    # positions recorded at open time only mean what they said until something
+    # is deleted from it.
+    orphaned, orphan_refs = _apply_form_fields(pdf_page, page, geometry)
+    _drop_imported_annotations(pdf_page, page, orphaned)
+    _drop_orphaned_fields(writer, orphan_refs)
 
-    drawables = [obj for obj in page.objects if not isinstance(obj, AnnotationObject)]
+    drawables = [
+        obj
+        for obj in page.objects
+        if not isinstance(obj, AnnotationObject | FormFieldObject)
+    ]
     annotations = [obj for obj in page.objects if isinstance(obj, AnnotationObject)]
 
     if drawables:

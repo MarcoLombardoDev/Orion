@@ -44,6 +44,7 @@ from PySide6.QtWidgets import (
 
 from orion.commands.object_commands import MoveObjectsCommand, TransformObjectsCommand
 from orion.document.annotations import AnnotationKind, AnnotationObject
+from orion.document.forms import FormFieldKind, FormFieldObject
 from orion.document.objects import (
     MIN_OBJECT_SIZE,
     ImageObject,
@@ -946,6 +947,130 @@ class RedactionObjectItem(ObjectItem):
 
 
 # --------------------------------------------------------------------------
+# Form fields
+# --------------------------------------------------------------------------
+class FormFieldObjectItem(ObjectItem):
+    """A form field of the document, drawn by Orion so it can be moved.
+
+    pdfium draws the real widget when it rasterises the page, and the reader
+    hides it for exactly the same reason it hides an imported highlight: the
+    field is an object now, and two copies of it — one in the page image,
+    one on the canvas — look identical right up until the user drags one.
+
+    So this draws the field: its background, its border, its value, and a
+    small marker for the kinds a plain box would not tell apart. Not a
+    pixel-perfect impersonation of a reader's widget, and not meant to be —
+    what it has to be is in the right place, the right size, and clickable.
+    """
+
+    #: Shown behind a field that declares no colours of its own, so a field
+    #: with an invisible border is still something the user can see and grab.
+    HINT_FILL = QColor(96, 141, 214, 28)
+    HINT_BORDER = QColor(96, 141, 214, 150)
+
+    @property
+    def field(self) -> FormFieldObject:
+        return self._object  # type: ignore[return-value]
+
+    @property
+    def can_rotate(self) -> bool:
+        """A widget rectangle is axis-aligned; the file format says so."""
+        return False
+
+    def paint_content(self, painter: QPainter, option, widget) -> None:
+        obj = self.field
+        rect = self.local_rect()
+
+        painter.save()
+        # A pushbutton is already painted on the page — its caption, its
+        # raised edge, the lot — and the widget over it exists only for the
+        # click. Tinting it would put a blue wash over a button that looks
+        # right, so it gets the outline and nothing else.
+        button = obj.field_kind is FormFieldKind.BUTTON
+        if obj.fill_color is not None:
+            painter.setBrush(QBrush(_qcolor(obj.fill_color)))
+        elif button:
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+        else:
+            painter.setBrush(QBrush(self.HINT_FILL))
+        if button and obj.border_color is None:
+            pen = QPen(self.HINT_BORDER)
+            pen.setWidthF(0.6)
+            pen.setStyle(Qt.PenStyle.DotLine)
+        elif obj.border_color is not None and obj.border_width > 0:
+            pen = QPen(_qcolor(obj.border_color))
+            pen.setWidthF(max(obj.border_width, 0.1))
+        else:
+            pen = QPen(self.HINT_BORDER)
+            pen.setWidthF(0.6)
+            pen.setStyle(Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+        painter.drawRect(rect)
+
+        if obj.field_kind in (FormFieldKind.CHECKBOX, FormFieldKind.RADIO):
+            self._paint_tick(painter, rect, obj)
+        elif obj.field_kind is FormFieldKind.CHOICE:
+            self._paint_arrow(painter, rect)
+
+        if obj.value and obj.field_kind not in (
+            FormFieldKind.CHECKBOX,
+            FormFieldKind.RADIO,
+        ):
+            self._paint_value(painter, rect, obj)
+        painter.restore()
+
+    def _paint_value(self, painter: QPainter, rect: QRectF, obj: FormFieldObject) -> None:
+        size = obj.font_size if obj.font_size > 0 else min(rect.height() * 0.7, 10.0)
+        font = QFont("Helvetica")
+        font.setPixelSize(max(int(round(size)), 1))
+        painter.setFont(font)
+        painter.setPen(QPen(_qcolor(obj.text_color)))
+        painter.setClipRect(rect)
+        box = rect.adjusted(2.0, 1.0, -2.0, -1.0)
+        flags = Qt.AlignmentFlag.AlignLeft | (
+            Qt.AlignmentFlag.AlignTop if obj.multiline else Qt.AlignmentFlag.AlignVCenter
+        )
+        painter.drawText(box, int(flags), obj.value)
+
+    def _paint_tick(self, painter: QPainter, rect: QRectF, obj: FormFieldObject) -> None:
+        if obj.field_kind is FormFieldKind.RADIO:
+            painter.drawEllipse(rect.adjusted(1.5, 1.5, -1.5, -1.5))
+        if not obj.checked:
+            return
+        pen = QPen(_qcolor(obj.text_color))
+        pen.setWidthF(max(rect.height() * 0.12, 0.8))
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        inner = rect.adjusted(rect.width() * 0.25, rect.height() * 0.25,
+                              -rect.width() * 0.25, -rect.height() * 0.25)
+        if obj.field_kind is FormFieldKind.RADIO:
+            painter.setBrush(QBrush(_qcolor(obj.text_color)))
+            painter.drawEllipse(inner)
+            return
+        painter.drawLine(inner.topLeft(), inner.bottomRight())
+        painter.drawLine(inner.topRight(), inner.bottomLeft())
+
+    def _paint_arrow(self, painter: QPainter, rect: QRectF) -> None:
+        """The marker that tells a drop-down from a text box at a glance."""
+        size = min(rect.height() * 0.35, 5.0)
+        if size <= 0.5 or rect.width() < size * 3:
+            return
+        right = rect.right() - size
+        middle = rect.center().y()
+        painter.setBrush(QBrush(self.HINT_BORDER))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawPolygon(
+            QPolygonF(
+                [
+                    QPointF(right - size, middle - size * 0.4),
+                    QPointF(right + size, middle - size * 0.4),
+                    QPointF(right, middle + size * 0.7),
+                ]
+            )
+        )
+
+
+# --------------------------------------------------------------------------
 # Factory
 # --------------------------------------------------------------------------
 _ITEM_TYPES = {
@@ -954,6 +1079,7 @@ _ITEM_TYPES = {
     ShapeObject: ShapeObjectItem,
     AnnotationObject: AnnotationObjectItem,
     RedactionObject: RedactionObjectItem,
+    FormFieldObject: FormFieldObjectItem,
 }
 
 

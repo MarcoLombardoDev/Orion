@@ -56,17 +56,21 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
+from orion.xfa.checks import check_layout
 from orion.xfa.detector import FormInfo, inspect_form
 from orion.xfa.layout import LaidOutForm, rect_to_pdf, resolve_layout
 from orion.xfa.model import (
     XfaButton,
+    XfaButtonKind,
     XfaDocument,
     XfaDraw,
     XfaField,
     XfaFieldType,
     XfaFont,
+    XfaInsets,
 )
 from orion.xfa.parser import parse_xfa
 from orion.xfa.report import ConversionMode, XfaConversionReport
@@ -249,6 +253,12 @@ def _split_for_caption(
     if not field.caption:
         return None, (x, y, width, height)
 
+    # The label sits inside the field's *content* area, which the template's
+    # margins inset — nineteen points of it on one field of the reference
+    # form, which is the difference between its label lining up with the two
+    # above it and starting half an inch to their left. The widget keeps the
+    # full box, because the border belongs to the box and not to the content.
+    inset = field.margins.left
     placement = (field.caption_placement or "left").lower()
     if placement in ("top", "bottom"):
         reserve = field.caption_reserve or field.font.size * 1.25
@@ -260,12 +270,16 @@ def _split_for_caption(
         return (x, y, width, reserve), (x, y + reserve, width, height - reserve)
 
     reserve = field.caption_reserve or _measured_caption(field)
-    reserve = min(reserve, max(width - 8.0, 0.0))
+    reserve = min(reserve, max(width - inset - 8.0, 0.0))
     if reserve <= 0:
         return None, (x, y, width, height)
     if placement == "right":
-        return (x + width - reserve, y, reserve, height), (x, y, width - reserve, height)
-    return (x, y, reserve, height), (x + reserve, y, width - reserve, height)
+        return (
+            (x + width - reserve - field.margins.right, y, reserve, height),
+            (x, y, width - reserve, height),
+        )
+    taken = inset + reserve
+    return (x + inset, y, reserve, height), (x + taken, y, width - taken, height)
 
 
 def _measured_caption(field: XfaField) -> float:
@@ -327,20 +341,56 @@ def _draw_static(pdf, item: XfaDraw, page_height: float) -> None:
     pdf.setFillColorRGB(*item.font.color)
     font_name = _font_name(item.font)
     pdf.setFont(font_name, item.font.size)
-    _draw_wrapped(pdf, item.text, x, y, width, height, item.font, font_name, item.align)
+    _draw_wrapped(
+        pdf,
+        item.text,
+        x,
+        y,
+        width,
+        height,
+        item.font,
+        font_name,
+        item.align,
+        item.valign,
+        item.margins,
+    )
     pdf.restoreState()
 
 
-def _draw_wrapped(pdf, text, x, y, width, height, font: XfaFont, font_name, align) -> None:
-    """Text inside its box, wrapped, top-aligned the way XFA lays it out."""
+def _draw_wrapped(
+    pdf,
+    text,
+    x,
+    y,
+    width,
+    height,
+    font: XfaFont,
+    font_name,
+    align,
+    valign: str = "top",
+    insets: XfaInsets | None = None,
+) -> None:
+    """Text inside its box: wrapped, inset, and aligned both ways.
+
+    Vertical alignment is not a detail on a form. Almost every caption in the
+    reference document asks for ``vAlign="middle"`` and its buttons for the
+    same, so drawing everything against the top of its box — which is what
+    this did — left the whole form sitting a couple of points high and its
+    single-line labels floating above the boxes they name.
+    """
     from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    if insets is not None and not insets.is_zero:
+        x += insets.left
+        y += insets.bottom
+        width -= insets.left + insets.right
+        height -= insets.top + insets.bottom
 
     leading = font.size * 1.2
     limit = max(width, 1.0)
-    words = text.split()
     lines: list[str] = []
     current = ""
-    for word in words:
+    for word in text.split():
         candidate = f"{current} {word}".strip()
         if stringWidth(candidate, font_name, font.size) <= limit or not current:
             current = candidate
@@ -349,8 +399,19 @@ def _draw_wrapped(pdf, text, x, y, width, height, font: XfaFont, font_name, alig
             current = word
     if current:
         lines.append(current)
+    if not lines:
+        return
 
-    top = y + height - font.size
+    block = (len(lines) - 1) * leading + font.size
+    slack = max(height - block, 0.0)
+    if valign == "middle":
+        offset = slack / 2.0
+    elif valign == "bottom":
+        offset = slack
+    else:
+        offset = 0.0
+
+    top = y + height - offset - font.size
     for index, line in enumerate(lines):
         baseline = top - index * leading
         if baseline < y - leading:
@@ -373,7 +434,16 @@ def _draw_field_caption(pdf, field: XfaField, rect) -> None:
     pdf.setFillColorRGB(*field.font.color)
     pdf.setFont(font_name, field.font.size)
     _draw_wrapped(
-        pdf, field.caption, x, y, max(width, 1.0), height, field.font, font_name, "left"
+        pdf,
+        field.caption,
+        x,
+        y,
+        max(width, 1.0),
+        height,
+        field.font,
+        font_name,
+        field.caption_align,
+        field.caption_valign,
     )
     pdf.restoreState()
 
@@ -397,7 +467,16 @@ def _draw_field_as_static(pdf, field: XfaField, page_height: float) -> None:
         font_name = _font_name(field.font)
         pdf.setFont(font_name, field.font.size)
         _draw_wrapped(
-            pdf, field.value, box_x + 2, y, box_width - 4, height, field.font, font_name, "left"
+            pdf,
+            field.value,
+            box_x + 2,
+            y,
+            box_width - 4,
+            height,
+            field.font,
+            font_name,
+            field.align,
+            field.valign,
         )
     pdf.restoreState()
 
@@ -618,6 +697,175 @@ def _dictionary_end(raw: bytes, start: int) -> int:
     return -1
 
 
+@dataclass(frozen=True, slots=True)
+class _LiveButton:
+    """A button the converted document can genuinely carry out."""
+
+    page: int
+    rect: tuple[float, float, float, float]
+    name: str
+    caption: str
+    #: ``print``, ``save`` or ``reset`` — resolved into a PDF action below.
+    action: str
+
+
+#: XFA button -> the standard PDF action that does the same thing. These are
+#: *actions*, not scripts: a reader carries them out itself, so they need
+#: none of the JavaScript that could not come across.
+_BUTTON_ACTIONS = {
+    XfaButtonKind.PRINT: "print",
+    XfaButtonKind.SAVE: "save",
+    XfaButtonKind.RESET: "reset",
+}
+
+
+def _can_be_a_widget(field: XfaField, mode: ConversionMode) -> bool:
+    """Should this field become something the file can hold a value in?
+
+    A field the template protects is still a field. Painting it onto the page
+    loses its name, its type and any chance of unlocking it later, so in the
+    mode that converts everything it becomes a widget with the read-only flag
+    set instead — visible, named, and one flag away from editable. Signatures,
+    images and barcodes stay out either way: there is no AcroForm equivalent
+    that would behave.
+    """
+    if not field.field_type.is_interactive:
+        return False
+    return field.is_interactive or mode.wants_locked_fields
+
+
+def _named_action(button: XfaButton) -> str:
+    """The action this button can keep, or "" when it cannot keep one.
+
+    Three of a form's buttons ask for something every PDF reader already
+    does — print this, save a copy, empty the form — and PDF has had an
+    action for each since long before XFA. Those are recreated. The ones that
+    add a row to a table or recalculate a total are not: they are the form's
+    own programming, they have no equivalent, and the report says so rather
+    than the button pretending.
+    """
+    return _BUTTON_ACTIONS.get(button.kind, "")
+
+
+def _finish_widgets(
+    path: Path, blank_choices: set[str], buttons: list[_LiveButton]
+) -> None:
+    """One pass over the finished file for everything reportlab cannot do.
+
+    Both jobs need the file reopened, and reopening it twice would mean
+    writing it twice, so they share a pass: emptying the placeholder choices
+    and adding the button widgets that carry a print, save or reset action.
+    """
+    if not blank_choices and not buttons:
+        return
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import NameObject
+
+    try:
+        writer = PdfWriter(clone_from=PdfReader(str(path)))
+        for page in writer.pages:
+            for annotation in page.get("/Annots") or []:
+                widget = annotation.get_object()
+                if str(widget.get("/T", "")) not in blank_choices:
+                    continue
+                for key in ("/V", "/DV", "/I"):
+                    if key in widget:
+                        del widget[NameObject(key)]
+                widget[NameObject("/AP")] = _blank_appearance(widget, writer)
+
+        for button in buttons:
+            _add_button_widget(writer, button)
+
+        with open(path, "wb") as handle:
+            writer.write(handle)
+    except Exception:  # pragma: no cover - a plain file beats no file
+        log.warning("Could not finish the converted form's widgets", exc_info=True)
+
+
+def _add_button_widget(writer, button: _LiveButton) -> None:
+    """Put a clickable pushbutton over the button already drawn on the page.
+
+    The look is left to the drawing underneath — it is the form's own button,
+    complete with its caption and its raised edge — so the widget carries an
+    empty appearance and exists for the click alone. That way nothing is drawn
+    twice and nothing has to be redrawn in a reader's idea of a button.
+    """
+    from pypdf.generic import (
+        ArrayObject,
+        DecodedStreamObject,
+        DictionaryObject,
+        FloatObject,
+        NameObject,
+        NumberObject,
+        TextStringObject,
+    )
+
+    if button.page >= len(writer.pages):  # pragma: no cover - defensive
+        return
+    page = writer.pages[button.page]
+    x, y, width, height = button.rect
+    if width <= 0 or height <= 0:  # pragma: no cover - defensive
+        return
+
+    if button.action == "reset":
+        action = DictionaryObject({NameObject("/S"): NameObject("/ResetForm")})
+    else:
+        named = "/Print" if button.action == "print" else "/SaveAs"
+        action = DictionaryObject(
+            {NameObject("/S"): NameObject("/Named"), NameObject("/N"): NameObject(named)}
+        )
+
+    empty = DecodedStreamObject()
+    empty.set_data(b"")
+    empty[NameObject("/Type")] = NameObject("/XObject")
+    empty[NameObject("/Subtype")] = NameObject("/Form")
+    empty[NameObject("/BBox")] = ArrayObject(
+        [FloatObject(0), FloatObject(0), FloatObject(width), FloatObject(height)]
+    )
+    empty[NameObject("/Resources")] = DictionaryObject()
+
+    widget = DictionaryObject(
+        {
+            NameObject("/Type"): NameObject("/Annot"),
+            NameObject("/Subtype"): NameObject("/Widget"),
+            NameObject("/FT"): NameObject("/Btn"),
+            # 65536 is the pushbutton flag: a button that holds no value.
+            NameObject("/Ff"): NumberObject(65536),
+            NameObject("/T"): TextStringObject(button.name),
+            NameObject("/TU"): TextStringObject(button.caption),
+            NameObject("/F"): NumberObject(4),
+            NameObject("/Rect"): ArrayObject(
+                [
+                    FloatObject(x),
+                    FloatObject(y),
+                    FloatObject(x + width),
+                    FloatObject(y + height),
+                ]
+            ),
+            NameObject("/MK"): DictionaryObject(
+                {NameObject("/CA"): TextStringObject(button.caption)}
+            ),
+            NameObject("/A"): action,
+            NameObject("/AP"): DictionaryObject(
+                {NameObject("/N"): writer._add_object(empty)}
+            ),
+        }
+    )
+    reference = writer._add_object(widget)
+
+    annotations = page.get(NameObject("/Annots"))
+    if annotations is None:
+        page[NameObject("/Annots")] = ArrayObject([reference])
+    else:
+        annotations.append(reference)
+
+    form = writer._root_object.get("/AcroForm")
+    if form is not None:
+        fields = form.get_object().get("/Fields")
+        if fields is not None:
+            fields.append(reference)
+
+
 def _blank_appearance(widget, writer):
     """A drop-down drawn empty: its box, and nothing in it.
 
@@ -665,38 +913,6 @@ def _blank_appearance(widget, writer):
     )
     stream[NameObject("/Resources")] = DictionaryObject()
     return DictionaryObject({NameObject("/N"): writer._add_object(stream)})
-
-
-def _clear_blank_choices(path: Path, names: set[str]) -> None:
-    """Undo the placeholder selection forced on us by reportlab.
-
-    Removing ``/V``, ``/DV`` and ``/I`` leaves the field exactly as an
-    untouched drop-down should be: its options intact, nothing chosen. The
-    default value matters as much as the value, because a viewer that finds no
-    value falls back to it and shows the placeholder anyway — and the drawn
-    appearance matters as much as both, which is what
-    :func:`_blank_appearance` replaces.
-    """
-    if not names:
-        return
-    from pypdf import PdfReader, PdfWriter
-    from pypdf.generic import NameObject
-
-    try:
-        writer = PdfWriter(clone_from=PdfReader(str(path)))
-        for page in writer.pages:
-            for annotation in page.get("/Annots") or []:
-                widget = annotation.get_object()
-                if str(widget.get("/T", "")) not in names:
-                    continue
-                for key in ("/V", "/DV", "/I"):
-                    if key in widget:
-                        del widget[NameObject(key)]
-                widget[NameObject("/AP")] = _blank_appearance(widget, writer)
-        with open(path, "wb") as handle:
-            writer.write(handle)
-    except Exception:  # pragma: no cover - a preselected list beats no file
-        log.warning("Could not clear the placeholder choice values", exc_info=True)
 
 
 def _grey(colour):
@@ -775,6 +991,8 @@ def convert_xfa(
             "keeps only what the original pages already showed."
         )
 
+    _report_layout_checks(report, form)
+
     try:
         _write(output_path, form, mode, report, document)
     except Exception as exc:  # pragma: no cover - a write failure is reported
@@ -810,6 +1028,8 @@ def _write(
     hidden_shown = 0
     # What kind of element had to be left out, and how many of each.
     lost_kinds: dict[str, int] = {}
+    # Buttons a standard PDF can actually carry out, and where they sit.
+    live_buttons: list[_LiveButton] = []
 
     pdf = canvas.Canvas(str(output_path), pagesize=(form.pages[0].width, form.pages[0].height))
     pdf.setTitle(output_path.stem)
@@ -822,7 +1042,7 @@ def _write(
     # there the template's own answer is kept.
     show_hidden = mode.wants_fields
 
-    for page in form.pages:
+    for page_index, page in enumerate(form.pages):
         pdf.setPageSize((page.width, page.height))
 
         for drawn in page.draws:
@@ -844,13 +1064,24 @@ def _write(
                 continue
             _draw_button(pdf, button, page.height)
             static += 1
+            action = _named_action(button)
+            if action and mode.wants_fields:
+                live_buttons.append(
+                    _LiveButton(
+                        page=page_index,
+                        rect=rect_to_pdf(button.rect, page.height),
+                        name=_safe_name(button.som or button.name, used_names),
+                        caption=button.caption,
+                        action=action,
+                    )
+                )
 
         for field in page.fields:
             if field.hidden:
                 if not show_hidden:
                     continue
                 hidden_shown += 1
-            interactive = mode.wants_fields and field.is_interactive
+            interactive = mode.wants_fields and _can_be_a_widget(field, mode)
             if interactive:
                 name = (
                     radio_names.name_for(field.group or field.som)
@@ -886,7 +1117,8 @@ def _write(
 
     pdf.save()
     _merge_default_fonts(output_path)
-    _clear_blank_choices(output_path, blank_choices)
+    _finish_widgets(output_path, blank_choices, live_buttons)
+    report.live_buttons = len(live_buttons)
     report.converted_fields = converted
     report.static_elements = static
     report.unsupported_elements = unsupported
@@ -902,6 +1134,45 @@ def _write(
             )
         else:  # pragma: no cover - any other kind is a drawing failure
             report.warn(f"{count} {kind} element(s) could not be reproduced.")
+
+
+def _report_layout_checks(report: XfaConversionReport, form: LaidOutForm) -> None:
+    """Measure the finished layout and say what came out wrong.
+
+    Grouped rather than listed one by one: a form whose flow was misread has
+    every field overlapping every other, and forty identical warnings tell
+    the user less than one sentence with a number in it. The first few
+    subjects are named because they are where to look.
+    """
+    issues = check_layout(form)
+    if not issues:
+        return
+    report.layout_problems = len(issues)
+
+    grouped: dict[str, list[str]] = {}
+    for issue in issues:
+        grouped.setdefault(issue.kind, []).append(issue.subject)
+
+    wording = {
+        "overlap": (
+            "{count} field(s) sit on top of another field ({names}). The form's "
+            "layout could not be worked out exactly, so some of them may be "
+            "unusable where they are."
+        ),
+        "off_page": (
+            "{count} field(s) ended up outside the page ({names}) and may not "
+            "be reachable."
+        ),
+        "overflow": (
+            "{count} piece(s) of text need more room than the form gave them "
+            "({names}) and are cut short."
+        ),
+    }
+    for kind, subjects in grouped.items():
+        named = ", ".join(subject for subject in subjects[:3] if subject)
+        if len(subjects) > 3:
+            named += ", …"
+        report.warn(wording[kind].format(count=len(subjects), names=named or "unnamed"))
 
 
 def _describe_losses(
@@ -934,10 +1205,17 @@ def _describe_losses(
         )
 
     for button in form.buttons:
-        if button.kind.value in ("instance", "submit", "reset", "print", "scripted"):
+        label = button.caption or button.name
+        if mode.wants_fields and _named_action(button):
             report.info(
-                f"The '{button.caption or button.name}' button is shown but no "
-                "longer does anything.",
+                f"The '{label}' button still works: it asks the reader to do "
+                "the same thing, through the action PDF has for it rather "
+                "than through the form's script.",
+                button.som,
+            )
+        elif button.kind.value in ("instance", "submit", "scripted"):
+            report.info(
+                f"The '{label}' button is shown but no longer does anything.",
                 button.som,
             )
 

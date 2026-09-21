@@ -563,8 +563,11 @@ class PropertiesPanel(QWidget):
         self._rotation.setValue(obj.rotation)
         self._opacity.setValue(obj.opacity * 100.0)
 
-        rotatable = not isinstance(obj, AnnotationObject) or obj.can_rotate
-        resizable = not isinstance(obj, AnnotationObject) or obj.can_resize
+        # Asked of the object rather than of its class: a form field cannot be
+        # turned — a widget rectangle is axis-aligned by the file format — and
+        # an annotation answers for its own kind.
+        rotatable = bool(getattr(obj, "can_rotate", True))
+        resizable = bool(getattr(obj, "can_resize", True))
         self._rotation.setEnabled(rotatable and not obj.locked)
         self._width.setEnabled(resizable and not obj.locked)
         self._height.setEnabled(resizable and not obj.locked)

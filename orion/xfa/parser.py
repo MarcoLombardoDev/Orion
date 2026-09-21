@@ -45,6 +45,7 @@ from orion.xfa.model import (
     XfaField,
     XfaFieldType,
     XfaFont,
+    XfaInsets,
     XfaOccur,
     XfaPageArea,
     XfaRect,
@@ -186,6 +187,33 @@ def _column_widths_of(node: Element) -> tuple[float, ...]:
     # A zero-width column is kept: dropping it would shift every cell after
     # it one column to the left.
     return tuple(widths) if any(w > 0 for w in widths) else ()
+
+
+def _insets_of(node: Element) -> XfaInsets:
+    """``<margin leftInset="6.7mm" …>`` in points."""
+    margin = _child(node, "margin")
+    if margin is None:
+        return XfaInsets()
+    return XfaInsets(
+        left=parse_measurement(margin.get("leftInset")),
+        top=parse_measurement(margin.get("topInset")),
+        right=parse_measurement(margin.get("rightInset")),
+        bottom=parse_measurement(margin.get("bottomInset")),
+    )
+
+
+def _para_of(node: Element | None) -> tuple[str, str]:
+    """``<para hAlign vAlign>`` -> ``(horizontal, vertical)``.
+
+    XFA's defaults are left and top, which is also what everything here falls
+    back to, so an element without a ``<para>`` reads the same as before.
+    """
+    if node is None:
+        return "left", "top"
+    para = _child(node, "para")
+    if para is None:
+        return "left", "top"
+    return (para.get("hAlign") or "left"), (para.get("vAlign") or "top")
 
 
 def _colour_of(text: str | None, default=(0.0, 0.0, 0.0)) -> tuple[float, float, float]:
@@ -418,12 +446,19 @@ def _parse_field(node: Element, parent_som: str, font: XfaFont) -> XfaField | Xf
         rect=_rect_of(node),
         font=own_font,
         multiline=multiline,
-        read_only=access in ("readOnly", "protected"),
+        # XFA's three non-editable accesses all mean the same thing to a
+        # standard form: the field is there and the user may not change it.
+        read_only=access in ("readOnly", "protected", "nonInteractive"),
         mandatory=mandatory,
         max_length=int(parse_measurement(edit.get("maxChars"), 0)) if edit is not None else 0,
         picture=picture,
         caption_reserve=caption_reserve,
         caption_placement=caption_placement,
+        margins=_insets_of(node),
+        align=_para_of(node)[0],
+        valign=_para_of(node)[1],
+        caption_align=_para_of(caption_node)[0],
+        caption_valign=_para_of(caption_node)[1],
         tooltip=_text_of(_child(_child(node, "assist"), "toolTip"))
         if _child(node, "assist") is not None
         else "",
@@ -464,6 +499,8 @@ def _button_kind(node: Element, scripts: tuple[XfaScript, ...]) -> XfaButtonKind
         return XfaButtonKind.RESET
     if "print" in text:
         return XfaButtonKind.PRINT
+    if "execmenuitem" in text and "save" in text:
+        return XfaButtonKind.SAVE
     return XfaButtonKind.SCRIPTED if scripts else XfaButtonKind.PLAIN
 
 
@@ -523,8 +560,7 @@ def _parse_draw(node: Element, parent_som: str, font: XfaFont) -> XfaDraw:
         elif _child(value, "image") is not None:
             kind = "image"
 
-    para = _child(node, "para")
-    align = (para.get("hAlign") if para is not None else None) or "left"
+    align, valign = _para_of(node)
 
     return XfaDraw(
         kind=kind,
@@ -532,6 +568,8 @@ def _parse_draw(node: Element, parent_som: str, font: XfaFont) -> XfaDraw:
         rect=rect,
         font=own_font,
         align=align,
+        valign=valign,
+        margins=_insets_of(node),
         line_width=line_width,
         line_color=line_colour,
         fill_color=fill_colour,

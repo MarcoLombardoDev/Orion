@@ -31,7 +31,6 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
-    QRadioButton,
     QVBoxLayout,
     QWidget,
 )
@@ -54,7 +53,6 @@ class XfaPromptDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(tr("Form document"))
         self._choice = self.CANCELLED
-        self._mode = ConversionMode.KEEP_FIELDS
 
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
@@ -76,8 +74,6 @@ class XfaPromptDialog(QDialog):
         note.setWordWrap(True)
         note.setProperty("role", "hint")
         layout.addWidget(note)
-
-        layout.addWidget(self._modes())
 
         buttons = QDialogButtonBox()
         convert = QPushButton(tr("Convert"))
@@ -111,27 +107,20 @@ class XfaPromptDialog(QDialog):
         label.setWordWrap(True)
         return label
 
-    def _modes(self) -> QWidget:
-        box = QWidget()
-        column = QVBoxLayout(box)
-        column.setContentsMargins(0, 0, 0, 0)
-        column.setSpacing(4)
-
-        self._keep = QRadioButton(tr("Keep as many fields as possible (recommended)"))
-        self._keep.setChecked(True)
-        self._editable = QRadioButton(tr("Make every field fillable"))
-        self._static = QRadioButton(tr("Convert to a document that cannot be filled in"))
-        for button in (self._keep, self._editable, self._static):
-            column.addWidget(button)
-        return box
-
     @property
     def mode(self) -> ConversionMode:
-        if self._editable.isChecked():
-            return ConversionMode.EDITABLE
-        if self._static.isChecked():
-            return ConversionMode.STATIC
-        return ConversionMode.KEEP_FIELDS
+        """Always the one worth offering: make every field fillable.
+
+        The dialog used to ask which of three modes to use, and the question
+        was a bad one. Two of the answers differ only for unusual forms, the
+        third produces a document that cannot be filled in — which is not what
+        somebody who has just been told their form is unopenable is after.
+        Anyone who does want a flat copy can convert and then print to PDF.
+
+        The modes themselves are kept, because the converter still needs them
+        and **File ▸ Convert Form to Standard PDF** can pass another one.
+        """
+        return ConversionMode.EDITABLE
 
     @property
     def choice(self) -> int:
@@ -240,6 +229,16 @@ def _count_lines(report: XfaConversionReport) -> list[str]:
         lines.append(
             tr("Fields shown here that the form used to hide: {count}").format(
                 count=report.hidden_fields_shown
+            )
+        )
+    if report.live_buttons:
+        lines.append(
+            tr("Buttons that still work: {count}").format(count=report.live_buttons)
+        )
+    if report.layout_problems:
+        lines.append(
+            tr("Elements that came out wrong: {count}").format(
+                count=report.layout_problems
             )
         )
     if report.scripts_found:

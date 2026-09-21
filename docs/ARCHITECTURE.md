@@ -168,6 +168,7 @@ Orion/
 │   │   ├── renderer.py        page rasterisation + LRU cache + thread safety
 │   │   ├── coordinates.py     base-space <-> PDF-content-space conversions
 │   │   ├── annotation_import.py  /Annots -> AnnotationObject, and who owns what
+│   │   ├── form_import.py     /Annots widgets -> FormFieldObject (moved, not rebuilt)
 │   │   ├── fonts.py           base-14 + installed system fonts, and embedding
 │   │   ├── text_edit.py       the page's own text: reading it back to replace it
 │   │   ├── stamps.py          watermarks and page numbers as ordinary text objects
@@ -176,6 +177,7 @@ Orion/
 │   │   └── operations.py      merge / split / extract / import (file level)
 │   │
 │   ├── xfa/                   ── XFA forms (Qt-free)
+│   │   ├── checks.py          measures the laid-out form: overlaps, overflow
 │   │   ├── detector.py        what kind of form a PDF carries, from its structure
 │   │   ├── safe_xml.py        XML from an untrusted file: DOCTYPE refused outright
 │   │   ├── model.py           XfaDocument/Subform/Field/Script — no PDF library

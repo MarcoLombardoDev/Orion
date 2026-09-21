@@ -316,7 +316,8 @@ this document…"*.
 Orion opens one and offers to convert it:
 
 * **Convert** — rebuilds the form as an ordinary PDF: the same layout, with
-  fields you can fill in and edit with the rest of Orion's tools.
+  every field it can make fillable, and the rest of Orion's tools working on
+  the result.
 * **Open read-only** — shows the file as it is, placeholder and all.
 * **Cancel** — does nothing.
 
@@ -325,18 +326,6 @@ Standard PDF**.
 
 **The original file is never changed.** The conversion is written as a new
 document beside it, named after the original with `-converted` on the end.
-
-### Choosing how much to convert
-
-**Keep as many fields as possible** is the default and is almost always what
-you want: every field that can be made fillable is, and anything that cannot
-is kept as part of the page so the form still looks right.
-
-**Make every field fillable** is the same thing said more insistently; it
-differs only for unusual forms.
-
-**Convert to a document that cannot be filled in** produces a plain, readable
-PDF with no fields at all. Useful when you only need to read or print it.
 
 ### What comes across, and what does not
 
@@ -372,6 +361,31 @@ The three losses above are not an oversight. An XFA form carries a small program
 standard PDF forms have nowhere to put it — there is no equivalent of a
 section that grows when you press a button. Orion keeps everything the form
 *contains* and tells you plainly what it can no longer *do*.
+
+### Form fields you can move
+
+A form field in any PDF — converted or not — is an object like anything else
+Orion draws. Click one to select it, drag it, resize it, nudge it with the
+arrow keys, or set its position exactly in the Properties panel. The field
+keeps everything that makes it a field: its name, its options, whether it is
+required or read-only, and the help text it shows. Delete one and it is gone
+from the saved file, not merely painted over.
+
+Fields cannot be rotated, because the PDF format keeps them square to the
+page, and their contents are not edited here: moving a field is not the same
+as filling the form in.
+
+### Buttons
+
+Three kinds of button survive the conversion, because a standard PDF has an
+action for each: **print**, **save a copy** and **clear the form**. They work
+in Orion and in any other reader, and they are not scripts — the reader does
+the work itself.
+
+Every other button — the ones that add a row to a table, or recalculate a
+total — is drawn and does nothing. That is the form's own programming, it has
+no equivalent in a standard PDF, and the summary names each button it could
+not bring across.
 
 ### The summary afterwards
 

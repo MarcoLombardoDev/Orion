@@ -69,6 +69,12 @@ class Page:
     #: instead, so an imported annotation is edited rather than duplicated —
     #: and one that was not imported is left in the file untouched.
     imported_annotations: tuple[int, ...] = ()
+    #: Indices into the *source* page's ``/Annots`` that Orion imported as
+    #: :class:`~orion.document.forms.FormFieldObject`. The writer moves those
+    #: widgets to wherever the objects ended up and deletes the ones whose
+    #: object the user removed, leaving the field dictionaries otherwise
+    #: exactly as they were.
+    imported_fields: tuple[int, ...] = ()
     #: Indices into the *source* page's content objects that the user has
     #: replaced with a text object of their own. The writer removes exactly
     #: these before stamping, so the original glyphs are gone from the saved
@@ -208,6 +214,7 @@ class Page:
             source_rotation=self.source_rotation,
             label=self.label,
             imported_annotations=self.imported_annotations,
+            imported_fields=self.imported_fields,
             replaced_text=self.replaced_text,
         )
 
@@ -221,6 +228,7 @@ class Page:
             "source_rotation": self.source_rotation,
             "label": self.label,
             "imported_annotations": list(self.imported_annotations),
+            "imported_fields": list(self.imported_fields),
             "replaced_text": list(self.replaced_text),
             "objects": [obj.to_dict() for obj in self.objects],
         }
@@ -238,6 +246,7 @@ class Page:
             imported_annotations=tuple(
                 int(i) for i in data.get("imported_annotations", ())
             ),
+            imported_fields=tuple(int(i) for i in data.get("imported_fields", ())),
             replaced_text=tuple(int(i) for i in data.get("replaced_text", ())),
             objects=[create_object(item) for item in data.get("objects", [])],
         )

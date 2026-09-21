@@ -40,16 +40,30 @@ __all__ = [
 class ConversionMode(str, Enum):
     """What the user asked for."""
 
-    #: Standard PDF with AcroForm fields. Everything convertible becomes live.
+    #: Every field the format can represent becomes a widget, including the
+    #: ones the template marked read-only or protected — those arrive locked
+    #: rather than painted on, so an editor can unlock them. This is what the
+    #: open-a-form dialog asks for, and is the only mode most people want.
     EDITABLE = "editable"
     #: Standard PDF, nothing interactive. The fallback that always works.
     STATIC = "static"
-    #: The default: keep as many fields as possible, staticise the rest.
+    #: Keep the fields the form lets a person fill in, and draw the rest as
+    #: part of the page. Closer to the original, and the file is smaller.
     KEEP_FIELDS = "keep_fields"
 
     @property
     def wants_fields(self) -> bool:
         return self is not ConversionMode.STATIC
+
+    @property
+    def wants_locked_fields(self) -> bool:
+        """Should a read-only or protected field still become a widget?
+
+        The difference between the two field-keeping modes, and until now
+        there was none: both did exactly the same thing, which made offering
+        the choice a small lie.
+        """
+        return self is ConversionMode.EDITABLE
 
 
 class Severity(str, Enum):
@@ -120,6 +134,11 @@ class XfaConversionReport:
     #: Fields the template hid and the conversion shows anyway, because the
     #: rule that would have revealed them could not come across.
     hidden_fields_shown: int = 0
+
+    #: Buttons recreated as something a reader will actually do.
+    live_buttons: int = 0
+    #: Overlapping, off-page or clipped elements the layout check found.
+    layout_problems: int = 0
 
     scripts_found: int = 0
     scripts_converted: int = 0
@@ -244,6 +263,10 @@ class XfaConversionReport:
                 f"Fields the form used to show only in certain cases: "
                 f"{self.hidden_fields_shown} (always shown here)"
             )
+        if self.layout_problems:
+            lines.append(f"Elements that came out wrong: {self.layout_problems}")
+        if self.live_buttons:
+            lines.append(f"Buttons that still work: {self.live_buttons}")
         if self.scripts_found:
             lines.append(
                 f"Scripts found: {self.scripts_found} "
