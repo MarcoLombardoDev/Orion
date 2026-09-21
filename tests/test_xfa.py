@@ -926,21 +926,48 @@ class TestTheFileTheConverterWrites:
         Run against whatever non-standard family this machine happens to have,
         because the point is the mechanism and not one font: if the family is
         installed, the converted file must carry it.
+
+        What the file is checked against is the face Orion resolved, read back
+        from reportlab, rather than the family's own name. Those are not the
+        same string and only look like it on some machines: "DejaVu Sans" is
+        written into a PDF as ``DejaVuSans``, which made an assertion about
+        the family with its spaces removed pass on Linux and fail on a macOS
+        runner, where the first font installed is "Academy Engraved LET" and
+        the name in the file is ``AcademyEngravedLetPlain``.
         """
-        from orion.pdf.fonts import BASE14_FAMILIES, available_families
+        from reportlab.pdfbase import pdfmetrics
 
-        extra = [f for f in available_families() if f not in BASE14_FAMILIES]
-        if not extra:  # pragma: no cover - a machine with only the base-14
-            pytest.skip("no system fonts installed to embed")
+        from orion.pdf.fonts import (
+            BASE14_FAMILIES,
+            FontRequest,
+            available_families,
+            resolve,
+        )
 
-        family = extra[0]
+        family = resolved = None
+        for candidate in available_families():
+            if candidate in BASE14_FAMILIES:
+                continue
+            found = resolve(FontRequest(candidate))
+            # A family can be listed and still fail to embed; the next one is
+            # as good a subject as the first.
+            if found.embedded:
+                family, resolved = candidate, found
+                break
+        if resolved is None:  # pragma: no cover - a machine with only the base-14
+            pytest.skip("no system font on this machine can be embedded")
+
         source = build_xfa_pdf(tmp_path / "typeface.pdf", typeface_template(family))
         out = tmp_path / "typeface-converted.pdf"
         convert_xfa(source, out)
 
         raw = out.read_bytes()
-        assert b"/FontFile2" in raw, "the family was not embedded"
-        assert family.replace(" ", "").encode() in raw
+        assert b"/FontFile2" in raw, "nothing was embedded"
+        # reportlab hands the name back as its own bytes-like subclass on some
+        # versions and as a plain string on others.
+        name = pdfmetrics.getFont(resolved.name).face.name
+        face = bytes(name) if isinstance(name, bytes | bytearray) else str(name).encode()
+        assert face in raw, f"{family} was resolved but {face!r} is not in the file"
         assert "Typeface sample" in _page_text(out)
 
     def test_an_uninstalled_family_falls_back_without_complaint(self, tmp_path):
