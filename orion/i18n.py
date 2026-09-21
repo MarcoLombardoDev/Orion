@@ -134,6 +134,16 @@ _CATALOGUE: dict[str, str] = {
     "Select every object on this page": "Seleziona ogni oggetto di questa pagina",
     "Deselect": "Deseleziona",
     "Clear the selection": "Annulla la selezione",
+    "Make Page &Text Movable": "Rendi il &testo della pagina spostabile",
+    "Turn the document's own text into boxes you can move":
+        "Trasforma il testo del documento in riquadri che puoi spostare",
+    "Make Text Movable": "Rendi il testo spostabile",
+    "The document's text could not be taken over.":
+        "Non è stato possibile rendere spostabile il testo del documento.",
+    "There is no page text left to take over.":
+        "Non c'è altro testo di pagina da rendere spostabile.",
+    "{count} lines of text can now be moved.":
+        "Ora puoi spostare {count} righe di testo.",
     "Bring to &Front": "Porta in &primo piano",
     "Move the object above the others": "Porta l'oggetto sopra gli altri",
     "Send to &Back": "Porta in &secondo piano",

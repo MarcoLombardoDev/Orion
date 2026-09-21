@@ -54,6 +54,7 @@ from dataclasses import dataclass, field
 
 import pypdfium2.raw as pdfium_raw
 
+from orion.document.objects import TextObject
 from orion.pdf.coordinates import PageGeometry, from_pdf_point, from_pdf_rect
 from orion.pdf.fonts import BASE14_MAP, FontRequest, available_families, resolve
 from orion.utils.geometry import Point, Rect
@@ -66,6 +67,8 @@ __all__ = [
     "read_text_lines",
     "line_at",
     "content_objects_in",
+    "split_into_boxes",
+    "text_object_for",
 ]
 
 #: Subset prefixes look like ``ABCDEF+`` and say nothing about the typeface.
@@ -446,3 +449,66 @@ def line_at(lines: Sequence[SourceTextLine], point: Point) -> SourceTextLine | N
 def is_editable_family(family: str) -> bool:
     """Whether Orion can redraw text in *family* without substituting."""
     return family in BASE14_MAP or family in available_families()
+
+
+def text_object_for(line: SourceTextLine, text: str | None = None) -> TextObject:
+    """The editable text box that stands in for *line*.
+
+    One line of the page's own text becomes one :class:`TextObject` placed
+    where the glyphs are, in the face and colour most of the line already
+    uses. The box is a little wider than the ink so that editing the words
+    does not immediately reflow them, and as tall as the font's own ascender
+    and descender, which is the height the replacement occupies once Orion
+    lays it out.
+
+    Shared by the two callers that need it — replacing a line the user clicked
+    and taking over every line of a page at once — because a text box that
+    lands a point higher depending on which of the two put it there is a bug
+    waiting for somebody to notice.
+    """
+    run = line.dominant_run
+    font = resolve(FontRequest(run.family, run.bold, run.italic))
+    size = line.font_size
+    return TextObject(
+        rect=Rect.from_xywh(
+            line.rect.x0,
+            line.baseline - font.ascender * size,
+            line.rect.width * 1.15,
+            size * (font.ascender - font.descender) + 2.0,
+        ),
+        text=line.text if text is None else text,
+        font_family=run.family,
+        font_size=size,
+        bold=run.bold,
+        italic=run.italic,
+        color=run.color,
+    )
+
+
+def split_into_boxes(line: SourceTextLine, *, gap: float = 0.6) -> list[SourceTextLine]:
+    """Break a line where the page leaves a real gap between its runs.
+
+    A "line" here is everything sharing a baseline, which on a form is a whole
+    row: four column headings, or two buttons, or a caption and the words
+    beside it. Replacing that as one box collapses it — the headings end up
+    run together at the left margin, because a single text box starts where
+    the leftmost glyph was and lays the rest out after it.
+
+    So the row is cut wherever the gap between one run and the next is wider
+    than a space would be. What comes back are lines in the same sense, each
+    holding the runs that genuinely belong together, and each becoming its own
+    box exactly where it already is.
+    """
+    ordered = sorted(line.runs, key=lambda run: run.rect.x0)
+    if len(ordered) < 2:
+        return [line] if ordered else []
+
+    groups: list[list[SourceTextRun]] = [[ordered[0]]]
+    for run in ordered[1:]:
+        previous = groups[-1][-1]
+        room = max(gap * max(run.font_size, previous.font_size), 2.0)
+        if run.rect.x0 - previous.rect.x1 > room:
+            groups.append([run])
+        else:
+            groups[-1].append(run)
+    return [SourceTextLine(runs=group) for group in groups]

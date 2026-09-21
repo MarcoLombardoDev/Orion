@@ -36,12 +36,14 @@ import re
 from xml.etree.ElementTree import Element
 
 from orion.xfa.model import (
+    NO_EDGES,
     XfaBinding,
     XfaButton,
     XfaButtonKind,
     XfaChoiceList,
     XfaDocument,
     XfaDraw,
+    XfaEdge,
     XfaField,
     XfaFieldType,
     XfaFont,
@@ -199,6 +201,32 @@ def _insets_of(node: Element) -> XfaInsets:
         top=parse_measurement(margin.get("topInset")),
         right=parse_measurement(margin.get("rightInset")),
         bottom=parse_measurement(margin.get("bottomInset")),
+    )
+
+
+def _indent_of(node: Element | None) -> float:
+    """``<para marginLeft>``: how far in from its box the text starts."""
+    if node is None:
+        return 0.0
+    para = _child(node, "para")
+    return parse_measurement(para.get("marginLeft")) if para is not None else 0.0
+
+
+def _space_of(node: Element | None) -> tuple[float, float]:
+    """``<para spaceAbove/spaceBelow>``: the gap a flowed parent leaves.
+
+    LiveCycle Designer offers these as an object's spacing, and a flowed form
+    is built out of them: without them every row in a section butts against
+    the next one and the document comes out tighter than it was drawn.
+    """
+    if node is None:
+        return 0.0, 0.0
+    para = _child(node, "para")
+    if para is None:
+        return 0.0, 0.0
+    return (
+        parse_measurement(para.get("spaceAbove")),
+        parse_measurement(para.get("spaceBelow")),
     )
 
 
@@ -459,6 +487,11 @@ def _parse_field(node: Element, parent_som: str, font: XfaFont) -> XfaField | Xf
         valign=_para_of(node)[1],
         caption_align=_para_of(caption_node)[0],
         caption_valign=_para_of(caption_node)[1],
+        caption_font=_font_of(caption_node, own_font) if caption_node is not None else None,
+        text_indent=_indent_of(node),
+        space_above=_space_of(node)[0],
+        space_below=_space_of(node)[1],
+        edges=_edges_of(border),
         tooltip=_text_of(_child(_child(node, "assist"), "toolTip"))
         if _child(node, "assist") is not None
         else "",
@@ -504,20 +537,62 @@ def _button_kind(node: Element, scripts: tuple[XfaScript, ...]) -> XfaButtonKind
     return XfaButtonKind.SCRIPTED if scripts else XfaButtonKind.PLAIN
 
 
+#: What XFA draws an ``<edge>`` with when it does not say. The specification's
+#: default, and the reason a border read as "no thickness given, so none" came
+#: out invisible where the form shows a line.
+DEFAULT_EDGE_THICKNESS = 0.5
+
+
+def _edges_of(border: Element | None) -> tuple[XfaEdge, XfaEdge, XfaEdge, XfaEdge]:
+    """The four sides of a ``<border>``, in XFA's order: top, right, bottom, left.
+
+    One ``<edge>`` stands for all four — the usual case, a plain box. Four of
+    them describe the sides separately, which is how a form draws a cell with
+    a rule under it and nothing elsewhere. A hidden ``<border>`` hides all of
+    them however many are written inside it.
+    """
+    if border is None or border.get("presence") == "hidden":
+        return NO_EDGES
+
+    declared = _children(border, "edge")
+    if not declared:
+        return NO_EDGES
+
+    sides: list[XfaEdge] = []
+    for edge in declared[:4]:
+        colour_node = _child(edge, "color")
+        sides.append(
+            XfaEdge(
+                width=parse_measurement(edge.get("thickness"), DEFAULT_EDGE_THICKNESS),
+                color=(
+                    _colour_of(colour_node.get("value"))
+                    if colour_node is not None
+                    else (0.0, 0.0, 0.0)
+                ),
+                visible=edge.get("presence") not in ("hidden", "inactive"),
+            )
+        )
+    if len(sides) == 1:
+        return (sides[0], sides[0], sides[0], sides[0])
+    while len(sides) < 4:
+        sides.append(XfaEdge())
+    return (sides[0], sides[1], sides[2], sides[3])
+
+
 def _border_of(border: Element | None):
-    """Width, line colour and fill colour of a ``<border>``."""
+    """Width, line colour and fill colour of a ``<border>``.
+
+    The single-figure view, still wanted by everything that draws a plain box
+    — a rule, a button — while :func:`_edges_of` carries the sides. The width
+    reported here is the thickest side that is actually drawn, so an element
+    with three hidden edges no longer claims a box it does not have.
+    """
     if border is None:
         return 0.0, (0.0, 0.0, 0.0), None
-    width = 0.0
-    colour = (0.0, 0.0, 0.0)
-    edge = _child(border, "edge")
-    if edge is not None:
-        width = parse_measurement(edge.get("thickness"), 0.0)
-        if edge.get("presence") == "hidden":
-            width = 0.0
-        edge_colour = _child(edge, "color")
-        if edge_colour is not None:
-            colour = _colour_of(edge_colour.get("value"))
+    edges = _edges_of(border)
+    drawn = [edge for edge in edges if edge.draws]
+    width = max((edge.width for edge in drawn), default=0.0)
+    colour = drawn[0].color if drawn else (0.0, 0.0, 0.0)
     fill_colour = None
     fill = _child(border, "fill")
     if fill is not None and fill.get("presence") != "hidden":
@@ -570,6 +645,9 @@ def _parse_draw(node: Element, parent_som: str, font: XfaFont) -> XfaDraw:
         align=align,
         valign=valign,
         margins=_insets_of(node),
+        space_above=_space_of(node)[0],
+        space_below=_space_of(node)[1],
+        edges=_edges_of(_child(node, "border")),
         line_width=line_width,
         line_color=line_colour,
         fill_color=fill_colour,
@@ -592,6 +670,8 @@ def _parse_subform(node: Element, parent_som: str, font: XfaFont, depth: int = 0
         scripts=_scripts_of(node, som),
         page_break_before=_child(node, "breakBefore") is not None,
         hidden=is_hidden(node),
+        space_above=_space_of(node)[0],
+        space_below=_space_of(node)[1],
     )
 
     for child in node:

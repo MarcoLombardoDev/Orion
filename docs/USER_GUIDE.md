@@ -362,6 +362,22 @@ standard PDF forms have nowhere to put it — there is no equivalent of a
 section that grows when you press a button. Orion keeps everything the form
 *contains* and tells you plainly what it can no longer *do*.
 
+### Moving the text as well
+
+A converted form arrives with **its words as objects too**: every caption,
+heading and rule of the page can be selected and dragged like anything you
+drew yourself. Nothing is retyped for you — the text stays exactly as it was —
+you can simply pick it up.
+
+For any other document this is a menu item rather than automatic:
+**Edit ▸ Make Page Text Movable**. It is worth knowing what it costs. A line
+taken over is redrawn by Orion when you save, in one of the built-in fonts and
+with Orion's own line breaking. For a form Orion converted that is a round
+trip, because Orion drew those words in the first place; for somebody else's
+typesetting it is a change, which is why it happens only when you ask.
+
+One press of Ctrl+Z undoes the whole thing.
+
 ### Form fields you can move
 
 A form field in any PDF — converted or not — is an object like anything else

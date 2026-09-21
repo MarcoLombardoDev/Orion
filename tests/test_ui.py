@@ -2032,6 +2032,53 @@ class TestXfaInTheWindow:
         }
         assert options_after == options_before, "a field lost its options in the move"
 
+    def test_a_converted_form_arrives_with_its_text_movable(
+        self, window, qapp, tmp_path, monkeypatch
+    ):
+        """Everything on the page is an object: the fields and the words.
+
+        A form Orion drew a moment ago is the one document where taking the
+        text over costs nothing, so it is done for the user rather than left
+        as a menu item they would have to find.
+        """
+        from orion.document.forms import FormFieldObject
+        from orion.document.objects import TextObject
+        from orion.ui.dialogs import xfa_dialog
+
+        def accept(self):
+            self._choice = xfa_dialog.XfaPromptDialog.CONVERT
+            return 1
+
+        monkeypatch.setattr(xfa_dialog.XfaPromptDialog, "exec", accept)
+        monkeypatch.setattr(xfa_dialog.XfaReportDialog, "exec", lambda self: 1)
+        window.open_path(self._xfa(tmp_path))
+        pump(qapp)
+
+        page = window.session.document[0]
+        assert [o for o in page.objects if isinstance(o, TextObject)], "no text objects"
+        assert [o for o in page.objects if isinstance(o, FormFieldObject)], "no fields"
+        assert page.replaced_text, "the original text was not claimed"
+        assert not window.session.is_modified, (
+            "the user was left with unsaved changes they never made"
+        )
+
+    def test_the_text_of_any_document_can_be_made_movable(
+        self, window, qapp, sample_pdf
+    ):
+        from orion.document.objects import TextObject
+
+        window.open_path(sample_pdf)
+        pump(qapp)
+        before = len([o for o in window.session.document[0].objects if isinstance(o, TextObject)])
+
+        assert window.make_page_text_movable() > 0
+        pump(qapp)
+
+        after = [o for o in window.session.document[0].objects if isinstance(o, TextObject)]
+        assert len(after) > before
+        # And a second run has nothing left to do.
+        assert window.make_page_text_movable() == 0
+
     def test_an_ordinary_pdf_is_opened_without_being_asked_about(
         self, window, qapp, sample_pdf, monkeypatch
     ):

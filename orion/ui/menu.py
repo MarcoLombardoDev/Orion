@@ -63,6 +63,8 @@ _STRUCTURE: tuple[tuple[str, tuple[str | None, ...]], ...] = (
             "edit.select_all",
             "edit.deselect",
             SEPARATOR,
+            "edit.text_movable",
+            SEPARATOR,
             "edit.bring_front",
             "edit.send_back",
         ),

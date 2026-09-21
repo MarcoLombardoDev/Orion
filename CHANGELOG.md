@@ -64,6 +64,46 @@ refused, and there are size and depth caps. **No XFA script is ever executed** �
 not during parsing, analysis or conversion. They are read as text, classified,
 and reported.
 
+### Everything on a converted form can be picked up
+The fields were made objects; the words were still scenery. A converted form
+now arrives with **its text as objects too** — every caption, heading and rule
+selectable and movable like anything drawn by hand. Nothing is retyped and
+nothing is reflowed: each piece of text lands exactly where it already was.
+
+The one trap this had to avoid is worth recording. A "line" of a PDF is
+everything sharing a baseline, so a row of four column headings is one line;
+replacing it as a single box collapsed the four into one at the left margin
+and the columns disappeared. A row is now cut wherever the page leaves a gap
+wider than a space, so each heading becomes its own box in its own place.
+
+For any other document it is **Edit ▸ Make Page Text Movable**, because it is
+not free: a line taken over is redrawn by Orion on save, in a built-in font
+and with Orion's line breaking. For a form Orion drew that is a round trip;
+for somebody else's typesetting it is a change, so it is asked for rather than
+assumed. One Ctrl+Z undoes the lot.
+
+### Closer still to the form it came from
+Three things the reference document was quietly losing:
+
+- **Borders that were never there.** Every field of that form declares no
+  border at all, and the conversion drew a hairline rectangle around each of
+  them — twenty-one boxes the document does not have. A field's border is now
+  the form's, not the converter's.
+- **Borders with one side.** XFA gives a border four edges and a real form
+  uses them: the table cells hide three and keep the bottom one, which is how
+  a signature line is drawn. Collapsing the four into a single width made
+  those rules into boxes, or into nothing. Each side is now read and drawn
+  separately — and an edge with no stated thickness is half a point, the
+  format's own default, rather than nothing at all.
+- **Labels in the wrong font.** A caption carries its own font, seven point
+  bold against the field's eight point regular in that form. Drawing labels in
+  the field's font made every one of them too big, too light, and wide enough
+  to wrap where the form fits it on one line.
+
+Flowed sections also leave the room the template asks for — `spaceAbove` and
+`spaceBelow`, which is what a designer sets as the spacing around an object —
+so a section is no longer one solid block of rows.
+
 ### Form fields are objects now
 A form field was the one thing on a page that every editor draws and none lets
 you touch — and converting a form made that acute, because the fields land

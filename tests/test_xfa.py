@@ -811,6 +811,83 @@ class TestButtonsThatStillWork:
         assert b"/JavaScript" not in raw and b"/JS" not in raw
 
 
+class TestLookingLikeTheFormItCameFrom:
+    """The details that make a conversion read as the same document."""
+
+    @pytest.fixture(scope="class")
+    def awkward(self, tmp_path_factory):
+        return build_awkward_form(tmp_path_factory.mktemp("look") / "look.pdf")
+
+    @pytest.fixture(scope="class")
+    def document(self, awkward):
+        return parse_xfa(inspect_form(awkward).packets)
+
+    def test_a_caption_keeps_its_own_font(self, document):
+        """A label is rarely set in the field's font: six point bold here.
+
+        Drawing it in the field's font made every label in the document the
+        wrong size and the wrong weight, and wide enough to wrap where the
+        form fits it on one line.
+        """
+        field = next(f for f in document.fields if f.name == "spacedField")
+        assert field.caption_font is not None
+        assert field.caption_font.size == 6.0
+        assert field.caption_font.bold
+
+    def test_a_border_the_form_hides_is_not_drawn(self, document, tmp_path):
+        """Twenty-one fields of the reference form declare no border at all.
+
+        A hairline invented around each of them is twenty-one rectangles the
+        document does not have.
+        """
+        field = next(f for f in document.fields if f.name == "spacedField")
+        assert all(not edge.draws for edge in field.edges)
+
+    def test_one_edge_of_four_makes_a_rule_and_not_a_box(self, document):
+        """A cell ruled underneath is how a form draws a line to write on."""
+        field = next(f for f in document.fields if f.name == "ruledField")
+        drawn = [index for index, edge in enumerate(field.edges) if edge.draws]
+        assert drawn == [2], "only the bottom edge should be drawn"
+        assert field.edges[2].width == pytest.approx(1.0)
+        assert field.edges[2].color == pytest.approx((0.0, 0.0, 1.0))
+
+    def test_an_edge_with_no_thickness_still_draws(self, document):
+        """XFA's default is half a point, not nothing.
+
+        Reading a missing ``thickness`` as zero made every plainly-bordered
+        cell in a form borderless.
+        """
+        cell = next(f for f in document.fields if f.name == "device")
+        assert all(edge.draws for edge in cell.edges)
+        assert cell.edges[0].width == pytest.approx(0.5)
+
+    def test_a_flowed_form_leaves_the_room_the_template_asks_for(self, awkward):
+        """``spaceAbove``/``spaceBelow``: why a section is not one solid block."""
+        form = resolve_layout(parse_xfa(inspect_form(awkward).packets))
+        placed = {f.name: f for f in form.fields}
+        spaced = placed["spacedField"]
+        above = placed["alsoHidden"]
+        gap = spaced.rect.y - (above.rect.y + above.rect.height)
+        assert gap == pytest.approx(10.0, abs=0.5)
+
+    def test_the_widget_carries_no_border_the_form_did_not_ask_for(
+        self, awkward, tmp_path
+    ):
+        from pypdf import PdfReader
+
+        out = tmp_path / "borders-converted.pdf"
+        convert_xfa(awkward, out, mode=ConversionMode.EDITABLE)
+
+        for page in PdfReader(str(out)).pages:
+            for annotation in page.get("/Annots") or []:
+                widget = annotation.get_object()
+                if str(widget.get("/T", "")).endswith("spacedField"):
+                    look = widget.get("/MK") or {}
+                    assert not look.get("/BC"), "a border was invented"
+                    return
+        raise AssertionError("the field was not converted")
+
+
 class TestTheFileTheConverterWrites:
     """Checks on the bytes, not on the model that produced them."""
 

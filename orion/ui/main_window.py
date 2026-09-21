@@ -271,6 +271,7 @@ class MainWindow(QMainWindow):
         connect("edit.delete", self.delete_selection)
         connect("edit.select_all", lambda: self._canvas.select_all_on_current_page())
         connect("edit.deselect", lambda: self._canvas.clear_selection())
+        connect("edit.text_movable", self.make_page_text_movable)
         connect("edit.bring_front", lambda: self._arrange_selection(True))
         connect("edit.send_back", lambda: self._arrange_selection(False))
         # View
@@ -486,10 +487,12 @@ class MainWindow(QMainWindow):
     def open_path(self, path: Path, *, password: str | None = None) -> bool:
         if not self._confirm_discard():
             return False
+        converted = False
         if password is None:
             redirected = self._offer_xfa_conversion(path)
             if redirected is None:
                 return False
+            converted = redirected != path
             path = redirected
         try:
             session = self._files.open(path, password)
@@ -519,6 +522,17 @@ class MainWindow(QMainWindow):
         self._attach_session(session)
         self._recent.add(path)
         self._settings.set("last_directory", str(path.parent))
+        if converted:
+            # A form Orion has just drawn is the one document where taking the
+            # text over has no cost: every line of it came out of the template
+            # a moment ago, so it goes back the way it came. Doing it here is
+            # what makes a converted form something the user can rearrange
+            # rather than only fill in. The history is marked clean afterwards
+            # because none of it is the user's change yet — they should not be
+            # asked to save a document they have not touched.
+            self.make_page_text_movable()
+            session.history.mark_clean()
+            session.document.set_modified(False)
         self._status.flash(tr("Opened {name}").format(name=path.name))
         return True
 
@@ -1305,6 +1319,40 @@ class MainWindow(QMainWindow):
             tr("Converted to {name}").format(name=result.output.name)
         )
         return result.output
+
+    def make_page_text_movable(self) -> int:
+        """Turn the document's own text into boxes the user can pick up.
+
+        Offered rather than automatic, because it is not free: a line taken
+        over is re-laid-out by Orion when the file is saved, in one of the
+        base-14 fonts. For a form Orion converted that is a round trip; for
+        somebody else's typesetting it is a change, and the user is the one
+        who knows which they have.
+        """
+        session = self._session
+        if session is None:
+            return 0
+
+        from orion.services.page_text import make_text_movable
+
+        try:
+            result = make_text_movable(
+                session.document, session.renderer, session.history, text=tr("Make Text Movable")
+            )
+        except Exception:
+            log.exception("Could not take over the page text")
+            self._status.flash(tr("The document's text could not be taken over."))
+            return 0
+
+        if not result.happened:
+            self._status.flash(tr("There is no page text left to take over."))
+            return 0
+
+        self._canvas.rebuild()
+        self._status.flash(
+            tr("{count} lines of text can now be moved.").format(count=result.lines)
+        )
+        return result.lines
 
     def convert_form_document(self) -> None:
         """Convert a form from the File menu, without opening it first."""

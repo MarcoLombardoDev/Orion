@@ -31,6 +31,7 @@ __all__ = [
     "XfaButtonKind",
     "XfaChoiceList",
     "XfaDocument",
+    "XfaEdge",
     "XfaField",
     "XfaFieldType",
     "XfaFont",
@@ -127,6 +128,35 @@ class XfaRect:
     @property
     def is_empty(self) -> bool:
         return self.width <= 0.0 or self.height <= 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class XfaEdge:
+    """One side of a box: how thick it is drawn, and in what colour.
+
+    XFA gives a border four edges in the order top, right, bottom, left, and
+    a real form uses that: the cells of the reference document's table hide
+    three of the four and keep the bottom one, which is why they read as ruled
+    lines rather than as boxes. A border collapsed into a single width and
+    colour cannot express any of it.
+    """
+
+    width: float = 0.0
+    color: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    visible: bool = False
+
+    @property
+    def draws(self) -> bool:
+        return self.visible and self.width > 0
+
+
+#: A border nobody declared: four sides, none of them drawn.
+NO_EDGES: tuple[XfaEdge, XfaEdge, XfaEdge, XfaEdge] = (
+    XfaEdge(),
+    XfaEdge(),
+    XfaEdge(),
+    XfaEdge(),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,6 +312,20 @@ class XfaField:
     caption_placement: str = "left"
     #: ``<margin>`` around the field's own text.
     margins: XfaInsets = field(default_factory=XfaInsets)
+    #: The caption's own font. A caption almost always has one — seven point
+    #: bold where the field is eight point regular, in the reference form —
+    #: and drawing the label in the field's font makes every label in the
+    #: document the wrong size and the wrong weight.
+    caption_font: XfaFont | None = None
+    #: ``<para marginLeft>`` on the field's text, on top of the insets.
+    text_indent: float = 0.0
+    #: ``<para spaceAbove/spaceBelow>``: room before and after this element
+    #: when its parent flows its children.
+    space_above: float = 0.0
+    space_below: float = 0.0
+    #: The four sides of ``<border>``, in XFA's order: top, right, bottom,
+    #: left.
+    edges: tuple[XfaEdge, XfaEdge, XfaEdge, XfaEdge] = NO_EDGES
     #: ``<para hAlign/vAlign>`` for the value: ``left``/``center``/``right``
     #: and ``top``/``middle``/``bottom``.
     align: str = "left"
@@ -385,6 +429,10 @@ class XfaSubform:
     #: The template hides this subform, and everything in it, until something
     #: reveals it.
     hidden: bool = False
+    #: ``<para spaceAbove/spaceBelow>``: the room a flowed parent leaves
+    #: around this subform.
+    space_above: float = 0.0
+    space_below: float = 0.0
 
     @property
     def is_repeatable(self) -> bool:
@@ -426,6 +474,9 @@ class XfaDraw:
     valign: str = "top"
     #: ``<margin>`` around the text.
     margins: XfaInsets = field(default_factory=XfaInsets)
+    space_above: float = 0.0
+    space_below: float = 0.0
+    edges: tuple[XfaEdge, XfaEdge, XfaEdge, XfaEdge] = NO_EDGES
     line_width: float = 0.0
     line_color: tuple[float, float, float] = (0.0, 0.0, 0.0)
     fill_color: tuple[float, float, float] | None = None

@@ -282,11 +282,23 @@ def _split_for_caption(
     return (x + inset, y, reserve, height), (x + taken, y, width - taken, height)
 
 
+def _caption_font(field: XfaField) -> XfaFont:
+    """The font the label is set in, which is rarely the field's own.
+
+    Seven point bold against the field's eight point regular, in the
+    reference form — so a label drawn in the field's font comes out bigger
+    and lighter than the form's, and wide enough to wrap where the form fits
+    it on one line.
+    """
+    return field.caption_font or field.font
+
+
 def _measured_caption(field: XfaField) -> float:
     """Room for the label when the template does not say how much it needs."""
     from reportlab.pdfbase.pdfmetrics import stringWidth
 
-    width = stringWidth(field.caption, _font_name(field.font), field.font.size)
+    font = _caption_font(field)
+    width = stringWidth(field.caption, _font_name(font), font.size)
     return min(width + 6.0, max(field.rect.width * 0.5, 0.0))
 
 
@@ -429,10 +441,11 @@ def _draw_field_caption(pdf, field: XfaField, rect) -> None:
     if not field.caption or rect is None:
         return
     x, y, width, height = rect
-    font_name = _font_name(field.font)
+    font = _caption_font(field)
+    font_name = _font_name(font)
     pdf.saveState()
-    pdf.setFillColorRGB(*field.font.color)
-    pdf.setFont(font_name, field.font.size)
+    pdf.setFillColorRGB(*font.color)
+    pdf.setFont(font_name, font.size)
     _draw_wrapped(
         pdf,
         field.caption,
@@ -440,7 +453,7 @@ def _draw_field_caption(pdf, field: XfaField, rect) -> None:
         y,
         max(width, 1.0),
         height,
-        field.font,
+        font,
         font_name,
         field.caption_align,
         field.caption_valign,
@@ -458,10 +471,9 @@ def _draw_field_as_static(pdf, field: XfaField, page_height: float) -> None:
     if field.fill_color is not None:
         pdf.setFillColorRGB(*field.fill_color)
         pdf.rect(box_x, y, box_width, height, stroke=0, fill=1)
-    if field.border_width > 0:
-        pdf.setStrokeColorRGB(*field.border_color)
-        pdf.setLineWidth(field.border_width)
-        pdf.rect(box_x, y, box_width, height, stroke=1, fill=0)
+    pdf.restoreState()
+    _draw_edges(pdf, field.edges, box_x, y, box_width, height)
+    pdf.saveState()
     if field.value:
         pdf.setFillColorRGB(*field.font.color)
         font_name = _font_name(field.font)
@@ -469,9 +481,9 @@ def _draw_field_as_static(pdf, field: XfaField, page_height: float) -> None:
         _draw_wrapped(
             pdf,
             field.value,
-            box_x + 2,
+            box_x + 2 + field.text_indent,
             y,
-            box_width - 4,
+            box_width - 4 - field.text_indent,
             height,
             field.font,
             font_name,
@@ -510,6 +522,46 @@ def _checked(field: XfaField) -> bool:
     return value in ("1", "on", "true", "yes", (field.export_value or "").strip().lower())
 
 
+def _uniform_border(field: XfaField):
+    """``(width, colour)`` when all four sides are drawn the same, else None.
+
+    A widget's own border is the cheap case and worth taking: it is drawn by
+    the reader, it follows the field if anything ever moves it, and it needs
+    nothing on the page beneath. Anything less regular — a cell ruled only
+    underneath — is drawn onto the page instead.
+    """
+    edges = field.edges
+    if not all(edge.draws for edge in edges):
+        return None
+    first = edges[0]
+    if any(
+        abs(edge.width - first.width) > 0.01 or edge.color != first.color
+        for edge in edges[1:]
+    ):
+        return None
+    return first.width, first.color
+
+
+def _draw_edges(pdf, edges, x: float, y: float, width: float, height: float) -> None:
+    """Paint the sides of a box that a widget's own border cannot express."""
+    top, right, bottom, left = edges
+    sides = (
+        (top, (x, y + height), (x + width, y + height)),
+        (right, (x + width, y), (x + width, y + height)),
+        (bottom, (x, y), (x + width, y)),
+        (left, (x, y), (x, y + height)),
+    )
+    drawn = [side for side in sides if side[0].draws]
+    if not drawn:
+        return
+    pdf.saveState()
+    for edge, start, end in drawn:
+        pdf.setStrokeColorRGB(*edge.color)
+        pdf.setLineWidth(edge.width)
+        pdf.line(start[0], start[1], end[0], end[1])
+    pdf.restoreState()
+
+
 def _add_widget(
     pdf, field: XfaField, page_height: float, name: str, radio_state, blank_choices: set[str]
 ) -> bool:
@@ -523,14 +575,22 @@ def _add_widget(
     font_name = _font_name(field.font, embed=False)
     size = max(field.font.size, 4.0)
 
+    # The form's border is drawn onto the page, side by side, because a widget
+    # can only have one border all the way round and a real form does not.
+    # What reportlab gets is the box with no border of its own — where the
+    # form draws a box, the page under the widget already has it; where the
+    # form draws nothing, nothing is what should appear. Inventing a hairline
+    # around every field, which is what this did, put a black rectangle around
+    # twenty-one fields of a form that has a border on none of them.
+    uniform = _uniform_border(field)
     common = {
         "x": box_x,
         "y": y,
-        "borderWidth": field.border_width if field.border_width > 0 else 0.5,
-        "borderColor": _grey(field.border_color),
+        "borderWidth": uniform[0] if uniform else 0,
+        "borderColor": _grey(uniform[1]) if uniform else None,
         "fillColor": _grey(field.fill_color) if field.fill_color else None,
         "textColor": _grey(field.font.color),
-        "forceBorder": field.border_width > 0,
+        "forceBorder": bool(uniform),
         "tooltip": _tooltip(field) or None,
     }
 
@@ -1088,7 +1148,10 @@ def _write(
                     if field.field_type is XfaFieldType.RADIO
                     else _safe_name(field.qualified_name, used_names)
                 )
-                _draw_field_caption(pdf, field, _split_for_caption(field, page.height)[0])
+                caption_rect, box = _split_for_caption(field, page.height)
+                _draw_field_caption(pdf, field, caption_rect)
+                if not _uniform_border(field):
+                    _draw_edges(pdf, field.edges, *box)
                 try:
                     made = _add_widget(
                         pdf, field, page.height, name, radio_names, blank_choices

@@ -394,6 +394,30 @@ def awkward_template() -> str:
         <caption reserve="100pt"><value><text>Hidden too</text></value></caption>
       </field>
 
+      <subform name="spaced" layout="tb" w="500pt">
+        <field name="spacedField" minH="18pt" w="500pt">
+          <ui><textEdit/></ui>
+          <para spaceAbove="10pt" spaceBelow="6pt"/>
+          <caption reserve="100pt">
+            <font typeface="Helvetica" size="6pt" weight="bold"/>
+            <para vAlign="middle"/>
+            <value><text>Spaced</text></value>
+          </caption>
+          <border presence="hidden"/>
+        </field>
+      </subform>
+      <subform name="ruled" layout="tb" w="500pt">
+        <field name="ruledField" minH="18pt" w="500pt">
+          <ui><textEdit/></ui>
+          <border>
+            <edge presence="hidden"/>
+            <edge presence="hidden"/>
+            <edge thickness="1pt"><color value="0,0,255"/></edge>
+            <edge presence="hidden"/>
+          </border>
+        </field>
+      </subform>
+
       <subform layout="table" columnWidths="100pt 150pt 90pt" name="table">
         <subform layout="row" name="headings">
           <draw name="c1"><value><text>Device</text></value></draw>
@@ -404,6 +428,7 @@ def awkward_template() -> str:
           <occur min="1" max="-1" initial="1"/>
           <field name="device" minH="18pt">
             <ui><textEdit/></ui>
+            <border><edge/></border>
           </field>
           <field name="kind" minH="18pt">
             <ui><textEdit/></ui>

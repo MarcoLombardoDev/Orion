@@ -199,6 +199,7 @@ Orion/
 │   │   ├── file_service.py    open/save/save-as orchestration + safety
 │   │   ├── clipboard.py       object clipboard (in-app + JSON on system clipboard)
 │   │   ├── export_service.py  extract/split/merge, and pages out as PNG/JPEG
+│   │   ├── page_text.py       the page's own words -> movable text objects
 │   │   ├── recent_files.py    recent file list
 │   │   ├── autosave.py        crash-recovery snapshots
 │   │   └── settings.py        QSettings-free JSON settings store

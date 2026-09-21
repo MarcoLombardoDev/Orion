@@ -337,15 +337,24 @@ class _Layout:
                         cell += 1
                         used = max(used, child.rect.y + height)
                         continue
+                    if flowed:
+                        cursor += child.space_above
                     top = dy + (cursor if flowed else 0.0) + child.rect.y
                     height = self._walk(child, dx + child.rect.x, top, who, below, hidden)
                     if flowed:
-                        cursor += child.rect.y + max(height, 0.0)
+                        cursor += child.rect.y + max(height, 0.0) + child.space_below
                         used = max(used, cursor)
                     else:
                         used = max(used, child.rect.y + height)
                 continue
 
+            # A flowed parent leaves the room the element asks for before
+            # and after itself. Without it every row butts against the next
+            # and a section comes out tighter than the form was drawn.
+            before = getattr(child, "space_above", 0.0) if flowed else 0.0
+            after = getattr(child, "space_below", 0.0) if flowed else 0.0
+            if before:
+                cursor += before
             left = dx + (cursor if across else 0.0)
             top = dy + (cursor if flowed else 0.0)
             height = row_height if across else 0.0
@@ -367,7 +376,7 @@ class _Layout:
 
             reach = child.rect.y + max(child.rect.height, 0.0)
             if flowed:
-                cursor += reach
+                cursor += reach + after
                 used = max(used, cursor)
             else:
                 used = max(used, reach)
