@@ -65,6 +65,14 @@ does now; CLAUDE.md carries the rule and what it costs.
   report and wants a human to read some rows; the case statement could not tell
   them apart. The presence of the file can.
 
+- **The Windows archive was written where nothing looked for it.** Moving the
+  payload into `dist/pkg/Orion` put it one directory deeper than before, and
+  the packaging step compressed to a path relative to that — so the zip landed
+  in `dist/` and the upload failed on "no such file" with the archive sitting
+  right there. It goes to an absolute path now, which cannot depend on how deep
+  anything is nested, and a test forbids the relative form. This is what broke
+  the first attempt at the 1.9.0 release; the other two platforms were fine.
+
 ### Numbers
 
 A Linux build contains **169 native binaries**, down from a documented 185 —

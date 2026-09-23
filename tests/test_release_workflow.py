@@ -763,3 +763,26 @@ def test_the_version_comparison_survives_a_windows_line_ending():
     assert "--version | tr -d" in step["run"], (
         "the version is compared without stripping the carriage return"
     )
+
+
+def test_the_archive_is_written_where_the_upload_step_looks_for_it():
+    """An absolute target, because the relative one was a trap that sprang.
+
+    The Windows branch compresses from inside the payload's parent, since 7z
+    stores whatever path it is handed and a relative one would put the payload
+    directory inside the archive. Writing the *output* relative to that
+    directory as well -- "../$name" -- only lands in the workspace while the
+    payload sits exactly one level down.
+
+    Orion and XIP moved theirs one level deeper and the zip went into dist/,
+    where nothing looks for it. Both releases failed on "no such file" with the
+    archive sitting a directory away. The path is absolute now, which cannot
+    depend on how deep anything is nested.
+    """
+    text = (REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    package = text[text.index("- name: Package"):]
+    package = package[: package.index("\n      - name:")]
+    assert 'out="$PWD"' in package, "the archive has no absolute destination"
+    assert '"../$name"' not in package and '"../$archive"' not in package, (
+        "the archive is written relative to the payload again"
+    )

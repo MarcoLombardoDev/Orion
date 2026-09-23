@@ -518,6 +518,13 @@ jobs:
           VERSION: ${{ needs.release.outputs.version }}
         run: |
           base="$APP_NAME-$VERSION-${{ matrix.asset }}"
+          # Where the archive goes, as an absolute path. The payload is nested
+          # two directories deep now (dist/pkg/NAME) rather than one, and the
+          # Windows branch below runs from inside the payload's parent -- so a
+          # destination written relative to that, one level up, put the zip
+          # inside dist/ where the upload step does not look. The release
+          # failed on "no such file" with the archive sitting right there.
+          out="$PWD"
           case "$RUNNER_OS" in
             Windows)
               name="$base.zip"
@@ -530,7 +537,7 @@ jobs:
               # that unpacked to dist/Orion/, one level deeper than the Linux
               # tarball's Orion/. v1.0.0 shipped that way.
               ( cd "$(dirname "$PAYLOAD")" \
-                  && 7z a -tzip "../$name" "$(basename "$PAYLOAD")" > /dev/null )
+                  && 7z a -tzip "$out/$name" "$(basename "$PAYLOAD")" > /dev/null )
               ;;
             macOS)
               name="$base.zip"
