@@ -5,6 +5,18 @@ All notable changes to Orion are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.1] — 2026-09-23
+
+### Fixed
+
+- **The console says what the wait actually is.** It said the first launch was
+  the slow one because Windows checks every file before running any of them,
+  which was true of a folder build. This is one file that unpacks itself into
+  a temporary folder before it runs, so the wait is there on *every* start —
+  the first one longer still, for the reason the old message gave. Somebody
+  watching a console that promises the delay is a one-off, twice, has been
+  told something false about their own computer.
+
 ## [1.9.0] — 2026-09-23
 
 Orion ships as one executable instead of a folder. Every product in this family

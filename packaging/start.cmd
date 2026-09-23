@@ -129,9 +129,9 @@ if errorlevel 1 goto :handoff
 
 echo Starting %APP%...
 echo.
-echo The first launch is the slow one: Windows checks every file before it
-echo will run any of them. This window closes by itself as soon as %APP% is
-echo on screen.
+echo %APP% is one file that unpacks itself before it runs, so every start
+echo takes a moment -- the first one longer, because Windows checks what it
+echo unpacked. This window closes by itself as soon as %APP% is on screen.
 
 rem The path travels in a variable rather than inside the quoted -Command
 rem string, so a folder name containing a space or a quote cannot break the
