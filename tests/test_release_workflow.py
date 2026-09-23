@@ -265,20 +265,45 @@ def test_the_bundle_is_inventoried_on_the_machine_that_built_it():
     assert inventory is not None, "nothing inventories the bundle"
     assert "tools/licence_inventory.py" in inventory["run"]
     assert "THIRD-PARTY-LICENSES-" in inventory["run"]
-    assert "Orion-LICENSE.txt" in inventory["run"], (
-        "the report is filed by a fixed path rather than beside the licence "
-        "texts, so a layout change puts it somewhere the archive does not carry"
+    assert 'home="build/licenses"' in inventory["run"], (
+        "the report is not filed with the licence texts the spec staged, so "
+        "the packaging step will not carry it into the archive"
     )
 
 
 def test_the_inventory_runs_against_the_bundle_that_ships():
-    """Not against the source tree, and not against a build made earlier."""
+    """Not the source tree, not an earlier build, and not the build record.
+
+    The executable is read directly, through PyInstaller's archive reader. The
+    obvious alternative — build/orion, where PyInstaller leaves its own record
+    of what it collected — is wrong *here* specifically: that record is written
+    when Analysis finishes, and this spec then removes forty-odd binaries from
+    the bundle. Reading it would attribute libraries the download does not
+    contain, several of them LGPL-2.1, which is a worse error than any this
+    inventory exists to catch.
+    """
     steps = build_steps(load_workflow())
     names = [step.get("name") for step in steps]
     assert names.index("Build") < names.index("Inventory what the bundle ships")
     assert names.index("Inventory what the bundle ships") < names.index("Package")
     step = step_named(steps, "Inventory what the bundle ships")
-    assert "steps.built.outputs.payload" in step["env"].get("PAYLOAD", "")
+    assert "steps.built.outputs.bin" in step["env"].get("BIN", "")
+    assert "=$BIN" in step["run"], "the inventory reads something other than the binary"
+    assert "=build/orion" not in step["run"], (
+        "back to the build record, which still lists what the spec removed"
+    )
+
+
+def test_an_inventory_that_writes_no_report_fails_the_build():
+    """An exit code cannot tell a mistyped path from rows needing review.
+
+    ``argparse`` exits 2 on a bad argument and so does an inventory that wrote
+    its report and wants a human to read some rows, and the case statement maps
+    2 to a warning. The presence of the file can tell them apart.
+    """
+    run = step_named(build_steps(load_workflow()), "Inventory what the bundle ships")["run"]
+    assert '[ ! -s "$report" ]' in run
+    assert "exit 1" in run
 
 
 def test_an_unattributed_binary_warns_rather_than_failing_the_release():

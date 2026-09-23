@@ -228,18 +228,26 @@ An unsigned executable that arrived from the internet, was built by PyInstaller 
 has never been seen before is, on paper, the profile of something worth looking at.
 Corporate endpoint tools score exactly that and some will quarantine Orion on sight.
 
-What Orion does about it is refuse to make the case worse. It carries a full Windows
-version resource, so the file says what it is and who wrote it rather than declining to
-answer. It is not packed — no UPX — and it does not unpack itself into a temporary
-folder and re-run itself, because the release is a plain folder of files. Its launcher
-hashes the executable with PowerShell's `Get-FileHash` rather than borrowing `certutil`,
-which is on every living-off-the-land list there is. And it names the graphics backend it
-wants instead of asking Windows about your display adapter, a question it has no use for
-the answer to.
+What Orion does about it is refuse to make the case worse where it has a choice. It
+carries a full Windows version resource, so the file says what it is and who wrote it
+rather than declining to answer. It is not packed — no UPX. Its launcher hashes the
+executable with PowerShell's `Get-FileHash` rather than borrowing `certutil`, which is on
+every living-off-the-land list there is. And it names the graphics backend it wants
+instead of asking Windows about your display adapter, a question it has no use for the
+answer to.
 
-What remains is inherent to the shape of the thing: it is a compiled Python program, so
-it has the section names PyInstaller gives it and imports the functions CPython and Qt
-import. Those are observations, not findings.
+**One thing it does do, and from 1.9.0 it is new.** The release is a single executable
+rather than a folder of files, which means that on every launch it unpacks itself into a
+temporary folder and runs the copy. Self-extraction followed by process creation is a
+behaviour worth flagging in general, and an endpoint agent is right to notice it. It was
+a deliberate trade — every product in this family ships as one file now, and the reason
+is consistency for the people who use more than one of them, not anything technical. If
+your organisation's tooling quarantined Orion before, this makes that more likely rather
+than less, and 1.8.0 remains on the releases page as a folder build.
+
+What remains beyond that is inherent to the shape of the thing: it is a compiled Python
+program, so it has the section names PyInstaller gives it and imports the functions
+CPython and Qt import. Those are observations, not findings.
 
 If something still trips, the useful things to send are the detection name, the engine
 that raised it, and the indicators listed against it. All of it is

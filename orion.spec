@@ -260,23 +260,18 @@ analysis.datas = _drop_unused(analysis.datas)
 
 # The v1.0.0 archives shipped without a single licence file in them, which the
 # LGPL, the AGPL and every BSD/MIT notice in the bundle all require.  Assemble
-# the texts and ship them.  This runs after the filtering above so the system
-# libraries it reads are the ones that actually survive into the archive.
+# the texts here, where ``analysis.binaries`` is the list of what PyInstaller
+# actually resolved on this machine and therefore the only route to the system
+# libraries.  This runs after the filtering above so the libraries it reads are
+# the ones that actually survive into the archive.
+#
+# Staged only — deliberately *not* appended to ``analysis.datas``.  In a onefile
+# build anything in ``datas`` is packed inside the executable and unpacked to a
+# temporary directory while the program runs, where nobody who opened the
+# archive will ever see it.  A licence text nobody can read accompanies nothing.
+# The release workflow copies this tree to the root of the archive instead.
 LICENCE_STAGING = BUILD_DIR / "build" / "licenses"
-# TOC entries are (destination, source, typecode) — appended directly, so they
-# bypass the normalisation Analysis() applies to its own ``datas`` argument and
-# have to be in that exact shape.
-analysis.datas += [
-    (
-        str(Path("licenses") / Path(path).relative_to(LICENCE_STAGING) / name),
-        str(Path(path) / name),
-        "DATA",
-    )
-    for path, _subdirs, names in os.walk(
-        collect_licences(str(BUILD_DIR), str(LICENCE_STAGING), analysis.binaries)
-    )
-    for name in names
-]
+collect_licences(str(BUILD_DIR), str(LICENCE_STAGING), analysis.binaries)
 
 pyz = PYZ(analysis.pure)  # noqa: F821
 
@@ -296,32 +291,37 @@ _icon_file = {"win32": "orion.ico", "darwin": "orion.icns"}.get(sys.platform, "o
 icon_path = _icons / _icon_file
 icon = str(icon_path) if icon_path.exists() else None
 
+# One file. Qt, the interpreter, pypdfium2's PDFium and every resource go
+# inside the executable, which unpacks itself into a temporary directory on
+# each launch. It is the shape every product in this family uses; CLAUDE.md
+# carries the rule and what it costs.
+#
+# Two things this moves, and both are easy to put back by accident. Nothing
+# passed as ``datas`` can be seen by whoever opens the archive -- it lives in
+# that temporary directory -- so the launcher, the licence tree and the
+# checksum are written beside the executable by the release workflow, not from
+# here. And Qt is no longer a file a recipient can overwrite, so LGPL-3.0 §4's
+# relinking obligation is met by another route; THIRD-PARTY-LICENSES.md says
+# which, and it is not a formality.
 executable = EXE(  # noqa: F821
     pyz,
     analysis.scripts,
+    analysis.binaries,
+    analysis.datas,
     [],
-    exclude_binaries=True,
     name=APP_NAME,
     debug=False,
     strip=False,
     upx=False,
+    runtime_tmpdir=None,
     console=False,          # a GUI application has no terminal window
     icon=icon,
     version=_version_resource(),
 )
 
-collection = COLLECT(  # noqa: F821
-    executable,
-    analysis.binaries,
-    analysis.datas,
-    strip=False,
-    upx=False,
-    name=APP_NAME,
-)
-
 if sys.platform == "darwin":
     app = BUNDLE(  # noqa: F821
-        collection,
+        executable,
         name=f"{APP_NAME}.app",
         icon=icon,
         bundle_identifier="dev.marcolombardo.orion",

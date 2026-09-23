@@ -410,17 +410,18 @@ contains the transitive closure of everything those packages link — Qt's own
 libraries and plugins, the libraries Pillow vendors, and whatever the build
 machine's linker resolved.
 
-A Linux build contains **185 native binaries**. Every one of them is inventoried,
+A Linux build contains **169 native binaries**. Every one of them is inventoried,
 with the source of each licence determination, in
 **[THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md)**, and the licence texts
-themselves now ship inside the archive as `licenses/`. Grouped by what they
-require:
+themselves ship in the archive as `licenses/`. (185 was the same kind of build
+counted by walking a folder, which counts Qt's `libQt6Foo.so.6` symlink and the
+file it points at as two.) Grouped by what they require:
 
 | Class | What it asks of you |
 |---|---|
 | Permissive — MIT, BSD, ISC, Apache-2.0, Zlib, Unicode | Reproduce the notices. |
 | Python and its extension modules — PSF-2.0 | Attribution. |
-| Qt — LGPL-3.0 | Licence text, notice, and the recipient's ability to relink. |
+| Qt — LGPL-3.0 | Licence text, notice, and the recipient's ability to relink — see below, because from 1.9.0 that last one is met a different way and the difference is yours to inherit. |
 | Other LGPL-2.1 / LGPL-2.0 libraries | The same, in their earlier form. |
 | GCC runtime — GPL-3.0-or-later **with GCC Runtime Library Exception 3.1** | Nothing. The exception is what makes it distributable; without it a GPL-3 library would sit inside every build. |
 | Microsoft Visual C++ and Universal CRT runtime (Windows) | Microsoft's own redistributable terms — **not an open-source licence**, and a different legal basis from every other row here. |
@@ -437,6 +438,31 @@ and nothing about the file name distinguishes the two.
 
 Counts change with the build. The inventory is regenerated from the archives at
 each release rather than maintained by hand.
+
+### Relinking, and the part of it that becomes yours
+
+From 1.9.0 Orion is a single executable, with Qt packed inside it and unpacked to a
+temporary directory while the program runs. It used to be a folder, and the folder was
+how the relinking row above was answered: every Qt library was a file in the unpacked
+archive that a recipient could overwrite. There is no such file now.
+
+LGPL-3.0 §4(d) offers two routes and the first has never been open to a frozen build of
+any shape — it wants a shared-library mechanism that loads a copy of Qt *already on the
+user's machine*, and a download like this one exists precisely so that none is needed. So
+the route is §4(d)(1): the Corresponding Application Code together with the library's
+Minimal Corresponding Source. Orion meets it by publishing its own source under
+AGPL-3.0-or-later, recording the exact PySide6 version in the archive's own inventory, and
+keeping `orion.spec` in the repository so the rebuild is one command.
+THIRD-PARTY-LICENSES.md sets that out in full.
+
+**That route does not transfer to you.** §4(d)(1) asks for *your* application's
+Corresponding Application Code, and this licence exists precisely so that you need not
+publish it. If you redistribute a closed derivative as a single executable with Qt inside
+it, satisfying §4(d) is yours to arrange — the usual answers being to supply your
+recipients with your application in object-code form so they can relink, or to ship Qt as
+separate library files beside your program instead of inside it. Neither is difficult;
+both have to be decided, and a licence that let you assume otherwise would be doing you no
+favours.
 
 ### Verify against what you ship
 

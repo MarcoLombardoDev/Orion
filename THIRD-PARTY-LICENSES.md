@@ -4,7 +4,7 @@ Orion is licensed **AGPL-3.0-or-later** (see [LICENSE](LICENSE)), with a
 commercial licence available separately (see
 [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)). That covers the code in this
 repository. It does not cover the code Orion is built on, and a downloadable
-release is mostly that other code: a Linux build contains 185 native binaries
+release is mostly that other code: a Linux build contains 169 native binaries
 and not one of them was written for Orion. Orion's own code travels through
 them as Python bytecode.
 
@@ -114,7 +114,32 @@ for free: the LGPL requires that a recipient be able to relink the application
 against a modified Qt, that the licence text and a notice of Qt's use be
 supplied, and that no further restriction be imposed on Qt itself. Orion links
 Qt dynamically and ships it unmodified, which is the easy case, and the licence
-texts now travel inside the archive.
+texts travel beside the executable in the archive.
+
+**Relinking, since 1.9.0.** The build is one file, with Qt packed inside it and
+unpacked to a temporary directory while the program runs. §4(d) offers two
+routes and the first has never been open to a frozen build of any shape: it
+wants a shared-library mechanism that loads a copy of the library *already on
+the user's machine*, and the whole point of a download like this one is that it
+starts where no Qt is installed. So the route is §4(d)(1) — the Minimal
+Corresponding Source for the library, and the Corresponding Application Code,
+in a form the recipient can recombine. Concretely, and this is the whole list:
+Orion's own source is published at
+[the repository](https://github.com/MarcoLombardoDev/Orion) under
+AGPL-3.0-or-later; the exact PySide6 version every binary came from is recorded
+in `licenses/THIRD-PARTY-LICENSES-<platform>.md` inside the archive; and
+`pip install -r requirements.txt` with a modified PySide6 in place of the
+published one, followed by `pyinstaller orion.spec`, produces an executable
+linked against it.
+
+Until 1.9.0 this was a folder build and the answer was simpler: every Qt
+library was a file in the unpacked archive that a recipient could overwrite.
+That was a stronger practical position and it was given up on purpose, when
+this family settled on one executable per product — CLAUDE.md carries the rule
+and the price. It costs nothing to anyone redistributing under AGPL-3.0, whose
+application code is published by definition. It does cost something to a
+commercial licensee shipping a closed derivative; §11 of
+[COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) says what.
 
 **The LGPL-2.1 system libraries** — GLib and its family, libgcrypt,
 libgpg-error, libsystemd, libfribidi, libgraphite2, libblkid, libmount. Same
@@ -170,8 +195,15 @@ come back.
 The v1.0.0 archives contained no `LICENSE`, `COPYING` or `NOTICE` file at all,
 which LGPL-3.0 §4, the AGPL and every BSD and MIT notice in the bundle all
 require. [`tools/collect_licences.py`](tools/collect_licences.py) now assembles
-them and `orion.spec` ships them as `licenses/` — **101 files** in a Linux
-build.
+them, and the release workflow puts them in the archive as `licenses/`,
+beside the executable rather than inside it: a onefile build unpacks anything
+it carries to a temporary directory, and a licence text nobody can read
+accompanies nothing.
+
+The Linux build measured for this document has **99** of them. The number moves
+with the machine rather than with Orion — most of the tree is one
+`debian/copyright` per system package the linker happened to resolve, and a
+runner with a different image resolves a slightly different set.
 
 Two of the wheels needed care. **PySide6 declares LGPL-3.0 and ships no licence
 file at all**, so its text is supplied from [`licenses/`](licenses) in this
@@ -198,16 +230,29 @@ Counts are files, not projects: one project usually contributes several
 binaries. "Evidence" names where the licence came from, so any line here can
 be re-checked rather than taken on trust.
 
-### Linux — 185 native binaries
+### Linux — 169 native binaries
 
-Regenerated from the build the current `v1.0.0` archives were made from. The
-same build before `readline` was excluded contained 199, one of which was
-`libreadline8t64` under GPL-3.0-or-later — see *What was deliberately removed*
-above. Nothing in this table is copyleft without an exception.
+Read out of the `v1.8.0` executable itself, with PyInstaller's archive reader:
+a onefile build has no folder to walk, and the file that ships is the only
+thing that can be asked what is in it. Not from PyInstaller's record of the
+build, which is written when `Analysis` finishes and so still lists the
+forty-two binaries `orion.spec` removes afterwards — Qml, Quick, the EGL and
+VNC platform plugins, the GTK platform theme and the ATK stack behind it.
+Attributing those would claim terms for software this download does not
+contain.
+
+Two earlier counts in this repository were higher and neither difference is a
+library gained or lost. 199 was before `readline` was excluded — see *What was
+deliberately removed* above, and that one is real. 185 was the same kind of
+build read by walking the unpacked folder, which counts a symlink as a file:
+Qt ships `libQt6Foo.so.6` beside the real `libQt6Foo.so.6.11.2` and both were
+counted.
+
+Nothing in this table is copyleft without an exception.
 
 | Component | Files | Licence | Evidence |
 |---|--:|---|---|
-| `CPython` | 26 | PSF-2.0 | the Python Software Foundation License, version 2 |
+| `CPython` | 27 | PSF-2.0 | the Python Software Foundation License, version 2 |
 | `libblkid1` | 1 | LGPL-2.1-or-later | reviewed: Files: libblkid/* — default stanza says GPL-2+ |
 | `libbrotli1` | 2 | MIT | debian/copyright, Files: * stanza |
 | `libbsd0` | 1 | BSD-3-Clause AND BSD-2-Clause AND ISC | reviewed: per-file stanzas, all permissive BSD/ISC variants |
@@ -237,15 +282,24 @@ above. Nothing in this table is copyleft without an exception.
 | `libssl3t64` | 2 | Apache-2.0 | debian/copyright, Files: * stanza |
 | `libstdc++6` | 1 | GPL-3.0-or-later WITH GCC-exception-3.1 | free-form copyright: 'version 3.1 of the GCC Runtime Library Exception' |
 | `libsystemd0` | 1 | LGPL-2.1-or-later | debian/copyright, Files: * stanza |
+| `libuuid1` | 1 | BSD-3-Clause | reviewed: Files: libuuid/* — default stanza says GPL-2+ |
 | `libx11-6` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libx11-xcb1` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxau6` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
+| `libxcb-cursor0` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxcb-glx0` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
+| `libxcb-icccm4` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
+| `libxcb-image0` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
+| `libxcb-keysyms1` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxcb-randr0` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
+| `libxcb-render-util0` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxcb-render0` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
+| `libxcb-shape0` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxcb-shm0` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxcb-sync1` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
+| `libxcb-util1` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxcb-xfixes0` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
+| `libxcb-xkb1` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxcomposite1` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxcursor1` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxdamage1` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
@@ -254,20 +308,15 @@ above. Nothing in this table is copyleft without an exception.
 | `libxfixes3` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxi6` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxinerama1` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
+| `libxkbcommon-x11-0` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxkbcommon0` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxrandr2` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libxrender1` | 1 | MIT | free-form copyright: X.Org / XCB standard copyright — MIT/X11 permission notice |
 | `libzstd1` | 1 | BSD-3-Clause OR GPL-2.0-only | debian/copyright, Files: * stanza |
-| `Pillow (vendored native libraries)` | 32 | MIT-CMU, plus the per-library terms in Pillow's LICENSE | the wheel's own distribution metadata |
-| `pypdfium2 / PDFium` | 1 | BSD-3-Clause AND Apache-2.0 (PDFium: BSD-3-Clause) | the wheel's own distribution metadata |
-| `PySide6 / Qt 6` | 66 | LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only | the wheel's own distribution metadata |
-| `PySide6 / Qt 6 (ICU)` | 3 | Unicode-3.0 (vendored in the PySide6 wheel) | the wheel's own distribution metadata |
 | `zlib1g` | 1 | Zlib | debian/copyright, Files: * stanza |
-
-Windows and macOS carry the same wheels and the same Qt, and differ below that:
-Windows adds the Microsoft Visual C++ and Universal CRT runtime and has no
-dpkg-owned libraries at all, and macOS ships Qt as frameworks. Their tables are
-regenerated from the published archives at each release.
+| `Pillow (vendored native libraries)` | 19 | MIT-CMU, plus the per-library terms in Pillow's LICENSE | the wheel's own distribution metadata |
+| `pypdfium2 / PDFium` | 1 | BSD-3-Clause AND Apache-2.0 (PDFium: BSD-3-Clause) | the wheel's own distribution metadata |
+| `PySide6 / Qt 6` | 55 | LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only | the wheel's own distribution metadata |
 
 ## Build-time tools
 

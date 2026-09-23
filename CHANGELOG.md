@@ -5,6 +5,74 @@ All notable changes to Orion are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] — 2026-09-23
+
+Orion ships as one executable instead of a folder. Every product in this family
+does now; CLAUDE.md carries the rule and what it costs.
+
+### Changed
+
+- **One file.** An archive is the program, its launcher, its checksum and the
+  licence texts. There is no `_internal/` to be told to leave alone, and the
+  three platforms unpack to the same shape.
+
+- **It self-extracts, and that is the cost.** A onefile build unpacks itself
+  into a temporary folder on every launch and runs the copy. Self-extraction
+  followed by process creation is a behaviour worth flagging in general, and it
+  is exactly the kind of thing 1.6.0 was about not doing: that release exists
+  because a corporate endpoint agent quarantined Orion on a real installation,
+  and its three fixes all removed behaviours that score against an unsigned
+  executable from the internet. This adds one back.
+
+  It was chosen with that named rather than overlooked — the reason is
+  consistency for people who use more than one of these products, and nothing
+  technical. The README's *If your antivirus or EDR flags it* section says so
+  where a user will meet it, and a test holds that warning in place. Everything
+  else from 1.6.0 stands: the version resource, no packer, `Get-FileHash`
+  instead of `certutil`, no WMI query. 1.8.0 remains on the releases page as a
+  folder build.
+
+- **The licence texts moved out of the executable and into the archive.** They
+  used to travel as PyInstaller data under `_internal/licenses/`. Data in a
+  onefile build is unpacked to a temporary directory while the program runs,
+  where nobody who opened the archive would ever look, and a licence text
+  nobody can read accompanies nothing. `orion.spec` stages the tree during the
+  build — it has to, because only the spec has the list of what the linker
+  actually resolved — and the release workflow copies it in beside the
+  executable.
+
+- **Relinking is met by a different route, and the documents say which.** A
+  folder build answered LGPL-3.0 §4(d) by making every Qt library a file a
+  recipient could overwrite; there is no such file now. THIRD-PARTY-LICENSES.md
+  sets out §4(d)(1) instead — published application source, the pinned Qt
+  version, a one-command rebuild — and notes that §4(d)'s other route has never
+  been open to a frozen build of any shape. §11 of COMMERCIAL-LICENSE.md says
+  plainly that this route does not transfer to a closed derivative.
+
+### Fixed
+
+- **The inventory reads the executable now, not the bundle folder.** There is
+  no folder, and the obvious substitute is wrong here: PyInstaller's record of
+  the build is written when `Analysis` finishes, and `orion.spec` then removes
+  forty-two binaries — Qml, Quick, the EGL and VNC platform plugins, the GTK
+  platform theme and the ATK stack behind it. Reading that record would
+  attribute forty-two libraries the download does not contain, several of them
+  LGPL-2.1. The executable is read directly instead, through PyInstaller's
+  archive reader.
+
+- **A release step that writes no report now fails** instead of warning.
+  `argparse` exits 2 on a bad argument, and so does an inventory that wrote its
+  report and wants a human to read some rows; the case statement could not tell
+  them apart. The presence of the file can.
+
+### Numbers
+
+A Linux build contains **169 native binaries**, down from a documented 185 —
+and that difference is the counting, not the build. Walking a folder counted
+Qt's `libQt6Foo.so.6` symlink and the file it points at as two. The Linux
+inventory table in THIRD-PARTY-LICENSES.md is regenerated from this build
+rather than from the v1.0.0 one it had been carrying.
+
 ## [1.8.0] — 2026-09-20
 
 Orion opens the forms that nothing else will.

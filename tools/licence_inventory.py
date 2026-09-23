@@ -61,6 +61,7 @@ every such library is reported unresolved.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import re
@@ -468,35 +469,87 @@ def resolve_system(basename: str) -> tuple[str, str | None, str | None]:
     return package, None, "no Files: * stanza — needs review"
 
 
-def take_inventory(platform: str, root: str) -> Inventory:
-    inventory = Inventory(platform=platform, root=root)
+def _paths_from_build_directory(root: str) -> list[tuple[str, str]] | None:
+    """``(bundle path, source path)`` from PyInstaller's own record of a build.
+
+    This is the most accurate of the three inputs, because it carries where
+    each file came *from* — so a system library is resolved by its real path
+    rather than by matching its name against the ones dpkg happens to know.
+    """
+    toc = os.path.join(root, "Analysis-00.toc")
+    if not os.path.exists(toc):
+        return None
+    with open(toc, encoding="utf-8") as handle:
+        parsed = ast.literal_eval(handle.read())
+    found = []
+    for section in parsed:
+        if not isinstance(section, list):
+            continue
+        for entry in section:
+            if (isinstance(entry, tuple) and len(entry) == 3
+                    and entry[2] in ("BINARY", "EXTENSION")):
+                found.append((str(entry[0]), str(entry[1])))
+    return found
+
+
+def _paths_from_executable(path: str) -> list[tuple[str, str]]:
+    """``(bundle path, '')`` for the binaries inside a single-file executable.
+
+    A ``--onefile`` build is an archive with a bootloader in front of it, so
+    there is nothing to walk: the contents have to be read out of it. Needs
+    PyInstaller importable, which any machine that produced the file has.
+    """
+    from PyInstaller.archive.readers import CArchiveReader
+
+    reader = CArchiveReader(path)
+    return [(name, "") for name, record in reader.toc.items() if record[-1] == "b"]
+
+
+def _paths_from_tree(root: str) -> list[tuple[str, str]]:
+    """``(bundle path, source path)`` for an extracted bundle directory."""
+    found = []
     for directory, _subdirs, files in os.walk(root):
         for name in sorted(files):
-            rel = os.path.relpath(os.path.join(directory, name), root)
-            # PyInstaller lays the bundle out differently per platform:
-            # _internal/ on Windows and Linux, Contents/Frameworks and
-            # Contents/Resources inside an .app on macOS. Attribution rules
-            # are written against the path *below* that prefix, so strip it.
-            inner = rel.split("_internal/", 1)[-1]
-            for prefix in ("Contents/Frameworks/", "Contents/Resources/", "Contents/MacOS/"):
-                inner = inner.split(prefix, 1)[-1]
-            classified = classify(inner)
-            if classified is None:
-                continue
-            origin, component = classified
-            if origin == "system":
-                package, licence, evidence = resolve_system(os.path.basename(rel))
-                inventory.entries.append(
-                    Entry(rel, origin, package, licence, evidence, FLAGGED.get(package))
-                )
+            full = os.path.join(directory, name)
+            found.append((os.path.relpath(full, root), full))
+    return found
+
+
+def bundle_contents(path: str) -> list[tuple[str, str]]:
+    """Whatever ``--bundle`` was pointed at, as a list of bundle paths."""
+    if os.path.isfile(path):
+        return _paths_from_executable(path)
+    from_build = _paths_from_build_directory(path)
+    return from_build if from_build is not None else _paths_from_tree(path)
+
+
+def take_inventory(platform: str, root: str) -> Inventory:
+    inventory = Inventory(platform=platform, root=root)
+    for rel, _source in bundle_contents(root):
+        # PyInstaller lays the bundle out differently per platform:
+        # _internal/ on Windows and Linux, Contents/Frameworks and
+        # Contents/Resources inside an .app on macOS. Attribution rules
+        # are written against the path *below* that prefix, so strip it.
+        inner = rel.split("_internal/", 1)[-1]
+        for prefix in ("Contents/Frameworks/", "Contents/Resources/", "Contents/MacOS/"):
+            inner = inner.split(prefix, 1)[-1]
+        classified = classify(inner)
+        if classified is None:
+            continue
+        origin, component = classified
+        if origin == "system":
+            package, licence, evidence = resolve_system(os.path.basename(rel))
+            inventory.entries.append(
+                Entry(rel, origin, package, licence, evidence, FLAGGED.get(package))
+            )
+        else:
+            if origin == "cpython":
+                licence = "PSF-2.0"
             else:
-                if origin == "cpython":
-                    licence = "PSF-2.0"
-                else:
-                    licence = WHEEL_LICENCES.get(component) or _declared_licence(component)
-                inventory.entries.append(
-                    Entry(rel, origin, component, licence, ORIGIN_SOURCES[origin])
-                )
+                licence = WHEEL_LICENCES.get(component) or _declared_licence(component)
+            inventory.entries.append(
+                Entry(rel, origin, component, licence, ORIGIN_SOURCES[origin])
+            )
     inventory.entries.sort(key=lambda e: (e.origin, e.component, e.path))
     return inventory
 
@@ -620,8 +673,8 @@ def main(argv: list[str] | None = None) -> int:
         if "=" not in spec:
             parser.error(f"--bundle wants PLATFORM=PATH, got {spec!r}")
         platform, path = spec.split("=", 1)
-        if not os.path.isdir(path):
-            parser.error(f"not a directory: {path}")
+        if not os.path.exists(path):
+            parser.error(f"no such bundle: {path}")
         inventory = take_inventory(platform, path)
         summarise(inventory)
         print()

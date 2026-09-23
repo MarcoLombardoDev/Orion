@@ -119,8 +119,19 @@ def test_licence_texts_are_added_to_the_bundle(spec_source):
     person who downloads a zip never sees it.
     """
     assert "collect_licences(" in spec_source
-    assert 'str(Path("licenses")' in spec_source, (
-        "the collected texts must land in the bundle as licenses/"
+    assert "LICENCE_STAGING" in spec_source
+
+    # Staged by the spec, put in the archive by the workflow, and deliberately
+    # not handed to PyInstaller as data: a onefile build unpacks its data to a
+    # temporary directory while the program runs, where nobody who opened the
+    # archive will ever look. A licence text nobody can read accompanies
+    # nothing.
+    assert "analysis.datas +=" not in spec_source, (
+        "the licence tree is back inside the executable, where it is invisible"
+    )
+    workflow = (REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    assert 'cp -R build/licenses "$root/licenses"' in workflow, (
+        "nothing puts the licence tree in the archive"
     )
 
 
@@ -688,19 +699,49 @@ class TestLookingLikeOrdinarySoftware:
         assert "StringStruct('OriginalFilename', '{APP_NAME}.exe')" in spec_source
 
     def test_the_build_is_not_packed(self, spec_source):
-        """A packer is the single loudest static signal there is."""
-        assert "upx=True" not in spec_source
-        assert spec_source.count("upx=False") >= 2
+        """A packer is the single loudest static signal there is.
 
-    def test_the_build_unpacks_nothing_at_startup(self, spec_source):
-        """A onefile build extracts to %TEMP% and re-runs itself.
-
-        That is self-extraction followed by process creation, which is a
-        behaviour worth flagging in general. COLLECT keeps the files on disk
-        where the user put them.
+        Compression is not the same thing as self-extraction: a onefile build
+        stores its payload, a packer obscures it. Having accepted the first,
+        there is all the more reason not to add the second.
         """
-        assert "COLLECT(" in spec_source
-        assert "exclude_binaries=True" in spec_source
+        assert "upx=True" not in spec_source
+        assert "upx=False" in spec_source
+
+    def test_the_build_does_unpack_at_startup_and_the_readme_says_so(
+        self, spec_source
+    ):
+        """This one used to assert the opposite, and the reversal is the point.
+
+        A onefile build extracts to %TEMP% and re-runs itself: self-extraction
+        followed by process creation, which is a behaviour worth flagging in
+        general and which an endpoint agent is right to notice. Orion was a
+        folder build partly to avoid it — 1.6.0 exists because a corporate EDR
+        quarantined Orion on a real installation, and the three fixes there
+        were all about not doing things that score against an unsigned
+        executable from the internet.
+
+        From 1.9.0 it does this anyway. Every product in this family ships as
+        one file; CLAUDE.md carries the rule. The reason is consistency for
+        people who use more than one of them, and it was chosen with this cost
+        named rather than overlooked.
+
+        What the test holds now is the half that is still in our hands: that a
+        user meeting the consequence is told about it before they meet it,
+        rather than discovering it from their security team.
+        """
+        assert "COLLECT(" not in spec_source, (
+            "back to a folder build; CLAUDE.md says one executable"
+        )
+        readme = (REPO / "README.md").read_text(encoding="utf-8")
+        section = readme[readme.index("### If your antivirus or EDR flags it"):]
+        section = section[: section.index("\n## ")]
+        assert "unpacks itself into a" in section, (
+            "the README no longer warns that the executable self-extracts"
+        )
+        assert "1.9.0" in section, (
+            "the warning does not say which version this started with"
+        )
 
     def test_the_graphics_backend_is_named_rather_than_discovered(self):
         """Qt asks WMI about the display adapter when it has to work it out.

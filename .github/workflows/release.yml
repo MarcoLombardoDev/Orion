@@ -46,8 +46,11 @@ concurrency:
 env:
   APP_NAME: Orion
   # Whether the build produces one self-contained file or a collect directory.
-  # The packaging step needs to know; nothing else does.
-  ONEFILE: "false"
+  # The packaging step needs to know; nothing else does. It is "true" and stays
+  # "true": every product in this family freezes to a single executable, and
+  # CLAUDE.md says why. The switch is kept because the two shapes need
+  # different packaging and a reader should be able to see which one this is.
+  ONEFILE: "true"
   PYTHON_VERSION: "3.12"
 
 jobs:
@@ -186,12 +189,17 @@ jobs:
           suffix=""
           [ "$RUNNER_OS" = "Windows" ] && suffix=".exe"
 
-          if [ "$ONEFILE" = "true" ]; then
-            payload="dist/$APP_NAME$suffix"
-            bin="$payload"
-          elif [ "$RUNNER_OS" = "macOS" ] && [ -d "dist/$APP_NAME.app" ]; then
+          # macOS is checked first on purpose. BUNDLE wraps the single
+          # executable in an .app there — double-clicking a bare Unix
+          # executable opens a terminal, when it does anything at all — so
+          # dist/ holds both, and taking the bare one would ship a download
+          # nobody can start by clicking it.
+          if [ "$RUNNER_OS" = "macOS" ] && [ -d "dist/$APP_NAME.app" ]; then
             payload="dist/$APP_NAME.app"
             bin="dist/$APP_NAME.app/Contents/MacOS/$APP_NAME"
+          elif [ "$ONEFILE" = "true" ]; then
+            payload="dist/$APP_NAME$suffix"
+            bin="$payload"
           else
             payload="dist/$APP_NAME"
             bin="dist/$APP_NAME/$APP_NAME$suffix"
@@ -283,31 +291,46 @@ jobs:
       - name: Inventory what the bundle ships
         shell: bash
         env:
-          PAYLOAD: ${{ steps.built.outputs.payload }}
+          BIN: ${{ steps.built.outputs.bin }}
         run: |
-          # Filed beside the licence texts, wherever COLLECT put them — which
-          # is _internal/ on Windows and Linux and somewhere inside Contents/
-          # on macOS, so it is found rather than assumed.
-          home=$(python - "$PAYLOAD" <<'PY'
-          import pathlib
-          import sys
+          # orion.spec stages the licence texts in build/licenses during the
+          # build. The report is filed there, and the packaging step below
+          # copies the whole tree to the root of the archive.
+          home="build/licenses"
+          report="$home/THIRD-PARTY-LICENSES-${{ matrix.asset }}.md"
 
-          payload = pathlib.Path(sys.argv[1])
-          homes = [p.parent for p in payload.rglob("Orion-LICENSE.txt")]
-          if not homes:
-              raise SystemExit("no licence directory in the bundle to file the inventory in")
-          print(homes[0])
-          PY
-          )
-          echo "filing the inventory in $home"
-
+          # The executable itself, read through PyInstaller's archive reader.
+          # A onefile build leaves no directory to walk: the libraries are
+          # inside the file and are unpacked to a temporary directory only
+          # while it runs.
+          #
+          # Not build/orion, which is where PyInstaller leaves its own record
+          # of the build and is what the sibling products read. That record is
+          # written when Analysis finishes, and this spec then *removes* 42
+          # binaries from the bundle -- Qml, Quick, the EGL and VNC platform
+          # plugins, the GTK platform theme and the ATK stack behind it.
+          # Reading it would attribute forty-two libraries that are not in the
+          # archive, several of them LGPL-2.1, which is a worse error than any
+          # this inventory is meant to catch: claiming to carry terms for
+          # software the download does not contain.
           set +e
           python tools/licence_inventory.py \
-            --bundle "${{ matrix.asset }}=$PAYLOAD" \
-            --markdown "$home/THIRD-PARTY-LICENSES-${{ matrix.asset }}.md" \
+            --bundle "${{ matrix.asset }}=$BIN" \
+            --markdown "$report" \
             --licences "$home"
           status=$?
           set -e
+
+          # argparse exits 2 as well, and so does an inventory that wrote its
+          # report and wants a human to look at some rows. Those are not the
+          # same event and the case below cannot tell them apart, so a mistyped
+          # path would arrive as a warning nobody reads -- which is exactly how
+          # the v1 release published two archives with nothing in them while
+          # the log said "warning". The file either exists or the step fails.
+          if [ ! -s "$report" ]; then
+            echo "::error::the inventory exited $status and wrote no report"
+            exit 1
+          fi
 
           case "$status" in
             0) ;;
@@ -318,10 +341,10 @@ jobs:
           ls -la "$home"
 
       # What the user asked for, and the reason it is done here rather than in
-      # orion.spec: PyInstaller 6 puts everything a spec declares as `datas`
-      # under _internal/, which is exactly where a launcher must not be. The
-      # only place that can write next to the executable is the workflow,
-      # after COLLECT has finished.
+      # orion.spec: everything a spec declares as `datas` is packed inside the
+      # executable and unpacked to a temporary directory while the program
+      # runs, which is the one place a launcher is no use at all. The only
+      # thing that can write next to the executable is the workflow.
       #
       # The checksum written here is of the executable, and it travels in the
       # same archive as the executable. That combination catches a truncated
@@ -337,34 +360,40 @@ jobs:
           PAYLOAD: ${{ steps.built.outputs.payload }}
           BIN: ${{ steps.built.outputs.bin }}
         run: |
+          # The payload is one file on Windows and Linux and one .app on
+          # macOS, and in every case it moves *into* the folder rather than
+          # becoming it, so all three archives unpack to the same shape.
+          root="dist/pkg/$APP_NAME"
+          mkdir -p "$root"
+          mv "$PAYLOAD" "$root/"
+
           case "$RUNNER_OS" in
             Windows)
-              root="$PAYLOAD"
               cp packaging/start.cmd "$root/start.cmd"
               named="$APP_NAME.exe"
               sums="$root/$APP_NAME.exe.sha256"
               ;;
             macOS)
-              # The payload is Orion.app, and a launcher does not belong
-              # inside somebody else's bundle. So the app moves into a folder
-              # of its own and the launcher sits beside it — which also makes
-              # all three archives unpack to the same shape.
-              root="dist/pkg/$APP_NAME"
-              mkdir -p "$root"
-              mv "$PAYLOAD" "$root/"
               cp packaging/start.sh "$root/start.command"
               chmod +x "$root/start.command"
               named="$APP_NAME.app/Contents/MacOS/$APP_NAME"
               sums="$root/$APP_NAME.sha256"
               ;;
             *)
-              root="$PAYLOAD"
               cp packaging/start.sh "$root/start.sh"
               chmod +x "$root/start.sh"
               named="$APP_NAME"
               sums="$root/$APP_NAME.sha256"
               ;;
           esac
+
+          # Everybody else's terms, and the inventory of which binary in the
+          # bundle belongs to which project. orion.spec stages this during the
+          # build and deliberately does not put it inside the executable: in a
+          # onefile build that would unpack it to a temporary directory nobody
+          # ever looks in, and a licence text nobody can read accompanies
+          # nothing.
+          cp -R build/licenses "$root/licenses"
 
           # Written in the format `sha256sum -c` reads, with the name relative
           # to the file itself, so the archive can also be checked with a tool
