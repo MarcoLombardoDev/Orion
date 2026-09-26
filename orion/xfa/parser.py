@@ -35,6 +35,7 @@ import logging
 import re
 from xml.etree.ElementTree import Element
 
+from orion.xfa.merge import apply_form_state, merge_data
 from orion.xfa.model import (
     NO_EDGES,
     XfaBinding,
@@ -154,11 +155,15 @@ def _rect_of(node: Element) -> XfaRect:
     whole lower half of a form collapsed into three overlapping rows. The
     minimum is the size the form opens at, so it is the size to lay out.
     """
+    width = node.get("w")
+    height = node.get("h")
     return XfaRect(
         x=parse_measurement(node.get("x")),
         y=parse_measurement(node.get("y")),
-        width=max(parse_measurement(node.get("w")), parse_measurement(node.get("minW"))),
-        height=max(parse_measurement(node.get("h")), parse_measurement(node.get("minH"))),
+        # A fixed size wins over a minimum: ``w`` makes ``minW`` meaningless,
+        # and a table cell declaring both is as wide as ``w`` says.
+        width=parse_measurement(width if width is not None else node.get("minW")),
+        height=parse_measurement(height if height is not None else node.get("minH")),
     )
 
 
@@ -174,6 +179,61 @@ def is_hidden(node: Element) -> bool:
     still part of the layout.
     """
     return node.get("presence") in ("hidden", "inactive")
+
+
+def _col_span_of(node: Element) -> int:
+    """``colSpan``: how many table columns a cell covers. -1 is "the rest"."""
+    try:
+        span = int(node.get("colSpan", "1"))
+    except ValueError:
+        return 1
+    return span if span == -1 or span >= 1 else 1
+
+
+def _breaks_of(node: Element) -> tuple[bool, bool]:
+    """Does this subform start a new page before it, or force one after it?
+
+    Only a break that targets a page or content area moves anything. A
+    ``breakBefore`` that carries nothing but a ``leader`` or ``trailer`` — the
+    reference tables all have one — is about what to print at a break, not an
+    instruction to make one, and reading it as a break put every table on a
+    page of its own.
+    """
+    before = after = False
+    for tag, is_before in (("breakBefore", True), ("breakAfter", False)):
+        for item in _children(node, tag):
+            if item.get("targetType") in ("pageArea", "contentArea"):
+                if is_before:
+                    before = True
+                else:
+                    after = True
+    legacy = _child(node, "break")
+    if legacy is not None:
+        before = before or legacy.get("before") in (
+            "pageArea",
+            "contentArea",
+            "pageEven",
+            "pageOdd",
+        )
+        after = after or legacy.get("after") in ("pageArea", "contentArea", "pageEven", "pageOdd")
+    return before, after
+
+
+def _page_counter(scripts: tuple[XfaScript, ...]) -> str:
+    """``page`` or ``pages`` for a field a script fills with a page number.
+
+    ``xfa.layout.page(this)`` is on nearly every LiveCycle footer. Running it
+    is out of the question, but its result is not a mystery: once the
+    converter knows how the pages came out it can write the number itself.
+    """
+    text = " ".join(script.source for script in scripts).replace(" ", "")
+    page = "layout.page(" in text
+    count = "layout.pageCount(" in text or "layout.absPageCount(" in text
+    if page and not count:
+        return "page"
+    if count and not page:
+        return "pages"
+    return ""
 
 
 def _column_widths_of(node: Element) -> tuple[float, ...]:
@@ -442,6 +502,7 @@ def _parse_field(node: Element, parent_som: str, font: XfaFont) -> XfaField | Xf
             scripts=scripts,
             parent_som=parent_som,
             hidden=is_hidden(node),
+            col_span=_col_span_of(node),
         )
 
     value_node = _child(node, "value")
@@ -492,6 +553,9 @@ def _parse_field(node: Element, parent_som: str, font: XfaFont) -> XfaField | Xf
         space_above=_space_of(node)[0],
         space_below=_space_of(node)[1],
         edges=_edges_of(border),
+        col_span=_col_span_of(node),
+        grows=node.get("h") is None,
+        page_counter=_page_counter(scripts),
         tooltip=_text_of(_child(_child(node, "assist"), "toolTip"))
         if _child(node, "assist") is not None
         else "",
@@ -511,6 +575,8 @@ def _parse_field(node: Element, parent_som: str, font: XfaFont) -> XfaField | Xf
 
     # A checkbox whose UI declares more than two states is a radio member in
     # everything but name; XFA models an exclusion group as its container.
+    if field_type in (XfaFieldType.CHECKBOX, XfaFieldType.RADIO) and ui_node is not None:
+        field.check_size = parse_measurement(ui_node.get("size"), 0.0)
     if field_type is XfaFieldType.CHECKBOX:
         items = _children(node, "items")
         if items:
@@ -572,10 +638,11 @@ def _edges_of(border: Element | None) -> tuple[XfaEdge, XfaEdge, XfaEdge, XfaEdg
                 visible=edge.get("presence") not in ("hidden", "inactive"),
             )
         )
-    if len(sides) == 1:
-        return (sides[0], sides[0], sides[0], sides[0])
+    # Fewer than four: the last one written stands for the sides that were
+    # not, which is what the XFA specification says and what makes a single
+    # edge a plain box.
     while len(sides) < 4:
-        sides.append(XfaEdge())
+        sides.append(sides[-1])
     return (sides[0], sides[1], sides[2], sides[3])
 
 
@@ -610,6 +677,7 @@ def _parse_draw(node: Element, parent_som: str, font: XfaFont) -> XfaDraw:
     border_width, border_colour, fill_colour = _border_of(_child(node, "border"))
 
     kind = "text"
+    circular = False
     line_width = border_width
     line_colour = border_colour
     if value is not None:
@@ -634,11 +702,29 @@ def _parse_draw(node: Element, parent_som: str, font: XfaFont) -> XfaDraw:
                     fill_colour = _colour_of(solid.get("value"), (1.0, 1.0, 1.0))
         elif _child(value, "image") is not None:
             kind = "image"
+        elif _child(value, "arc") is not None:
+            kind = "arc"
+            arc = _child(value, "arc")
+            circular = arc is not None and arc.get("circular") == "1"
+            edge = _child(arc, "edge")
+            if edge is not None and edge.get("presence") not in ("hidden", "invisible"):
+                line_width = parse_measurement(edge.get("thickness"), 0.5)
+                edge_colour = _child(edge, "color")
+                line_colour = (
+                    _colour_of(edge_colour.get("value"))
+                    if edge_colour is not None
+                    else (0.0, 0.0, 0.0)
+                )
+            fill = _child(arc, "fill")
+            solid = _child(fill, "color") if fill is not None else None
+            if solid is not None:
+                fill_colour = _colour_of(solid.get("value"), (1.0, 1.0, 1.0))
 
     align, valign = _para_of(node)
 
     return XfaDraw(
         kind=kind,
+        name=node.get("name", ""),
         text=text,
         rect=rect,
         font=own_font,
@@ -653,7 +739,23 @@ def _parse_draw(node: Element, parent_som: str, font: XfaFont) -> XfaDraw:
         fill_color=fill_colour,
         parent_som=parent_som,
         hidden=is_hidden(node),
+        col_span=_col_span_of(node),
+        auto_width=node.get("w") is None,
+        auto_height=node.get("h") is None,
+        circular=circular,
     )
+
+
+def _leader_of(node: Element) -> str:
+    overflow = _child(node, "overflow")
+    return overflow.get("leader", "") if overflow is not None else ""
+
+
+def _binding_of(node: Element) -> XfaBinding:
+    binding = _child(node, "bind")
+    if binding is None:
+        return XfaBinding()
+    return XfaBinding(expression=binding.get("ref", ""), match=binding.get("match", "once"))
 
 
 def _parse_subform(node: Element, parent_som: str, font: XfaFont, depth: int = 0) -> XfaSubform:
@@ -668,7 +770,17 @@ def _parse_subform(node: Element, parent_som: str, font: XfaFont, depth: int = 0
         column_widths=_column_widths_of(node),
         occur=_occur_of(node),
         scripts=_scripts_of(node, som),
-        page_break_before=_child(node, "breakBefore") is not None,
+        page_break_before=_breaks_of(node)[0],
+        page_break_after=_breaks_of(node)[1],
+        overflow_leader=(
+            _child(node, "overflow").get("leader", "")
+            if _child(node, "overflow") is not None
+            else ""
+        ),
+        binding=_binding_of(node),
+        col_span=_col_span_of(node),
+        edges=_edges_of(_child(node, "border")),
+        fill_color=_border_of(_child(node, "border"))[2],
         hidden=is_hidden(node),
         space_above=_space_of(node)[0],
         space_below=_space_of(node)[1],
@@ -728,6 +840,10 @@ def _parse_excl_group(node: Element, parent_som: str, font: XfaFont, into: XfaSu
         rect=_rect_of(node),
         layout="position",
         scripts=_scripts_of(node, group_som),
+        binding=_binding_of(node),
+        excl_group=True,
+        hidden=is_hidden(node),
+        col_span=_col_span_of(node),
     )
 
     for child in _children(node, "field"):
@@ -768,6 +884,8 @@ def _parse_page_areas(template_root: Element) -> list[XfaPageArea]:
         if content is not None:
             area.margin_left = parse_measurement(content.get("x"), 0.0)
             area.margin_top = parse_measurement(content.get("y"), 0.0)
+            area.content_width = parse_measurement(content.get("w"), 0.0)
+            area.content_height = parse_measurement(content.get("h"), 0.0)
         area.furniture = _parse_furniture(page_set, area.name)
         pages.append(area)
     return pages
@@ -863,7 +981,9 @@ def parse_xfa(packets: dict[str, bytes]) -> XfaDocument:
         elif root_subforms:
             holder = XfaSubform(name="", som="")
             for node in root_subforms:
-                holder.children.append(_parse_subform(node, "", base_font))
+                parsed = _parse_subform(node, "", base_font)
+                holder.children.append(parsed)
+                holder.content.append(parsed)
             document.template.root = holder
         else:
             document.warnings.append("The XFA template contains no subform.")
@@ -871,39 +991,62 @@ def parse_xfa(packets: dict[str, bytes]) -> XfaDocument:
     else:
         document.warnings.append("The XFA template could not be read.")
 
-    datasets_bytes = packets.get("datasets")
-    if datasets_bytes:
+    xdp_root: Element | None = None
+    if xdp_bytes:
         try:
-            datasets = parse_xml(datasets_bytes)
-        except XmlRejected as exc:
-            document.warnings.append(str(exc))
-        else:
-            _collect_data(datasets, "", document.data)
-    elif xdp_bytes and template_root is not None:
-        try:
-            xdp = parse_xml(xdp_bytes)
+            xdp_root = parse_xml(xdp_bytes)
         except XmlRejected:
-            pass
-        else:
-            for node in xdp.iter():
-                if local_name(node.tag) == "datasets":
-                    _collect_data(node, "", document.data)
-                    break
+            xdp_root = None
 
-    _apply_data(document)
+    def packet(name: str) -> Element | None:
+        raw = packets.get(name)
+        if raw:
+            try:
+                return parse_xml(raw)
+            except XmlRejected as exc:
+                document.warnings.append(str(exc))
+                return None
+        if xdp_root is not None and template_root is not None:
+            for node in xdp_root.iter():
+                if isinstance(node.tag, str) and local_name(node.tag) == name:
+                    return node
+        return None
+
+    form_state = packet("form")
+    if form_state is not None and template_root is not None:
+        try:
+            apply_form_state(document, form_state)
+        except Exception:  # pragma: no cover - a saved state is a bonus
+            log.warning("Could not apply the saved XFA form state", exc_info=True)
+
+    resolved: set[int] = set()
+    datasets = packet("datasets")
+    if datasets is not None:
+        _collect_data(datasets, "", document.data)
+        try:
+            resolved = merge_data(document, datasets)
+        except Exception:  # pragma: no cover - the name fallback still runs
+            log.warning("Could not merge the XFA data in order", exc_info=True)
+
+    _apply_data(document, resolved)
     return document
 
 
-def _apply_data(document: XfaDocument) -> None:
-    """Fill the template's fields with what the datasets packet saved.
+def _apply_data(document: XfaDocument, resolved: set[int] = frozenset()) -> None:
+    """The looser fallback for fields the ordered merge found nothing for.
 
     The binding expression wins when it resolves; failing that the field's own
-    name is tried, which is what XFA does implicitly when a field binds by
-    name. A field the data says nothing about keeps its template default.
+    name is tried. It rescues data written by tools that do not mirror the
+    template's shape, and it leaves alone every field the ordered merge in
+    :mod:`orion.xfa.merge` already matched — a lookup by name alone gives
+    every row of a table the first row's value. A field bound with
+    ``match="none"`` takes nothing from the data, which is what that means.
     """
     if not document.data:
         return
     for field in document.fields:
+        if id(field) in resolved or field.binding.match == "none":
+            continue
         ref = field.binding.expression
         candidates = []
         if ref:

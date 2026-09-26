@@ -337,11 +337,15 @@ document beside it, named after the original with `-converted` on the end.
 | Text boxes, numbers, dates | Become fillable fields |
 | Tick boxes and either/or choices | Become checkboxes and radio buttons |
 | Drop-down lists | Become drop-downs, with all their options |
-| Values already filled in | Kept |
-| Rows already present in a repeating table | Kept |
+| Values already filled in | Kept, and shown as the form shows them — dates and amounts in its own format |
+| Rows already present in a repeating table | Kept, every one, each with its own values |
+| Sections a script had shown or hidden before the form was saved | Kept as they were |
+| Long tables | Continue on the next page, with the column headings repeated |
+| Page numbers in the footer | Kept |
 | **Adding new rows to a repeating table** | **Lost** |
 | **Automatic calculations and checks** | **Lost** |
-| **Buttons** | **Shown, but they no longer do anything** |
+| Print, Save and Reset buttons | Still work |
+| **Other buttons** | **Shown, but they no longer do anything** |
 | **Logos and pictures** | **Left out** |
 | Fonts | Kept, and embedded when your machine has the typeface |
 | Required and read-only fields | Kept |
@@ -355,9 +359,12 @@ summary says how many were lost.
 Fields that the form only shows in certain cases — a date that appears once
 you tick a box — are **always shown** in the converted document. The rule that
 decided when to show them is part of the form's programming and cannot come
-across, so a hidden field would be one nothing could ever reveal again. A
-document converted with *cannot be filled in* is the exception: it stands in
-for the printed form, so it shows what the form showed.
+across, so a hidden field would be one nothing could ever reveal again. The
+exception is a hidden field that would land on top of something visible — a
+form that swaps one field for another in the same place — which stays hidden
+rather than print two labels over each other; if it holds a value, the value
+is kept in the file. A document converted with *cannot be filled in* shows
+what the form showed.
 
 The three losses above are not an oversight. An XFA form carries a small program, and
 standard PDF forms have nowhere to put it — there is no equivalent of a

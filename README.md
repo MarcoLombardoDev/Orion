@@ -98,6 +98,11 @@ are all objects.
   groups and drop-downs, keeping position, size, font, value, options, required
   and read-only, along with the rows already in a repeating table.
 
+  A form that was **filled in and saved** comes back as it was filled in: every
+  row of every table with its own values, the sections a script had revealed,
+  dates and amounts in the form's own format, long tables continued onto the
+  next page with their headings repeated, and page numbers in the footer.
+
   Print, save and reset **buttons still work** — through the actions PDF has
   for them, not through carried-over script. The rest of a form's programming
   (calculations, rules, sections that grow on demand) cannot come across, and

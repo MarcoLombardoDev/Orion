@@ -15,24 +15,39 @@ nothing but the apology. The layout has to be *computed* from the template,
 which is what a real XFA viewer does at open time and what makes these forms
 unopenable everywhere else.
 
-XFA lays out in two modes and the tree mixes them freely:
+XFA lays out in a handful of modes and the tree mixes them freely:
 
 * **position** — children sit at their own ``x``/``y`` within the parent.
   Coordinates are relative, so they accumulate down the tree.
-* **tb** (and ``lr-tb``) — children *flow*: each is placed below the last, and
-  its own ``y`` is an offset from that running position rather than from the
-  parent's origin. A flowed subform's height is what its content came to, not
-  what the attribute claims.
-* **table** and **row** — a table flows its rows downwards like ``tb``; a row
-  flows its cells *across*, each to the right of the last. Cells almost never
-  carry an ``x``, because their position is the sum of the widths before them.
-  Treating a row as positioned puts every cell at the same place, which reads
-  as one line of overlapping words where the table should be.
+* **tb** — children *flow*: each is placed below the last, at the parent's
+  left edge. Their own ``x`` and ``y`` are ignored, as the specification
+  says: LiveCycle Designer keeps whatever coordinates an object had before it
+  was dropped into a flowed subform, and honouring them opened gaps of
+  several centimetres in the middle of a table.
+* **lr-tb** — the same across, wrapping onto a new line at the right edge.
+* **table** and **row** — a table flows its rows downwards; a row runs its
+  cells across, and every cell takes its width from the table's
+  ``columnWidths`` rather than from its own ``w``. A row is as tall as its
+  tallest cell, and every cell is stretched to that height, which is what
+  keeps a table's rules continuous when one description runs to two lines.
 
-Repeatable subforms are materialised here, once per instance that the form
-already has. That is the honest half of the dynamic story: the instances that
-exist are laid out and converted, the ability to add more is not carried over,
-and the report says so.
+An element with a minimum height rather than a fixed one grows to fit its
+content, as it does in a real viewer, so a long description makes its row
+taller instead of spilling out of it.
+
+**Pagination** is a separate step over what the walk produced. The walk lays
+everything out on one long galley and records which elements belong together
+— a row, a positioned block — and the paginator then cuts that galley into
+the page area's content area, moving a block that does not fit onto the next
+page whole. A table that continues repeats its heading row (``overflow
+leader``), and the page's own furniture — header band, footer, page number —
+is laid down on every page. A field whose script writes the page number
+gets the number, since that is the one layout script whose answer the
+converter knows.
+
+Repeatable subforms are materialised once per instance that the saved form
+state recorded (see :mod:`orion.xfa.merge`), or as many as the template asks
+for at open time when there is no saved state.
 
 Everything leaves here in **page coordinates, still top-left origin and y
 downwards**. The flip to PDF's bottom-left happens once, in the converter,
@@ -42,6 +57,7 @@ because doing it earlier means doing it in several places.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 from orion.xfa.model import (
@@ -54,7 +70,7 @@ from orion.xfa.model import (
     XfaSubform,
 )
 
-__all__ = ["LaidOutForm", "PlacedPage", "paginate", "rect_to_pdf", "resolve_layout"]
+__all__ = ["LaidOutForm", "PlacedPage", "rect_to_pdf", "resolve_layout"]
 
 log = logging.getLogger(__name__)
 
@@ -66,10 +82,21 @@ DEFAULT_ROW_HEIGHT = 18.0
 #: A guard against a template that would otherwise paginate forever.
 MAX_PAGES = 200
 
-#: How many instances of one repeatable subform to materialise, whatever the
-#: template claims. ``max="-1"`` means unbounded, and a converter that took
-#: that literally would never finish.
+#: How many instances of one repeatable subform to materialise from the
+#: template alone, whatever it claims. ``max="-1"`` means unbounded, and a
+#: converter that took that literally would never finish.
 MAX_INSTANCES = 100
+
+#: Layouts whose children flow rather than sit where they say.
+_FLOWED = ("tb", "lr-tb", "rl-tb", "table")
+
+#: Slack allowed when deciding whether a block fits, so that a rounding error
+#: of a hundredth of a point does not start a page.
+_FIT_TOLERANCE = 0.5
+
+_INDEX_SUFFIX = re.compile(r"\[\d+\]$")
+
+Element = XfaField | XfaButton | XfaDraw
 
 
 @dataclass(slots=True)
@@ -105,13 +132,44 @@ class LaidOutForm:
         return [d for page in self.pages for d in page.draws]
 
 
-def _sized(rect: XfaRect, height: float = 0.0, width: float = 0.0) -> XfaRect:
-    """*rect*, filled out with a height or width it does not have of its own."""
-    if height > 0 and rect.height <= 0:
-        rect = XfaRect(rect.x, rect.y, rect.width, height)
-    if width > 0 and rect.width <= 0:
-        rect = XfaRect(rect.x, rect.y, width, rect.height)
-    return rect
+@dataclass(slots=True)
+class _Block:
+    """Elements that go onto a page together or not at all."""
+
+    id: int
+    items: list[Element] = field(default_factory=list)
+    #: A table's heading row, repeated at the top of each continuation page.
+    is_leader: bool = False
+    #: The heading row this block's table repeats, if it has one.
+    leader: int | None = None
+    break_before: bool = False
+    break_after: bool = False
+
+    def extent(self) -> tuple[float, float] | None:
+        """Top and bottom of the block's visible elements, or None."""
+        shown = [item for item in self.items if not item.hidden and not _is_spacer(item)]
+        if not shown:
+            return None
+        top = min(item.rect.y for item in shown)
+        bottom = max(item.rect.y + max(item.rect.height, 0.0) for item in shown)
+        return top, bottom
+
+
+def _is_spacer(item: Element) -> bool:
+    """An element that draws nothing and is there only to make room.
+
+    Designers leave empty text objects at the foot of a section to push what
+    follows down. On one page they do that; at a page break they are nothing,
+    and letting one decide the break sent a block of signatures to a page of
+    its own because the blank space under it did not fit.
+    """
+    return (
+        isinstance(item, XfaDraw)
+        and item.kind == "text"
+        and not item.text
+        and item.fill_color is None
+        and not any(edge.draws for edge in item.edges)
+    )
 
 
 def _default_page(pages: list[XfaPageArea], index: int) -> XfaPageArea:
@@ -126,21 +184,42 @@ def _default_page(pages: list[XfaPageArea], index: int) -> XfaPageArea:
     return pages[min(index, len(pages) - 1)]
 
 
-def _instance_count(subform: XfaSubform, data_hint: int | None = None) -> int:
+def _content_box(area: XfaPageArea) -> tuple[float, float, float]:
+    """Left, top and bottom of the area's content region, in points."""
+    top = area.margin_top
+    height = area.content_height
+    if height <= 0:
+        height = max(area.height - 2 * top, area.height * 0.5)
+    return area.margin_left, top, top + height
+
+
+def _instance_count(subform: XfaSubform) -> int:
     """How many copies of a repeatable subform to lay out.
 
+    A copy the saved state already expanded is one copy. Otherwise
     ``initial`` is the template's own answer and is trusted first, because it
-    is what the form was designed to open with. ``min`` is the floor. The cap
+    is what the form was designed to open with; ``min`` is the floor. The cap
     is this module's, because ``max="-1"`` is unbounded and a real number has
     to come from somewhere.
     """
-    if not subform.is_repeatable:
+    if not subform.is_repeatable or subform.materialised:
         return 1
-    count = data_hint if data_hint is not None else subform.occur.initial
-    count = max(count, subform.occur.min, 1)
+    count = max(subform.occur.initial, subform.occur.min, 1)
     if subform.occur.max > 0:
         count = min(count, subform.occur.max)
     return min(count, MAX_INSTANCES)
+
+
+def _copy(item: Element, rect: XfaRect, instance: int, hidden: bool) -> Element:
+    placed = type(item)(**{k: getattr(item, k) for k in item.__slots__})
+    placed.rect = rect
+    placed.instance = instance
+    placed.hidden = item.hidden or hidden
+    return placed
+
+
+def _has_box(subform: XfaSubform) -> bool:
+    return subform.fill_color is not None or any(edge.draws for edge in subform.edges)
 
 
 class _Layout:
@@ -150,109 +229,70 @@ class _Layout:
         self._document = document
         self._areas = document.template.pages
         self.result = LaidOutForm()
-        self._page_index = -1
-        self._cursor = 0.0  # how far down the current page we have got
-        self._new_page()
+        self._blocks: list[_Block] = []
+        self._sink: list[Element] | None = None
+        self._pending_break = False
+        #: ``id()`` of a subform -> the block(s) it became, one per instance.
+        self._blocks_of: dict[int, list[_Block]] = {}
 
-    # -- pages -------------------------------------------------------------
-    def _new_page(self) -> PlacedPage:
-        self._page_index += 1
-        area = _default_page(self._areas, self._page_index)
-        page = PlacedPage(width=area.width, height=area.height)
-        self.result.pages.append(page)
-        self._cursor = area.margin_top
-        # The page's own furniture goes down first, at the page corner rather
-        # than inside the content area, and again on every page: that is what
-        # makes it furniture rather than content.
-        if area.furniture.content:
-            self._walk(area.furniture, 0.0, 0.0, 0)
-        return page
+    # -- blocks ------------------------------------------------------------
+    def _new_block(self) -> _Block:
+        block = _Block(id=len(self._blocks), break_before=self._pending_break)
+        self._pending_break = False
+        self._blocks.append(block)
+        return block
 
-    @property
-    def _page(self) -> PlacedPage:
-        return self.result.pages[self._page_index]
+    def _emit(self, placed: Element, block: _Block | None) -> None:
+        if self._sink is not None:
+            self._sink.append(placed)
+            return
+        if block is None:
+            block = self._new_block()
+        block.items.append(placed)
 
-    @property
-    def _margin_left(self) -> float:
-        return _default_page(self._areas, self._page_index).margin_left
+    # -- measuring ---------------------------------------------------------
+    @staticmethod
+    def _text_height(text: str, font, width: float, embed: bool) -> float:
+        from orion.xfa.converter import ASCENT, DESCENT, LEADING, _font_name, wrap_text
 
-    def _room_left(self) -> float:
-        area = _default_page(self._areas, self._page_index)
-        return self._page.height - area.margin_top - self._cursor
+        lines = wrap_text(text, _font_name(font, embed=embed), font.size, width)
+        if not lines:
+            return 0.0
+        return ((len(lines) - 1) * LEADING + ASCENT + DESCENT) * font.size
 
-    # -- placing -----------------------------------------------------------
-    def _place_field(
-        self,
-        item: XfaField,
-        dx: float,
-        dy: float,
-        instance: int,
-        height: float = 0.0,
-        width: float = 0.0,
-        hidden: bool = False,
-    ) -> None:
-        placed = XfaField(**{k: getattr(item, k) for k in item.__slots__})
-        placed.rect = _sized(item.rect.translated(dx, dy), height, width)
-        placed.page = self._page_index
-        placed.instance = instance
-        placed.hidden = item.hidden or hidden
-        self._page.fields.append(placed)
+    @staticmethod
+    def _text_width(text: str, font) -> float:
+        from reportlab.pdfbase.pdfmetrics import stringWidth
 
-    def _place_button(
-        self,
-        item: XfaButton,
-        dx: float,
-        dy: float,
-        instance: int,
-        height: float = 0.0,
-        width: float = 0.0,
-        hidden: bool = False,
-    ) -> None:
-        placed = XfaButton(**{k: getattr(item, k) for k in item.__slots__})
-        placed.rect = _sized(item.rect.translated(dx, dy), height, width)
-        placed.page = self._page_index
-        placed.instance = instance
-        placed.hidden = item.hidden or hidden
-        self._page.buttons.append(placed)
+        from orion.xfa.converter import _font_name
 
-    def _place_draw(
-        self,
-        item: XfaDraw,
-        dx: float,
-        dy: float,
-        instance: int,
-        height: float = 0.0,
-        width: float = 0.0,
-        hidden: bool = False,
-    ) -> None:
-        placed = XfaDraw(**{k: getattr(item, k) for k in item.__slots__})
-        placed.rect = _sized(item.rect.translated(dx, dy), height, width)
-        placed.page = self._page_index
-        placed.instance = instance
-        placed.hidden = item.hidden or hidden
-        self._page.draws.append(placed)
+        return stringWidth(text, _font_name(font), font.size)
 
-    # -- the walk ----------------------------------------------------------
-    def _content_height(self, subform: XfaSubform) -> float:
-        """How tall a subform's content comes to.
-
-        The declared height wins when there is one. Otherwise it is measured
-        from the children, because a flowed subform usually declares none and
-        stacking them at zero height would pile everything on one line.
-        """
-        if subform.rect.height > 0:
-            return subform.rect.height
-        bottom = 0.0
-        for item in list(subform.fields) + list(subform.buttons):
-            bottom = max(bottom, item.rect.y + item.rect.height)
-        for draw in subform.draws:
-            bottom = max(bottom, draw.rect.y + draw.rect.height)
-        for child in subform.children:
-            bottom = max(bottom, child.rect.y + self._content_height(child))
-        return bottom
+    def _natural(self, item: Element, width: float) -> tuple[float, float]:
+        """How wide and tall *item* comes out when *width* is what it gets."""
+        rect = item.rect
+        w = width if width > 0 else rect.width
+        h = rect.height
+        if isinstance(item, XfaDraw) and item.kind == "text" and item.text:
+            insets = item.margins
+            if item.auto_width and width <= 0:
+                w = max(w, self._text_width(item.text, item.font) + insets.left + insets.right)
+            if item.auto_height or h <= 0:
+                inner = max(w - insets.left - insets.right, 1.0)
+                needed = self._text_height(item.text, item.font, inner, True)
+                h = max(h, needed + insets.top + insets.bottom)
+        elif isinstance(item, XfaField) and item.grows and item.multiline and item.value:
+            insets = item.margins
+            # The same box the converter's appearance stream fills.
+            inner = w - insets.left - insets.right - item.text_indent - 3.0
+            if item.caption and item.caption_placement in ("left", "right"):
+                inner -= item.caption_reserve
+            needed = self._text_height(item.value, item.font, max(inner, 1.0), False)
+            h = max(h, needed + insets.top + insets.bottom)
+        return w, h
 
     def _content_width(self, subform: XfaSubform) -> float:
-        """How wide a subform's content comes to — a row's cursor step."""
+        """How wide a subform's content comes to, when it does not say."""
         if subform.rect.width > 0:
             return subform.rect.width
         right = 0.0
@@ -260,31 +300,27 @@ class _Layout:
             if isinstance(child, XfaSubform):
                 right = max(right, child.rect.x + self._content_width(child))
             else:
-                rect = getattr(child, "rect", XfaRect())
-                right = max(right, rect.x + rect.width)
+                right = max(right, child.rect.x + self._natural(child, 0.0)[0])
         return right
 
     @staticmethod
-    def _column(columns: tuple[float, ...], index: int) -> float:
-        """The width of column *index*, or 0 when the table does not say."""
-        return columns[index] if index < len(columns) else 0.0
+    def _span(columns: tuple[float, ...], cell: int, span: int) -> float:
+        """The width of *span* columns from *cell*, or 0 when the table does not say."""
+        if cell >= len(columns):
+            return 0.0
+        end = len(columns) if span == -1 else min(cell + max(span, 1), len(columns))
+        return sum(columns[cell:end])
 
-    def _row_height(self, subform: XfaSubform) -> float:
-        """How tall one table row is: its tallest cell.
-
-        Cells in a row routinely declare a width and no height at all, so
-        without this they would be placed as zero-height boxes — present in
-        the file and impossible to click.
-        """
-        if subform.rect.height > 0:
-            return subform.rect.height
-        tallest = 0.0
-        for child in subform.content:
-            if isinstance(child, XfaSubform):
-                tallest = max(tallest, self._content_height(child))
+    # -- the walk ----------------------------------------------------------
+    def _instances(self, child: XfaSubform) -> int:
+        count = _instance_count(child)
+        if child.is_repeatable:
+            key = _INDEX_SUFFIX.sub("", child.som)
+            if child.materialised:
+                self.result.instances[key] = self.result.instances.get(key, 0) + 1
             else:
-                tallest = max(tallest, getattr(child, "rect", XfaRect()).height)
-        return tallest if tallest > 0 else DEFAULT_ROW_HEIGHT
+                self.result.instances[key] = count
+        return count
 
     def _walk(
         self,
@@ -294,171 +330,347 @@ class _Layout:
         instance: int,
         columns: tuple[float, ...] = (),
         hidden: bool = False,
+        block: _Block | None = None,
+        width: float = 0.0,
     ) -> float:
         """Lay out *subform* at (*dx*, *dy*) and return the height it used.
 
-        A **positioned** subform places every child at the child's own
-        coordinates. A **flowed** one stacks them in document order, each
-        below the last — and that includes fields and draws, not only nested
-        subforms, which is why the model keeps a single ordered ``content``
-        list rather than only the typed ones. A **row** does the same thing
-        sideways, which is the one case where the running cursor is an ``x``.
-
-        *columns* is the enclosing table's column widths, handed down because
-        a row's cells take their width and their position from the table and
-        carry neither themselves. *hidden* travels the same way: a subform the
-        template hides hides everything inside it, and the converter needs to
-        know that about each element rather than about its ancestry.
+        *columns* is the enclosing table's column widths, handed down to its
+        rows. *width* is the room the parent gives this subform when the
+        subform does not say how wide it is — a table cell's column. *block*
+        is what the elements belong to for pagination: a positioned subform
+        or a row is one block, and everything inside it goes with it.
         """
         hidden = hidden or subform.hidden
         mode = subform.layout.lower()
-        across = mode in ("row", "lr")
-        flowed = mode in ("tb", "lr-tb", "table")
-        used = subform.rect.height if subform.rect.height > 0 else 0.0
-        row_height = self._row_height(subform) if across else 0.0
-        below = subform.column_widths if mode == "table" else ()
-        cell = 0
-        cursor = 0.0
+        if subform.page_break_before and block is None:
+            self._pending_break = True
+        if block is None and mode not in _FLOWED and self._sink is None:
+            block = self._new_block()
+            self._blocks_of.setdefault(id(subform), []).append(block)
+
+        own_width = subform.rect.width or width or self._content_width(subform)
+        box = None
+        # A flowed subform outside any block can break across pages, and one
+        # box around both halves of it would be drawn across the break — so
+        # only a subform that goes onto one page whole gets its border.
+        if _has_box(subform) and (block is not None or self._sink is not None):
+            box = XfaDraw(
+                kind="text",
+                rect=XfaRect(dx, dy, own_width, 0.0),
+                edges=subform.edges,
+                fill_color=subform.fill_color,
+                parent_som=subform.som,
+                instance=instance,
+                hidden=hidden,
+            )
+            self._emit(box, block)
+
+        if mode == "row":
+            used = self._walk_row(subform, dx, dy, instance, columns, hidden, block)
+        elif mode in _FLOWED:
+            used = self._walk_flowed(subform, dx, dy, instance, hidden, block, own_width)
+        else:
+            used = self._walk_positioned(subform, dx, dy, instance, hidden, block)
+
+        used = max(used, subform.rect.height)
+        if box is not None:
+            box.rect = XfaRect(dx, dy, own_width, used)
+        if subform.page_break_after:
+            self._pending_break = True
+        return used
+
+    def _place(
+        self,
+        item: Element,
+        x: float,
+        y: float,
+        width: float,
+        instance: int,
+        hidden: bool,
+        block: _Block | None,
+    ) -> Element:
+        w, h = self._natural(item, width)
+        placed = _copy(item, XfaRect(x, y, w, h), instance, hidden)
+        self._emit(placed, block)
+        return placed
+
+    def _walk_positioned(self, subform, dx, dy, instance, hidden, block) -> float:
+        used = 0.0
+        for child in subform.content:
+            if isinstance(child, XfaSubform):
+                for index in range(self._instances(child)):
+                    who = index if _instance_count(child) > 1 else instance
+                    height = self._walk(
+                        child, dx + child.rect.x, dy + child.rect.y, who, (), hidden, block
+                    )
+                    used = max(used, child.rect.y + height)
+                continue
+            placed = self._place(
+                child, dx + child.rect.x, dy + child.rect.y, 0.0, instance, hidden, block
+            )
+            used = max(used, child.rect.y + placed.rect.height)
+        return used
+
+    def _walk_flowed(self, subform, dx, dy, instance, hidden, block, own_width) -> float:
+        mode = subform.layout.lower()
+        across = mode in ("lr-tb", "rl-tb")
+        columns = subform.column_widths if mode == "table" else ()
+        cursor = 0.0  # down the subform
+        line_x = 0.0  # across the current line, for lr-tb
+        line_height = 0.0
 
         for child in subform.content:
             if isinstance(child, XfaSubform):
-                count = _instance_count(child)
-                if child.is_repeatable:
-                    self.result.instances[child.som] = count
-                for index in range(count):
-                    who = index if count > 1 else instance
+                for index in range(self._instances(child)):
+                    who = index if _instance_count(child) > 1 else instance
+                    child_hidden = hidden or child.hidden
                     if across:
-                        width = self._column(columns, cell) or self._content_width(child)
-                        left = dx + cursor + child.rect.x
+                        wide = self._content_width(child)
+                        if line_x > 0 and line_x + wide > own_width + _FIT_TOLERANCE:
+                            cursor += line_height
+                            line_x, line_height = 0.0, 0.0
                         height = self._walk(
-                            child, left, dy + child.rect.y, who, (), hidden
+                            child, dx + line_x, dy + cursor, who, (), child_hidden, block
                         )
-                        cursor += child.rect.x + width
-                        cell += 1
-                        used = max(used, child.rect.y + height)
+                        line_x += wide
+                        line_height = max(line_height, height)
                         continue
-                    if flowed:
-                        cursor += child.space_above
-                    top = dy + (cursor if flowed else 0.0) + child.rect.y
-                    height = self._walk(child, dx + child.rect.x, top, who, below, hidden)
-                    if flowed:
-                        cursor += child.rect.y + max(height, 0.0) + child.space_below
-                        used = max(used, cursor)
-                    else:
-                        used = max(used, child.rect.y + height)
-                continue
-
-            # A flowed parent leaves the room the element asks for before
-            # and after itself. Without it every row butts against the next
-            # and a section comes out tighter than the form was drawn.
-            before = getattr(child, "space_above", 0.0) if flowed else 0.0
-            after = getattr(child, "space_below", 0.0) if flowed else 0.0
-            if before:
-                cursor += before
-            left = dx + (cursor if across else 0.0)
-            top = dy + (cursor if flowed else 0.0)
-            height = row_height if across else 0.0
-            column = self._column(columns, cell) if across else 0.0
-            if isinstance(child, XfaField):
-                self._place_field(child, left, top, instance, height, column, hidden)
-            elif isinstance(child, XfaButton):
-                self._place_button(child, left, top, instance, height, column, hidden)
-            elif isinstance(child, XfaDraw):
-                self._place_draw(child, left, top, instance, height, column, hidden)
-            else:  # pragma: no cover - the model has no other child kind
+                    cursor += child.space_above
+                    height = self._walk(
+                        child, dx, dy + cursor, who, columns, child_hidden, block, own_width
+                    )
+                    cursor += max(height, 0.0) + child.space_below
                 continue
 
             if across:
-                cursor += child.rect.x + (column or max(child.rect.width, 0.0))
-                cell += 1
-                used = max(used, child.rect.y + max(child.rect.height, row_height))
+                wide = self._natural(child, 0.0)[0]
+                if line_x > 0 and line_x + wide > own_width + _FIT_TOLERANCE:
+                    cursor += line_height
+                    line_x, line_height = 0.0, 0.0
+                placed = self._place(child, dx + line_x, dy + cursor, 0.0, instance, hidden, block)
+                line_x += placed.rect.width
+                line_height = max(line_height, placed.rect.height)
                 continue
+            # A flowed parent leaves the room the element asks for before
+            # and after itself. Without it every row butts against the next
+            # and a section comes out tighter than the form was drawn.
+            cursor += getattr(child, "space_above", 0.0)
+            placed = self._place(child, dx, dy + cursor, 0.0, instance, hidden, block)
+            cursor += placed.rect.height + getattr(child, "space_below", 0.0)
 
-            reach = child.rect.y + max(child.rect.height, 0.0)
-            if flowed:
-                cursor += reach + after
-                used = max(used, cursor)
+        return cursor + line_height
+
+    def _walk_row(self, subform, dx, dy, instance, columns, hidden, block) -> float:
+        """One table row: cells across, each as wide as its columns, all as tall as the tallest."""
+        cursor = 0.0
+        cell = 0
+        tallest = 0.0
+        stretch: list[Element] = []
+        for child in subform.content:
+            span = getattr(child, "col_span", 1)
+            width = self._span(columns, cell, span)
+            if isinstance(child, XfaSubform):
+                width = width or self._content_width(child)
+                before = len(block.items) if block is not None else 0
+                height = self._walk(child, dx + cursor, dy, instance, (), hidden, block, width)
+                if block is not None and _has_box(child) and len(block.items) > before:
+                    stretch.append(block.items[before])
             else:
-                used = max(used, reach)
+                placed = self._place(child, dx + cursor, dy, width, instance, hidden, block)
+                width = placed.rect.width
+                height = placed.rect.height
+                stretch.append(placed)
+            tallest = max(tallest, height)
+            cursor += width
+            cell += len(columns) if span == -1 else max(span, 1)
 
-        return used if used > 0 else self._content_height(subform)
+        row_height = max(tallest, subform.rect.height) or DEFAULT_ROW_HEIGHT
+        for item in stretch:
+            item.rect = XfaRect(item.rect.x, item.rect.y, item.rect.width, row_height)
+        return row_height
 
+    # -- running -----------------------------------------------------------
     def run(self) -> LaidOutForm:
         root = self._document.template.root
         area = _default_page(self._areas, 0)
-        self._walk(root, area.margin_left, area.margin_top, 0)
-        paginate(self.result)
+        left, top, _ = _content_box(area)
+        self._walk_root(root, left, top)
+        self._paginate()
         return self.result
 
+    def _walk_root(self, root: XfaSubform, left: float, top: float) -> None:
+        self._walk(root, left, top, 0)
+        # Every row of a table that names a heading row repeats it. The rows
+        # are found by object, because a saved form's rows are copies that
+        # share one name.
+        for sub in root.walk():
+            if not sub.overflow_leader:
+                continue
+            leader = next((c for c in sub.children if c.name == sub.overflow_leader), None)
+            headings = self._blocks_of.get(id(leader), []) if leader is not None else []
+            if not headings:
+                continue
+            heading = headings[0]
+            heading.is_leader = True
+            for row in sub.children:
+                if row is leader:
+                    continue
+                for row_block in self._blocks_of.get(id(row), []):
+                    row_block.leader = heading.id
 
-def paginate(form: LaidOutForm) -> None:
-    """Move anything that fell off the bottom onto a page of its own.
+    def _paginate(self) -> None:
+        """Cut the galley into pages, keeping each block whole."""
+        page = 0
+        shift = 0.0
+        on_page = False  # has the current page any content yet
+        force = False
+        assignments: list[tuple[_Block, int, float]] = []
+        leader_copies: list[tuple[int, list[Element]]] = []
+        pages_of: dict[int, int] = {}
 
-    A flowed template can run past its page area — that is what flowing means,
-    and it is exactly the case where a real XFA viewer would add a page. Rather
-    than let content vanish below the crop box, it is moved down to a new page
-    keeping its horizontal position, which preserves columns.
-    """
-    if not form.pages:
-        return
-    first = form.pages[0]
-    page_height = first.height
-    if page_height <= 0:
-        return
+        blocks = self._blocks
+        for position, block in enumerate(blocks):
+            extent = block.extent()
+            if extent is None:
+                assignments.append((block, page, shift))
+                continue
+            top, bottom = extent
+            _, content_top, content_bottom = _content_box(_default_page(self._areas, page))
 
-    overflow_start = page_height
-    moved = 0
+            breaking = on_page and (force or block.break_before)
+            if not breaking and on_page and bottom - shift > content_bottom + _FIT_TOLERANCE:
+                breaking = True
+            if not breaking and on_page and block.is_leader:
+                # A heading row alone at the foot of a page, with its first
+                # row on the next, reads as a mistake: keep it with the row.
+                following = next(
+                    (b for b in blocks[position + 1 :] if b.extent() is not None), None
+                )
+                if following is not None and following.leader == block.id:
+                    _, next_bottom = following.extent()
+                    breaking = next_bottom - shift > content_bottom + _FIT_TOLERANCE
+            force = False
 
-    def bottom_of(item) -> float:
-        return item.rect.y + max(item.rect.height, 0.0)
+            if breaking:
+                if page + 1 >= MAX_PAGES:
+                    self.result.warnings.append(
+                        f"The form is longer than {MAX_PAGES} pages; the rest was left off."
+                    )
+                    break
+                page += 1
+                _, content_top, content_bottom = _content_box(_default_page(self._areas, page))
+                carried = self._headings_before(assignments, page - 1)
+                if carried:
+                    # A section's heading goes over with the section.
+                    first = carried[0][0].extent()
+                    top = first[0] if first is not None else top
+                shift = top - content_top
+                for entry in carried:
+                    index = assignments.index(entry)
+                    assignments[index] = (entry[0], page, shift)
+                    pages_of[entry[0].id] = page
+                leader = blocks[block.leader] if block.leader is not None else None
+                if leader is not None and pages_of.get(leader.id, page) < page:
+                    heading = leader.extent()
+                    if heading is not None:
+                        copies = [
+                            _copy(
+                                item,
+                                item.rect.translated(0.0, content_top - heading[0]),
+                                item.instance,
+                                False,
+                            )
+                            for item in leader.items
+                        ]
+                        leader_copies.append((page, copies))
+                        shift -= heading[1] - heading[0]
+            if bottom - top > content_bottom - content_top + _FIT_TOLERANCE:
+                self.result.warnings.append(
+                    "A section of the form is taller than a page and was cut at the bottom."
+                )
+            assignments.append((block, page, shift))
+            pages_of[block.id] = page
+            on_page = True
+            force = block.break_after
 
-    while True:
-        page = form.pages[-1]
-        spilled_fields = [f for f in page.fields if f.rect.y >= overflow_start]
-        spilled_buttons = [b for b in page.buttons if b.rect.y >= overflow_start]
-        spilled_draws = [d for d in page.draws if d.rect.y >= overflow_start]
-        if not (spilled_fields or spilled_buttons or spilled_draws):
-            break
-        if len(form.pages) >= MAX_PAGES:
-            form.warnings.append(
-                f"The form is longer than {MAX_PAGES} pages; the rest was left off."
-            )
-            for item in spilled_fields:
-                page.fields.remove(item)
-            for item in spilled_buttons:
-                page.buttons.remove(item)
-            for item in spilled_draws:
-                page.draws.remove(item)
-            break
+        total = page + 1
+        for index in range(total):
+            area = _default_page(self._areas, index)
+            self.result.pages.append(PlacedPage(width=area.width, height=area.height))
+            self._furnish(index, area, total)
 
-        highest = min(
-            [i.rect.y for i in spilled_fields + spilled_buttons + spilled_draws]
-        )
-        shift = highest - 20.0  # a small top margin on the continuation page
+        for block, number, offset in assignments:
+            for item in block.items:
+                item.rect = item.rect.translated(0.0, -offset)
+                self._put(item, number)
+        for number, copies in leader_copies:
+            for item in copies:
+                self._put(item, number)
 
-        following = PlacedPage(width=page.width, height=page.height)
-        for item in spilled_fields:
-            page.fields.remove(item)
-            item.rect = item.rect.translated(0.0, -shift)
-            item.page = len(form.pages)
-            following.fields.append(item)
-        for item in spilled_buttons:
-            page.buttons.remove(item)
-            item.rect = item.rect.translated(0.0, -shift)
-            item.page = len(form.pages)
-            following.buttons.append(item)
-        for item in spilled_draws:
-            page.draws.remove(item)
-            item.rect = item.rect.translated(0.0, -shift)
-            item.page = len(form.pages)
-            following.draws.append(item)
-        moved += len(following.fields) + len(following.buttons) + len(following.draws)
-        form.pages.append(following)
+        if total > 1:
+            self.result.warnings.append(f"The form was laid out on {total} pages.")
 
-    if moved:
-        form.warnings.append(
-            f"The form ran past one page; {moved} element(s) continue on following pages."
-        )
+    @staticmethod
+    def _headings_before(
+        assignments: list[tuple[_Block, int, float]], page: int
+    ) -> list[tuple[_Block, int, float]]:
+        """The heading blocks at the foot of *page*, which should not stay behind.
+
+        A section title and the add/remove buttons under it carry no fields;
+        left at the bottom of a page with the table they introduce on the next,
+        they read as a section with nothing in it. Up to three of them move with
+        what follows — never so many that the page is left empty.
+        """
+        carried: list[tuple[_Block, int, float]] = []
+        for entry in reversed(assignments):
+            block, number, _ = entry
+            if number != page:
+                break
+            if block.extent() is None:
+                continue
+            if any(isinstance(i, XfaField) and not i.hidden for i in block.items):
+                break
+            if len(carried) == 3:
+                return []
+            carried.insert(0, entry)
+        else:
+            return []  # nothing but headings on the page: leave them
+        remaining = [
+            entry
+            for entry in assignments
+            if entry[1] == page and entry not in carried and entry[0].extent() is not None
+        ]
+        return carried if remaining else []
+
+    def _furnish(self, index: int, area: XfaPageArea, total: int) -> None:
+        """The page area's own contents, on page *index* of *total*."""
+        if not area.furniture.content:
+            return
+        self._sink = []
+        try:
+            self._walk(area.furniture, 0.0, 0.0, 0)
+            placed = self._sink
+        finally:
+            self._sink = None
+        for item in placed:
+            if isinstance(item, XfaField) and item.page_counter:
+                item.value = str(index + 1 if item.page_counter == "page" else total)
+            if index:
+                # Every page has its own copy of the furniture; the fields in
+                # it need names of their own or they would fill in together.
+                item.instance = index
+            self._put(item, index)
+
+    def _put(self, item: Element, number: int) -> None:
+        page = self.result.pages[number]
+        item.page = number
+        if isinstance(item, XfaField):
+            page.fields.append(item)
+        elif isinstance(item, XfaButton):
+            page.buttons.append(item)
+        else:
+            page.draws.append(item)
 
 
 def resolve_layout(document: XfaDocument) -> LaidOutForm:

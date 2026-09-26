@@ -76,6 +76,11 @@ def import_form_fields(pdf_page, geometry: PageGeometry) -> ImportedFields:
             entry = reference.get_object()
             if str(entry.get("/Subtype", "")) != "/Widget":
                 continue
+            if int(entry.get("/F", 0) or 0) & _HIDDEN_FLAG:
+                # A widget the document itself hides — a converted XFA field a
+                # script had hidden, kept only for its value. Left in the file
+                # untouched rather than turned into an object nobody can see.
+                continue
             obj = _build(entry, geometry, index)
         except Exception:
             # One unreadable widget must not stop a document opening, and not
@@ -88,6 +93,19 @@ def import_form_fields(pdf_page, geometry: PageGeometry) -> ImportedFields:
         indices.append(index)
 
     return ImportedFields(objects=objects, indices=tuple(indices))
+
+
+def _quadding(entry) -> int:
+    """``/Q``, inherited like the rest, clamped to the three values it has."""
+    try:
+        value = int(_inherited(entry, "/Q") or 0)
+    except (TypeError, ValueError):
+        return 0
+    return value if value in (0, 1, 2) else 0
+
+
+#: PDF annotation flag bit 2: "do not display or print".
+_HIDDEN_FLAG = 2
 
 
 def _inherited(entry, key: str, depth: int = 0):
@@ -216,6 +234,7 @@ def _build(entry, geometry: PageGeometry, index: int) -> FormFieldObject | None:
         read_only=bool(flags & _READ_ONLY),
         required=bool(flags & _REQUIRED),
         multiline=bool(flags & _MULTILINE),
+        alignment=_quadding(entry),
         checked=bool(kind in (FormFieldKind.CHECKBOX, FormFieldKind.RADIO) and _value(entry)),
         font_size=_font_size(entry) or 10.0,
         border_color=_colour(look, "/BC"),

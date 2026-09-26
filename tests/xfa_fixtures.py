@@ -39,8 +39,10 @@ __all__ = [
     "build_awkward_form",
     "build_plain_pdf",
     "build_reference_form",
+    "build_saved_form",
     "build_xfa_pdf",
     "dynamic_template",
+    "saved_form_template",
     "static_template",
     "typeface_template",
 ]
@@ -248,6 +250,8 @@ def build_xfa_pdf(
     dynamic: bool = True,
     with_acroform: bool = False,
     placeholder: bool = True,
+    datasets: str | None = None,
+    form_state: str | None = None,
 ) -> Path:
     """Write a PDF carrying *template* as a real XFA package.
 
@@ -272,9 +276,7 @@ def build_xfa_pdf(
     if placeholder and dynamic:
         # What a dynamic XFA actually shows in a reader that cannot render it.
         pdf.setFont("Helvetica", 11)
-        pdf.drawString(
-            72, 700, "If this message is not eventually replaced by the proper"
-        )
+        pdf.drawString(72, 700, "If this message is not eventually replaced by the proper")
         pdf.drawString(72, 685, "contents of the document, your PDF viewer may not be")
         pdf.drawString(72, 670, "able to display this type of document.")
     else:
@@ -301,7 +303,7 @@ def build_xfa_pdf(
             TextStringObject("template"),
             stream_of(template),
             TextStringObject("datasets"),
-            stream_of(_datasets(data or {})),
+            stream_of(datasets if datasets is not None else _datasets(data or {})),
             TextStringObject("config"),
             stream_of(
                 '<config xmlns="http://www.xfa.org/schema/xci/3.0/"><present>'
@@ -311,6 +313,9 @@ def build_xfa_pdf(
             ),
         ]
     )
+
+    if form_state is not None:
+        packets.extend([TextStringObject("form"), stream_of(form_state)])
 
     root = writer._root_object
     acroform = root.get("/AcroForm")
@@ -488,4 +493,154 @@ def build_reference_form(path: Path) -> Path:
             "issued": "2026-09-20",
         },
         dynamic=True,
+    )
+
+
+#: A description long enough to take three lines in its column.
+LONG_DESCRIPTION = (
+    "Stationery, pantry supplies and housekeeping material for the whole "
+    "office, ordered for the month and delivered in two separate batches, "
+    "plus the courier charges for both deliveries and the refund of a "
+    "damaged parcel that was returned to the supplier"
+)
+
+
+def saved_form_template() -> str:
+    """A claim form in the shape of a real monthly expense report.
+
+    Landscape, a header band and a page number in the page area, a positioned
+    header with one field a script swaps for another in the same place, and a
+    flowed table: columns from ``columnWidths``, cells that declare widths
+    they do not get, rows carrying stale ``y`` coordinates from the designer,
+    a description that grows, a heading row repeated on every page, and a
+    drop-down whose saved answer is not among its template items.
+    """
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<template xmlns="{XFA_TEMPLATE_NS}">
+  <subform name="claim" layout="tb">
+    <pageSet>
+      <pageArea name="Page1">
+        <contentArea x="18pt" y="60pt" w="806pt" h="480pt"/>
+        <medium stock="a4" short="210mm" long="297mm" orientation="landscape"/>
+        <draw name="band" x="18pt" y="18pt" w="806pt" h="30pt">
+          <value><rectangle><fill><color value="151,27,47"/></fill></rectangle></value>
+        </draw>
+        <draw name="ring" x="24pt" y="18pt" w="30pt" h="30pt">
+          <value><arc circular="1"><edge thickness="1pt"><color value="255,255,255"/></edge></arc></value>
+        </draw>
+        <field name="PageNo" x="800pt" y="560pt" w="20pt" h="14pt" access="readOnly">
+          <ui><textEdit/></ui>
+          <bind match="none"/>
+          <event activity="ready" ref="$layout">
+            <script contentType="application/x-javascript">PageNo.rawValue = xfa.layout.page(this);</script>
+          </event>
+        </field>
+      </pageArea>
+    </pageSet>
+    <subform name="Header" w="806pt" h="60pt">
+      <field name="From" x="0pt" y="0pt" w="300pt" h="18pt">
+        <ui><choiceList/></ui>
+        <caption reserve="40pt"><value><text>FROM:</text></value></caption>
+        <items><text>ROME</text><text>MILAN</text></items>
+      </field>
+      <field name="To" x="0pt" y="20pt" w="300pt" h="18pt">
+        <ui><textEdit/></ui>
+        <caption reserve="40pt"><value><text>TO:</text></value></caption>
+      </field>
+      <field name="ToAlt" x="0pt" y="20pt" w="300pt" h="18pt" presence="hidden">
+        <ui><textEdit/></ui>
+        <caption reserve="40pt"><value><text>ALTERNATIVE:</text></value></caption>
+      </field>
+      <field name="Period" x="320pt" y="0pt" w="200pt" h="18pt" presence="hidden">
+        <ui><textEdit/></ui>
+        <bind match="none"/>
+        <caption reserve="60pt"><value><text>PERIOD</text></value></caption>
+      </field>
+    </subform>
+    <subform name="Lines" layout="tb" w="806pt">
+      <subform name="Table" layout="table" columnWidths="80pt 400pt 120pt 120pt">
+        <subform name="Heading" layout="row" y="200pt">
+          <draw w="200pt" minH="18pt"><value><text>DATE</text></value></draw>
+          <draw w="200pt" minH="18pt"><value><text>DESCRIPTION</text></value></draw>
+          <draw w="200pt" minH="18pt"><value><text>AMOUNT</text></value></draw>
+          <draw w="200pt" minH="18pt"><value><text>PAID BY</text></value></draw>
+        </subform>
+        <subform name="Row" layout="row" y="50pt">
+          <occur max="-1"/>
+          <bind match="none"/>
+          <field name="When" w="40pt" h="18pt">
+            <ui><dateTimeEdit/></ui>
+            <bind match="none"/>
+            <format><picture>date{{DD/MM/YYYY}}</picture></format>
+            <border><edge/></border>
+          </field>
+          <field name="What" w="40pt" minH="18pt">
+            <ui><textEdit multiLine="1"/></ui>
+            <bind match="none"/>
+            <font typeface="Helvetica" size="8pt"/>
+            <border><edge/></border>
+          </field>
+          <field name="Amount" w="40pt" h="18pt">
+            <ui><numericEdit/></ui>
+            <bind match="none"/>
+            <format><picture>num{{zzz,zz9.99}}</picture></format>
+            <para hAlign="right" vAlign="middle"/>
+            <border><edge/></border>
+          </field>
+          <field name="Method" w="40pt" h="18pt">
+            <ui><choiceList/></ui>
+            <items save="1"><text>Card</text></items>
+            <border><edge/></border>
+          </field>
+        </subform>
+        <overflow leader="Heading"/>
+      </subform>
+    </subform>
+  </subform>
+</template>"""
+
+
+def saved_form_packets(rows: int) -> tuple[str, str]:
+    """The datasets and form packets of the claim above, saved with *rows* rows.
+
+    Every other row was paid by transfer, which the template's list does not
+    offer; the third row has the long description; the period field was
+    revealed by a script and holds a value only the form packet records.
+    """
+    methods = "".join(
+        f"<Method>{'Transfer' if index % 2 else 'Card'}</Method>" for index in range(rows)
+    )
+    datasets = (
+        f'<xfa:datasets xmlns:xfa="{XFA_DATA_NS}"><xfa:data><claim>'
+        "<Header><From>ROME</From><To>Head office</To><ToAlt/></Header>"
+        f"<Lines><Table>{methods}</Table></Lines>"
+        "</claim></xfa:data></xfa:datasets>"
+    )
+    lines = []
+    for index in range(rows):
+        what = LONG_DESCRIPTION if index == 2 else f"Expense number {index + 1}"
+        lines.append(
+            '<instanceManager name="_Row"/><subform name="Row">'
+            f'<field name="When"><value><date>2023-08-{index % 28 + 1:02d}</date></value></field>'
+            f'<field name="What"><value><text>{what}</text></value></field>'
+            f'<field name="Amount"><value><float>{1234.5 + index:.8f}</float></value></field>'
+            "</subform>"
+        )
+    form = (
+        '<form xmlns="http://www.xfa.org/schema/xfa-form/2.8/"><subform name="claim">'
+        '<subform name="Header"><field name="Period" presence="visible">'
+        "<value><text>08/2023</text></value></field></subform>"
+        '<subform name="Lines"><subform name="Table"><subform name="Heading"/>'
+        f"{''.join(lines)}</subform></subform>"
+        '<pageSet><pageArea name="Page1"/><pageArea name="Page1"/></pageSet>'
+        "</subform></form>"
+    )
+    return datasets, form
+
+
+def build_saved_form(path: Path, rows: int = 40) -> Path:
+    """The claim form, filled in with *rows* rows and saved with its state."""
+    datasets, form = saved_form_packets(rows)
+    return build_xfa_pdf(
+        path, saved_form_template(), datasets=datasets, form_state=form, dynamic=True
     )

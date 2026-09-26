@@ -433,10 +433,10 @@ class TestConversion:
         assert str(spec.get("/V")) == "LT", "the stored value, not the label"
 
     def test_a_date_field_converts_and_keeps_its_value(self, converted):
-        """Test 10."""
+        """Test 10. Shown the way the field's picture clause, DD/MM/YYYY, shows it."""
         spec = self._fields(converted)["form1.details.issued"]
         assert str(spec.get("/FT")) == "/Tx"
-        assert str(spec.get("/V")) == "2026-09-20"
+        assert str(spec.get("/V")) == "20/09/2026"
 
     def test_every_field_name_is_unique(self, converted):
         names = list(self._fields(converted))

@@ -71,8 +71,10 @@ from orion.xfa.model import (
     XfaFieldType,
     XfaFont,
     XfaInsets,
+    XfaRect,
 )
 from orion.xfa.parser import parse_xfa
+from orion.xfa.pictures import display_value
 from orion.xfa.report import ConversionMode, XfaConversionReport
 
 __all__ = ["ConversionResult", "convert_xfa", "convert_xfa_file"]
@@ -302,6 +304,15 @@ def _measured_caption(field: XfaField) -> float:
     return min(width + 6.0, max(field.rect.width * 0.5, 0.0))
 
 
+#: Line spacing, and how far a line reaches above and below its baseline, as
+#: multiples of the font size. Helvetica's and Arial's own figures, rounded;
+#: the layout measures text with the same three numbers the drawing uses, so
+#: a row is exactly as tall as the lines drawn in it.
+LEADING = 1.15
+ASCENT = 0.75
+DESCENT = 0.22
+
+
 class _NotReproducible(Exception):
     """This element has no representation in a standard PDF."""
 
@@ -331,7 +342,35 @@ def _draw_static(pdf, item: XfaDraw, page_height: float) -> None:
         pdf.setStrokeColorRGB(*item.line_color)
         pdf.setLineWidth(max(item.line_width, 0.0))
         pdf.rect(
-            x, y, width, height,
+            x,
+            y,
+            width,
+            height,
+            stroke=1 if item.line_width > 0 else 0,
+            fill=1 if item.fill_color is not None else 0,
+        )
+        pdf.restoreState()
+        return
+
+    if item.kind == "arc":
+        drawn = item.line_width > 0 or item.fill_color is not None
+        if not drawn:
+            return
+        pdf.saveState()
+        if item.fill_color is not None:
+            pdf.setFillColorRGB(*item.fill_color)
+        pdf.setStrokeColorRGB(*item.line_color)
+        pdf.setLineWidth(max(item.line_width, 0.0))
+        if item.circular:
+            side = min(width, height)
+            x += (width - side) / 2.0
+            y += (height - side) / 2.0
+            width = height = side
+        pdf.ellipse(
+            x,
+            y,
+            x + width,
+            y + height,
             stroke=1 if item.line_width > 0 else 0,
             fill=1 if item.fill_color is not None else 0,
         )
@@ -390,7 +429,6 @@ def _draw_wrapped(
     this did — left the whole form sitting a couple of points high and its
     single-line labels floating above the boxes they name.
     """
-    from reportlab.pdfbase.pdfmetrics import stringWidth
 
     if insets is not None and not insets.is_zero:
         x += insets.left
@@ -398,23 +436,12 @@ def _draw_wrapped(
         width -= insets.left + insets.right
         height -= insets.top + insets.bottom
 
-    leading = font.size * 1.2
-    limit = max(width, 1.0)
-    lines: list[str] = []
-    current = ""
-    for word in text.split():
-        candidate = f"{current} {word}".strip()
-        if stringWidth(candidate, font_name, font.size) <= limit or not current:
-            current = candidate
-        else:
-            lines.append(current)
-            current = word
-    if current:
-        lines.append(current)
+    leading = font.size * LEADING
+    lines = wrap_text(text, font_name, font.size, width)
     if not lines:
         return
 
-    block = (len(lines) - 1) * leading + font.size
+    block = ((len(lines) - 1) * LEADING + ASCENT + DESCENT) * font.size
     slack = max(height - block, 0.0)
     if valign == "middle":
         offset = slack / 2.0
@@ -423,7 +450,7 @@ def _draw_wrapped(
     else:
         offset = 0.0
 
-    top = y + height - offset - font.size
+    top = y + height - offset - ASCENT * font.size
     for index, line in enumerate(lines):
         baseline = top - index * leading
         if baseline < y - leading:
@@ -436,11 +463,41 @@ def _draw_wrapped(
             pdf.drawString(x, baseline, line)
 
 
+def wrap_text(text: str, font_name: str, size: float, width: float) -> list[str]:
+    """*text* broken into the lines it takes in a box *width* wide.
+
+    Shared with the layout pass, which has to know how tall a cell's text
+    comes out before it can know how tall the row is — and which must break
+    the lines exactly where the drawing will, or the row is the wrong height.
+    """
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    limit = max(width, 1.0)
+    lines: list[str] = []
+    current = ""
+    for word in text.split():
+        candidate = f"{current} {word}".strip()
+        if stringWidth(candidate, font_name, size) <= limit or not current:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines
+
+
 def _draw_field_caption(pdf, field: XfaField, rect) -> None:
     """The field's label, inside the part of the box reserved for it."""
     if not field.caption or rect is None:
         return
     x, y, width, height = rect
+    # The caption sits in the field's content area, inside its top and
+    # bottom margins — which is what lines a bottom-aligned label up with the
+    # bottom-aligned value beside it.
+    if field.caption_placement in ("left", "right"):
+        y += field.margins.bottom
+        height = max(height - field.margins.top - field.margins.bottom, 1.0)
     font = _caption_font(field)
     font_name = _font_name(font)
     pdf.saveState()
@@ -480,7 +537,7 @@ def _draw_field_as_static(pdf, field: XfaField, page_height: float) -> None:
         pdf.setFont(font_name, field.font.size)
         _draw_wrapped(
             pdf,
-            field.value,
+            display_value(field),
             box_x + 2 + field.text_indent,
             y,
             box_width - 4 - field.text_indent,
@@ -534,10 +591,7 @@ def _uniform_border(field: XfaField):
     if not all(edge.draws for edge in edges):
         return None
     first = edges[0]
-    if any(
-        abs(edge.width - first.width) > 0.01 or edge.color != first.color
-        for edge in edges[1:]
-    ):
+    if any(abs(edge.width - first.width) > 0.01 or edge.color != first.color for edge in edges[1:]):
         return None
     return first.width, first.color
 
@@ -562,10 +616,78 @@ def _draw_edges(pdf, edges, x: float, y: float, width: float, height: float) -> 
     pdf.restoreState()
 
 
+def _wraps(field: XfaField, shown: str) -> bool:
+    """Should the widget be a multi-line one?
+
+    A read-only field nobody will type into is multi-line only if its value
+    needs the room. A title marked multi-line and set flush right and at the
+    bottom of a tall band is drawn at the top left by every reader that
+    regenerates it, because that is where a multi-line field starts — where a
+    single-line one is centred, which is much nearer what the form asked for.
+    """
+    if not field.multiline:
+        return False
+    if not field.read_only:
+        return True
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    room = field.rect.width - field.margins.left - field.margins.right - field.text_indent - 3.0
+    if field.caption and field.caption_placement in ("left", "right"):
+        room -= field.caption_reserve
+    width = stringWidth(shown, _font_name(field.font, embed=False), field.font.size)
+    return "\n" in shown or width > room
+
+
+def _is_toggle(field: XfaField) -> bool:
+    return field.field_type in (XfaFieldType.CHECKBOX, XfaFieldType.RADIO)
+
+
+def _toggle_box(field: XfaField, box: tuple[float, float, float, float]):
+    """Where a checkbox's square goes inside its box, and how big it is.
+
+    A checkbox in a table cell is a ten-point square in a cell three times
+    that size. Filling the cell with it — what the conversion did — drew a
+    square as big as the row, and a different size on every row that a long
+    description had made taller.
+    """
+    x, y, width, height = box
+    x += field.margins.left
+    width -= field.margins.left + field.margins.right
+    y += field.margins.bottom
+    height -= field.margins.top + field.margins.bottom
+    size = field.check_size or 10.0
+    size = max(min(size, width, height), 6.0)
+    if field.align == "center":
+        left = x + (width - size) / 2.0
+    elif field.align == "right":
+        left = x + width - size
+    else:
+        left = x
+    if field.valign == "top":
+        bottom = y + height - size
+    elif field.valign == "bottom":
+        bottom = y
+    else:
+        bottom = y + (height - size) / 2.0
+    return left, bottom, size
+
+
 def _add_widget(
-    pdf, field: XfaField, page_height: float, name: str, radio_state, blank_choices: set[str]
+    pdf,
+    field: XfaField,
+    page_height: float,
+    name: str,
+    radio_state,
+    blank_choices: set[str],
+    looks: dict | None = None,
+    *,
+    hidden: bool = False,
 ) -> bool:
-    """Create the AcroForm widget for *field*. True when one was made."""
+    """Create the AcroForm widget for *field*. True when one was made.
+
+    *hidden* makes a widget the reader does not display: the field of a saved
+    form that a script had hidden, kept because it holds a value.
+    """
     form = pdf.acroForm
     _caption, (box_x, y, box_width, box_height) = _split_for_caption(field, page_height)
     box_width = max(box_width, 8.0)
@@ -593,6 +715,9 @@ def _add_widget(
         "forceBorder": bool(uniform),
         "tooltip": _tooltip(field) or None,
     }
+    if hidden:
+        common["annotationFlags"] = "hidden"
+    shown = display_value(field)
 
     # Both were read out of the template from the start and neither was ever
     # written into the file. A field the form marked as required arrived
@@ -607,40 +732,51 @@ def _add_widget(
     if field.field_type in (XfaFieldType.TEXT, XfaFieldType.NUMERIC, XfaFieldType.DATE):
         form.textfield(
             name=name,
-            value=field.value or "",
+            value=shown,
             width=box_width,
             height=box_height,
             fontName=font_name,
             fontSize=size,
-            fieldFlags=" ".join([*state, *(["multiline"] if field.multiline else [])]),
+            fieldFlags=" ".join([*state, *(["multiline"] if _wraps(field, shown) else [])]),
             maxlen=field.max_length or None,
             **common,
         )
+        if looks is not None and not hidden:
+            looks[name] = _look_of(field, shown, single_line=not _wraps(field, shown))
         return True
 
-    if field.field_type is XfaFieldType.CHECKBOX:
-        form.checkbox(
-            name=name,
-            checked=_checked(field),
-            size=min(box_height, box_width),
-            buttonStyle="check",
-            fieldFlags=" ".join(state),
-            **common,
+    if _is_toggle(field):
+        # The cell's own border is on the page already; the square gets a
+        # thin one of its own, as the form draws it.
+        left, bottom, square = _toggle_box(field, (box_x, y, box_width, box_height))
+        toggle = dict(common)
+        toggle.update(
+            x=left,
+            y=bottom,
+            borderWidth=0.5,
+            borderColor=_grey((0.35, 0.35, 0.35)),
+            forceBorder=True,
         )
-        return True
-
-    if field.field_type is XfaFieldType.RADIO:
+        if field.field_type is XfaFieldType.CHECKBOX:
+            form.checkbox(
+                name=name,
+                checked=_checked(field),
+                size=square,
+                buttonStyle="check",
+                fieldFlags=" ".join(state),
+                **toggle,
+            )
+            return True
         group = field.group or field.som
-        selected = _checked(field)
         form.radio(
             name=radio_state.name_for(group),
             value=field.export_value or field.name or "on",
-            selected=selected,
-            size=min(box_height, box_width),
+            selected=_checked(field),
+            size=square,
             buttonStyle="circle",
             shape="circle",
             fieldFlags=" ".join(["radio", *state]),
-            **common,
+            **toggle,
         )
         return True
 
@@ -667,6 +803,11 @@ def _add_widget(
         # from those fields in the finished file. Preselecting one and leaving
         # it would be worse than the crash: the form would come back saying
         # the user had chosen something they never chose.
+        if chosen and all(chosen not in pair for pair in options):
+            # A value the list does not offer: typed into an open list, or
+            # from a list a script filled in. reportlab refuses to build the
+            # widget at all, so the value joins the list rather than vanish.
+            options.append((chosen, chosen))
         blank = not chosen
         if blank:
             chosen = options[0][1]
@@ -694,6 +835,9 @@ def _add_widget(
             fieldFlags=" ".join(flags),
             **common,
         )
+        if looks is not None and not hidden and not blank and not field.choices.multi_select:
+            label = next((lab for lab, val in options if val == chosen), chosen)
+            looks[name] = _look_of(field, label, single_line=True)
         return True
 
     return False
@@ -807,26 +951,186 @@ def _named_action(button: XfaButton) -> str:
     return _BUTTON_ACTIONS.get(button.kind, "")
 
 
+@dataclass(frozen=True, slots=True)
+class _Look:
+    """How a text widget's value is laid out in its box."""
+
+    text: str
+    font_name: str
+    size: float
+    color: tuple[float, float, float]
+    align: str
+    valign: str
+    wrap: bool
+    left: float
+    right: float
+    top: float
+    bottom: float
+
+
+def _look_of(field: XfaField, text: str, *, single_line: bool = False) -> _Look:
+    """What the template says about where *field*'s value sits."""
+    # With a caption on the left, the margin was spent before the caption.
+    left_inset = 0.0 if field.caption and field.caption_placement == "left" else field.margins.left
+    return _Look(
+        text=text,
+        font_name=_font_name(field.font, embed=False),
+        size=max(field.font.size, 4.0),
+        color=field.font.color,
+        align=field.align,
+        valign=field.valign,
+        wrap=field.multiline and not single_line,
+        left=left_inset + field.text_indent + 1.5,
+        right=field.margins.right + 1.5,
+        top=field.margins.top,
+        bottom=field.margins.bottom,
+    )
+
+
+_QUADDING = {"center": 1, "right": 2}
+
+
+def _pdf_string(text: str) -> str:
+    raw = text.encode("cp1252", "replace").decode("latin-1")
+    return "(" + raw.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)") + ")"
+
+
+def _box_ops(widget, width: float, height: float) -> list[str]:
+    """The widget's background and border, as it asks for them in ``/MK``."""
+    look = widget.get("/MK") or {}
+    border = [float(c) for c in (look.get("/BC") or [])]
+    background = [float(c) for c in (look.get("/BG") or [])]
+    line = float((widget.get("/BS") or {}).get("/W", 1.0) or 0.0)
+    ops: list[str] = []
+    if len(background) == 3:
+        ops.append(f"{background[0]} {background[1]} {background[2]} rg")
+        ops.append(f"0 0 {width} {height} re f")
+    if len(border) == 3 and line > 0:
+        inset = line / 2.0
+        ops.append(f"{border[0]} {border[1]} {border[2]} RG")
+        ops.append(f"{line} w")
+        ops.append(f"{inset} {inset} {width - line} {height - line} re S")
+    return ops
+
+
+def _text_appearance(widget, look: _Look, writer):
+    """The value drawn where the form draws it: aligned, inset and wrapped.
+
+    reportlab writes every text widget's appearance as one line at the top
+    left, whatever the field asked for. A form reads differently for it —
+    amounts that should be centred hug the left edge, a title set flush right
+    starts at the left, and a description that runs to two lines is cut off
+    after the first while the row beneath it was made tall enough for both.
+    The field's value, flags and ``/Q`` are untouched; only what a reader
+    shows before anyone edits the field is redrawn.
+    """
+    import re as _re
+
+    from pypdf.generic import (
+        ArrayObject,
+        DecodedStreamObject,
+        DictionaryObject,
+        FloatObject,
+        NameObject,
+    )
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    rect = [float(v) for v in widget.get("/Rect", [0, 0, 0, 0])]
+    width = max(abs(rect[2] - rect[0]), 1.0)
+    height = max(abs(rect[3] - rect[1]), 1.0)
+
+    match = _re.search(r"/(\S+)\s+[\d.]+\s+Tf", str(widget.get("/DA", "")))
+    font_key = match.group(1) if match else "Helv"
+    resources = DictionaryObject()
+    current = (widget.get("/AP") or {}).get("/N")
+    if current is not None:
+        found = current.get_object().get("/Resources")
+        if found is not None:
+            resources = found
+
+    inner_width = max(width - look.left - look.right, 1.0)
+    if look.wrap:
+        lines = []
+        for paragraph in look.text.splitlines() or [""]:
+            lines.extend(wrap_text(paragraph, look.font_name, look.size, inner_width) or [""])
+    else:
+        lines = [" ".join(look.text.split())]
+
+    size = look.size
+    leading = size * LEADING
+    ascent, descent = size * ASCENT, size * DESCENT
+    inner_height = height - look.top - look.bottom
+    block = (len(lines) - 1) * leading + ascent + descent
+    slack = inner_height - block
+    if slack <= 0 or look.valign == "top":
+        offset = 0.0
+    elif look.valign == "middle":
+        offset = slack / 2.0
+    else:
+        offset = slack
+    first = height - look.top - offset - ascent
+
+    ops = _box_ops(widget, width, height)
+    ops += ["/Tx BMC", "q", f"1 1 {max(width - 2, 1)} {max(height - 2, 1)} re W n", "BT"]
+    ops.append(f"/{font_key} {size:.2f} Tf")
+    ops.append(f"{look.color[0]:.3f} {look.color[1]:.3f} {look.color[2]:.3f} rg")
+    for index, line in enumerate(lines):
+        baseline = first - index * leading
+        if baseline < -leading:
+            break
+        text_width = stringWidth(line, look.font_name, size)
+        if look.align == "center":
+            x = look.left + (inner_width - text_width) / 2.0
+        elif look.align == "right":
+            x = width - look.right - text_width
+        else:
+            x = look.left
+        ops.append(f"1 0 0 1 {x:.2f} {baseline:.2f} Tm {_pdf_string(line)} Tj")
+    ops += ["ET", "Q", "EMC"]
+
+    stream = DecodedStreamObject()
+    stream.set_data(("\n".join(ops) + "\n").encode("latin-1", "replace"))
+    stream[NameObject("/Type")] = NameObject("/XObject")
+    stream[NameObject("/Subtype")] = NameObject("/Form")
+    stream[NameObject("/BBox")] = ArrayObject(
+        [FloatObject(0), FloatObject(0), FloatObject(width), FloatObject(height)]
+    )
+    stream[NameObject("/Resources")] = resources
+    return DictionaryObject({NameObject("/N"): writer._add_object(stream)})
+
+
 def _finish_widgets(
-    path: Path, blank_choices: set[str], buttons: list[_LiveButton]
+    path: Path,
+    blank_choices: set[str],
+    buttons: list[_LiveButton],
+    looks: dict[str, _Look] | None = None,
 ) -> None:
     """One pass over the finished file for everything reportlab cannot do.
 
-    Both jobs need the file reopened, and reopening it twice would mean
-    writing it twice, so they share a pass: emptying the placeholder choices
-    and adding the button widgets that carry a print, save or reset action.
+    The jobs all need the file reopened, and reopening it more than once would
+    mean writing it more than once, so they share a pass: emptying the
+    placeholder choices, redrawing text values where the form puts them, and
+    adding the button widgets that carry a print, save or reset action.
     """
-    if not blank_choices and not buttons:
+    looks = looks or {}
+    if not blank_choices and not buttons and not looks:
         return
     from pypdf import PdfReader, PdfWriter
-    from pypdf.generic import NameObject
+    from pypdf.generic import NameObject, NumberObject
 
     try:
         writer = PdfWriter(clone_from=PdfReader(str(path)))
         for page in writer.pages:
             for annotation in page.get("/Annots") or []:
                 widget = annotation.get_object()
-                if str(widget.get("/T", "")) not in blank_choices:
+                name = str(widget.get("/T", ""))
+                look = looks.get(name)
+                if look is not None:
+                    quadding = _QUADDING.get(look.align, 0)
+                    if quadding:
+                        widget[NameObject("/Q")] = NumberObject(quadding)
+                    widget[NameObject("/AP")] = _text_appearance(widget, look, writer)
+                if name not in blank_choices:
                     continue
                 for key in ("/V", "/DV", "/I"):
                     if key in widget:
@@ -906,9 +1210,7 @@ def _add_button_widget(writer, button: _LiveButton) -> None:
                 {NameObject("/CA"): TextStringObject(button.caption)}
             ),
             NameObject("/A"): action,
-            NameObject("/AP"): DictionaryObject(
-                {NameObject("/N"): writer._add_object(empty)}
-            ),
+            NameObject("/AP"): DictionaryObject({NameObject("/N"): writer._add_object(empty)}),
         }
     )
     reference = writer._add_object(widget)
@@ -1019,17 +1321,12 @@ def convert_xfa(
     """
     source_path = Path(source)
     output_path = Path(output)
-    report = XfaConversionReport(
-        source_file=str(source_path), mode=mode, output_file=""
-    )
+    report = XfaConversionReport(source_file=str(source_path), mode=mode, output_file="")
 
     info = info or inspect_form(source_path)
     report.detected_type = info.form_type.value
     if not info.is_xfa:
-        report.error(
-            "This document does not contain an XFA form, so there is nothing "
-            "to convert."
-        )
+        report.error("This document does not contain an XFA form, so there is nothing to convert.")
         return ConversionResult(None, report)
 
     document = parse_xfa(info.packets)
@@ -1090,6 +1387,8 @@ def _write(
     lost_kinds: dict[str, int] = {}
     # Buttons a standard PDF can actually carry out, and where they sit.
     live_buttons: list[_LiveButton] = []
+    # How each text widget should look, redrawn after reportlab is done.
+    looks: dict[str, _Look] = {}
 
     pdf = canvas.Canvas(str(output_path), pagesize=(form.pages[0].width, form.pages[0].height))
     pdf.setTitle(output_path.stem)
@@ -1100,13 +1399,20 @@ def _write(
     # nothing can ever reveal again is a field the user has lost. A static
     # copy is a different promise — it stands in for the printed form — so
     # there the template's own answer is kept.
+    #
+    # Except where showing one would put it on top of something the user can
+    # see: a form swaps one field for another in the same place — "TO:" for
+    # "A:" — and both at once is two captions printed over each other. Such a
+    # field stays hidden, and travels as a widget the reader does not show
+    # when it holds a value, so nothing typed into it is lost.
     show_hidden = mode.wants_fields
 
     for page_index, page in enumerate(form.pages):
         pdf.setPageSize((page.width, page.height))
+        covered = _covered_hidden(page, document.has_form_state) if show_hidden else set()
 
         for drawn in page.draws:
-            if drawn.hidden and not show_hidden:
+            if drawn.hidden and (not show_hidden or id(drawn) in covered):
                 continue
             try:
                 _draw_static(pdf, drawn, page.height)
@@ -1120,7 +1426,7 @@ def _write(
                 lost_kinds[drawn.kind] = lost_kinds.get(drawn.kind, 0) + 1
 
         for button in page.buttons:
-            if button.hidden and not show_hidden:
+            if button.hidden and (not show_hidden or id(button) in covered):
                 continue
             _draw_button(pdf, button, page.height)
             static += 1
@@ -1137,9 +1443,24 @@ def _write(
                 )
 
         for field in page.fields:
+            if field.hidden and (not show_hidden or id(field) in covered):
+                if show_hidden and field.value and _can_be_a_widget(field, mode):
+                    try:
+                        if _add_widget(
+                            pdf,
+                            field,
+                            page.height,
+                            _safe_name(field.qualified_name, used_names),
+                            radio_names,
+                            blank_choices,
+                            looks,
+                            hidden=True,
+                        ):
+                            converted += 1
+                    except Exception:  # pragma: no cover - reportlab refusing a widget
+                        log.warning("Could not keep the hidden field %s", field.som, exc_info=True)
+                continue
             if field.hidden:
-                if not show_hidden:
-                    continue
                 hidden_shown += 1
             interactive = mode.wants_fields and _can_be_a_widget(field, mode)
             if interactive:
@@ -1150,11 +1471,11 @@ def _write(
                 )
                 caption_rect, box = _split_for_caption(field, page.height)
                 _draw_field_caption(pdf, field, caption_rect)
-                if not _uniform_border(field):
+                if not _uniform_border(field) or _is_toggle(field):
                     _draw_edges(pdf, field.edges, *box)
                 try:
                     made = _add_widget(
-                        pdf, field, page.height, name, radio_names, blank_choices
+                        pdf, field, page.height, name, radio_names, blank_choices, looks
                     )
                 except Exception:  # pragma: no cover - reportlab refusing a widget
                     log.warning("Could not create a widget for %s", field.som, exc_info=True)
@@ -1180,7 +1501,7 @@ def _write(
 
     pdf.save()
     _merge_default_fonts(output_path)
-    _finish_widgets(output_path, blank_choices, live_buttons)
+    _finish_widgets(output_path, blank_choices, live_buttons, looks)
     report.live_buttons = len(live_buttons)
     report.converted_fields = converted
     report.static_elements = static
@@ -1197,6 +1518,56 @@ def _write(
             )
         else:  # pragma: no cover - any other kind is a drawing failure
             report.warn(f"{count} {kind} element(s) could not be reproduced.")
+
+
+def _paints(item) -> bool:
+    """Does this element put something on the page a hidden one could cover?"""
+    if isinstance(item, XfaDraw):
+        return item.kind == "text" and bool(item.text)
+    return True
+
+
+def _overlap(a: XfaRect, b: XfaRect) -> bool:
+    """Do two boxes share more than a quarter of the smaller one?"""
+    width = min(a.x + a.width, b.x + b.width) - max(a.x, b.x)
+    height = min(a.y + a.height, b.y + b.height) - max(a.y, b.y)
+    if width <= 0 or height <= 0:
+        return False
+    smaller = min(a.width * a.height, b.width * b.height)
+    return smaller > 0 and width * height > 0.25 * smaller
+
+
+def _covered_hidden(page, saved_state: bool) -> set[int]:
+    """``id()`` of the hidden elements that would land on something visible.
+
+    Visible elements are placed first; each hidden one is then kept only if
+    it lands on nothing already there, so of two hidden alternatives in one
+    spot the first is shown. With a saved form state a hidden button is left
+    out outright: the state says nobody could see it, and it does nothing
+    once converted.
+    """
+    items = [*page.fields, *page.buttons, *page.draws]
+    taken = [item.rect for item in items if not item.hidden and _paints(item)]
+    covered: set[int] = set()
+    for item in items:
+        if not item.hidden:
+            continue
+        if saved_state and isinstance(item, XfaButton):
+            covered.add(id(item))
+            continue
+        if not _paints(item):
+            continue
+        if any(_overlap(item.rect, rect) for rect in taken):
+            covered.add(id(item))
+        else:
+            taken.append(item.rect)
+    # What a template hides together goes together: a signature block whose
+    # line is covered does not keep its label on its own.
+    groups = {item.parent_som for item in items if id(item) in covered and item.parent_som}
+    for item in items:
+        if item.hidden and item.parent_som in groups:
+            covered.add(id(item))
+    return covered
 
 
 def _report_layout_checks(report: XfaConversionReport, form: LaidOutForm) -> None:
@@ -1223,8 +1594,7 @@ def _report_layout_checks(report: XfaConversionReport, form: LaidOutForm) -> Non
             "unusable where they are."
         ),
         "off_page": (
-            "{count} field(s) ended up outside the page ({names}) and may not "
-            "be reachable."
+            "{count} field(s) ended up outside the page ({names}) and may not be reachable."
         ),
         "overflow": (
             "{count} piece(s) of text need more room than the form gave them "
@@ -1250,9 +1620,7 @@ def _describe_losses(
     which means naming the consequence rather than the mechanism.
     """
     if mode is ConversionMode.STATIC:
-        report.info(
-            "Converted to a static document, as asked: nothing in it is fillable."
-        )
+        report.info("Converted to a static document, as asked: nothing in it is fillable.")
 
     kinds: dict[str, int] = {}
     for script in document.scripts:

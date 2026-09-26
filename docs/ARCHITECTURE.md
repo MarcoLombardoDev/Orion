@@ -182,7 +182,9 @@ Orion/
 │   │   ├── safe_xml.py        XML from an untrusted file: DOCTYPE refused outright
 │   │   ├── model.py           XfaDocument/Subform/Field/Script — no PDF library
 │   │   ├── parser.py          the template and datasets packets -> the model
-│   │   ├── layout.py          template -> pages; materialises existing instances
+│   │   ├── merge.py           saved form state (rows, presence, values) + ordered data merge
+│   │   ├── layout.py          galley layout, then pagination into content areas
+│   │   ├── pictures.py        picture clauses: how a stored value is displayed
 │   │   ├── converter.py       draws the static layer, creates the AcroForm fields
 │   │   ├── analyzer.py        classifies scripts. Never executes one
 │   │   ├── validator.py       reopens the output with pypdf and checks it
@@ -356,7 +358,14 @@ check; nothing in V1 depends on it.
    does. Real forms size most elements with `minH`/`minW` rather than `h`/`w`,
    flow their sections top-to-bottom, run table rows across using the table's
    `columnWidths`, and keep the page's header and footer in the page area
-   rather than in the form tree. Each of those is a rule in one module, and
+   rather than in the form tree. Children of a flowed subform ignore their own
+   `x`/`y`; a table cell takes its column's width and its row's height. The
+   walk lays everything out on one galley and records which elements go
+   together (a row, a positioned block); pagination then cuts the galley into
+   content areas without splitting a block, repeating a table's overflow
+   leader. A saved form's `form` packet decides how many rows exist and what
+   was hidden (`xfa/merge.py`), before any of this runs. Each of those is a
+   rule in one module, and
    each has a test built from the shape that broke it (`TestTheShapesARealForm
    IsMadeOf`). The risk is that a template uses a shape none of them cover; the
    containment is that an element whose size or position cannot be worked out

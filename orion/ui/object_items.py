@@ -1027,9 +1027,17 @@ class FormFieldObjectItem(ObjectItem):
         painter.setPen(QPen(_qcolor(obj.text_color)))
         painter.setClipRect(rect)
         box = rect.adjusted(2.0, 1.0, -2.0, -1.0)
-        flags = Qt.AlignmentFlag.AlignLeft | (
+        across = {
+            1: Qt.AlignmentFlag.AlignHCenter,
+            2: Qt.AlignmentFlag.AlignRight,
+        }.get(obj.alignment, Qt.AlignmentFlag.AlignLeft)
+        flags = across | (
             Qt.AlignmentFlag.AlignTop if obj.multiline else Qt.AlignmentFlag.AlignVCenter
         )
+        if obj.multiline:
+            # A multi-line field wraps, as every reader wraps it; one long
+            # line clipped at the right edge showed a third of a description.
+            flags |= Qt.TextFlag.TextWordWrap
         painter.drawText(box, int(flags), obj.value)
 
     def _paint_tick(self, painter: QPainter, rect: QRectF, obj: FormFieldObject) -> None:

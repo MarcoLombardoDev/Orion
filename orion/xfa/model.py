@@ -353,6 +353,18 @@ class XfaField:
     #: The template hides this until something reveals it — see
     #: :func:`orion.xfa.parser.is_hidden`.
     hidden: bool = False
+    #: How many table columns this cell spans; -1 means "the rest of the row".
+    col_span: int = 1
+    #: The box has no fixed height (``minH`` or nothing), so it grows to fit
+    #: its value the way a real XFA viewer grows it.
+    grows: bool = False
+    #: ``page`` or ``pages`` when a layout script fills this field with the
+    #: page number or the page count — the one kind of script whose result a
+    #: converter can reproduce, because it knows how the pages came out.
+    page_counter: str = ""
+    #: A checkbox's or radio's own ``size``: the square it draws, which is
+    #: usually much smaller than the cell it sits in.
+    check_size: float = 0.0
 
     @property
     def has_scripts(self) -> bool:
@@ -395,6 +407,7 @@ class XfaButton:
     parent_som: str = ""
     instance: int = 0
     hidden: bool = False
+    col_span: int = 1
 
 
 @dataclass(slots=True)
@@ -423,8 +436,28 @@ class XfaSubform:
     #: fields, draws and nested subforms all take their turn in that queue.
     content: list[object] = field(default_factory=list)
     scripts: tuple[XfaScript, ...] = ()
-    #: True when this subform begins a new page in the template.
+    #: True when this subform begins a new page in the template: a
+    #: ``breakBefore`` that names a page or content area, not merely one that
+    #: carries a leader or trailer.
     page_break_before: bool = False
+    #: The same after it.
+    page_break_after: bool = False
+    #: ``<overflow leader="…">``: the row a table repeats at the top of every
+    #: page it continues onto — its column headings.
+    overflow_leader: str = ""
+    #: How the subform takes part in the data merge. ``match="none"`` makes
+    #: it transparent: its fields bind into the parent's data group.
+    binding: XfaBinding = field(default_factory=XfaBinding)
+    #: An ``<exclGroup>`` rather than a subform: one value shared by radios.
+    excl_group: bool = False
+    #: Set on each copy of a repeatable subform that the saved form state
+    #: expanded: how many copies there are. 0 for a subform nobody expanded.
+    materialised: int = 0
+    col_span: int = 1
+    #: A subform can carry a border and a fill of its own — a table cell that
+    #: holds a nested subform is ruled this way rather than by its field.
+    edges: tuple[XfaEdge, XfaEdge, XfaEdge, XfaEdge] = NO_EDGES
+    fill_color: tuple[float, float, float] | None = None
     instance: int = 0
     #: The template hides this subform, and everything in it, until something
     #: reveals it.
@@ -462,8 +495,11 @@ class XfaDraw:
     record of it that exists — so they matter as much as the fields do.
     """
 
-    #: ``text``, ``line``, ``rectangle``, ``image``.
+    #: ``text``, ``line``, ``rectangle``, ``arc``, ``image``.
     kind: str = "text"
+    #: The template's own name for it, which is how the saved form state
+    #: refers to a draw a script rewrote.
+    name: str = ""
     text: str = ""
     rect: XfaRect = field(default_factory=XfaRect)
     page: int = -1
@@ -483,6 +519,12 @@ class XfaDraw:
     parent_som: str = ""
     instance: int = 0
     hidden: bool = False
+    col_span: int = 1
+    #: No fixed width / height: the box is as wide and as tall as its text.
+    auto_width: bool = False
+    auto_height: bool = False
+    #: ``arc``: drawn as an ellipse in the box, ``circular`` or not.
+    circular: bool = False
 
 
 @dataclass(slots=True)
@@ -494,6 +536,10 @@ class XfaPageArea:
     height: float = 841.89
     margin_left: float = 0.0
     margin_top: float = 0.0
+    #: The content area's own size. 0 when the template does not say, which
+    #: leaves the page's remainder, less a bottom margin like the top one.
+    content_width: float = 0.0
+    content_height: float = 0.0
     #: What the page itself carries rather than the form: the header band, the
     #: logo, the page number. XFA calls a page area's own children furniture,
     #: and it repeats on every page the area is used for. Positioned against
@@ -524,6 +570,13 @@ class XfaDocument:
     packet_names: tuple[str, ...] = ()
     #: Anything the parser could not make sense of but did not want to lose.
     warnings: list[str] = field(default_factory=list)
+    #: The file carried a ``form`` packet — the state the form was saved in,
+    #: which says how many rows each table had and which sections a script
+    #: had shown or hidden. With it, ``hidden`` is a fact about the saved form
+    #: rather than about the design.
+    has_form_state: bool = False
+    #: How many pages the form had when it was saved, if the state says.
+    saved_pages: int = 0
 
     @property
     def _containers(self) -> list[XfaSubform]:
@@ -560,4 +613,9 @@ class XfaDocument:
 
     @property
     def repeatable_subforms(self) -> list[XfaSubform]:
-        return [s for s in self.template.root.walk() if s.is_repeatable]
+        """Each repeatable subform once, however many copies were expanded."""
+        return [
+            s
+            for s in self.template.root.walk()
+            if s.is_repeatable and not (s.materialised and s.instance)
+        ]

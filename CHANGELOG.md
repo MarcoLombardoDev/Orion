@@ -5,6 +5,68 @@ All notable changes to Orion are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] — 2026-09-26
+
+A filled-in XFA form now converts into the document that was filled in, not
+into the empty design behind it. Measured on a real monthly expense report —
+three tables, thirty-two rows, a header band and page numbers — the result
+went from five pages with one row per table and every heading printed over
+the next, to the three pages Acrobat itself had saved, every row in place.
+
+### Added
+
+- **The saved form state is read.** A form saved after filling in carries a
+  `form` packet: how many rows each table had, which sections a script had
+  revealed or hidden, values of fields that are not bound to data, the items a
+  script loaded into a drop-down, the odd size a script changed. Orion used to
+  ignore it and lay out one row per table from the template. It now rebuilds
+  every row, with its own values, and shows what the user was looking at.
+  Nothing is run: this is the record of what the scripts had already done.
+- **Data is matched the way XFA matches it: in order.** Thirty rows each find
+  their own amount and their own payment method; a lookup by name alone gave
+  all thirty the first one.
+- **Page numbers.** A footer field whose script writes `xfa.layout.page()` —
+  nearly every LiveCycle footer has one — gets the page number. The page's own
+  header band, footer and number are laid down on every page.
+- **Values are shown as the form shows them.** A date stored as `2023-08-02`
+  under a `DD/MM/YYYY` picture reads `02/08/2023`; an amount stored as
+  `4416.00000000` under `zzz,zz9.99` reads `4,416.00`.
+- **Circles and arcs** in a form's artwork are drawn instead of dropped.
+
+### Fixed
+
+- **Tables are laid out by their columns.** Every cell takes its width from
+  the table's `columnWidths`, whatever its own `w` says, and a row is as tall as
+  its tallest cell with every cell stretched to match — so a description that
+  runs to three lines makes its row taller instead of spilling out of it, and
+  the table's rules stay continuous.
+- **Coordinates inside a flowed section are ignored**, as the XFA
+  specification says. LiveCycle Designer keeps the position an object had
+  before it was dropped into a flowed subform; honouring it opened gaps of
+  several centimetres between a table's heading and its first row.
+- **Pagination.** The form is cut into the page area's content area, never
+  across a row. A table that continues repeats its heading row; a section's
+  title goes over with the section instead of staying behind at the foot of
+  the page; blank spacer objects no longer push a block onto a page of its own.
+- **Text sits where the form puts it.** Each field's value is drawn aligned —
+  left, centred or right, top, middle or bottom — inset by its margins and
+  wrapped when it is a multi-line field. Readers had been showing every value
+  as one line at the top left, cut off after the first line.
+- **Hidden alternatives are no longer printed over the field they replace.**
+  Fields a form hides are still shown, so nothing is lost that no script can
+  reveal any more — except where one would land on something visible, as when
+  a form swaps "TO:" for "A:" in the same place. Such a field stays hidden, and
+  travels as an invisible widget when it holds a value.
+- **A checkbox is the size the form draws it**, not the size of its table
+  cell, and the cell's border is drawn around it.
+- **A drop-down whose saved answer is not in its list** — an open list, or one
+  a script filled — keeps the answer. The conversion used to fail for that
+  field and draw it as flat text.
+- **A fixed `w` or `h` wins over `minW`/`minH`**, so a cell declaring both is
+  as wide as it says.
+- In the editor, a form field's value is painted with its alignment, and a
+  multi-line value wraps.
+
 ## [1.9.1] — 2026-09-23
 
 ### Fixed

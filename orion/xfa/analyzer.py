@@ -122,5 +122,7 @@ def summarise_form(document: XfaDocument) -> FormSummary:
     summary.scripts = len(document.scripts)
     repeatable = document.repeatable_subforms
     summary.repeatable = len(repeatable)
-    summary.instances = sum(max(s.occur.initial, s.occur.min, 1) for s in repeatable)
+    summary.instances = sum(
+        s.materialised or max(s.occur.initial, s.occur.min, 1) for s in repeatable
+    )
     return summary

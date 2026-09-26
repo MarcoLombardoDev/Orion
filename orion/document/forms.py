@@ -85,6 +85,8 @@ class FormFieldObject(PageObject):
     read_only: bool = False
     required: bool = False
     multiline: bool = False
+    #: ``/Q``: 0 left, 1 centred, 2 right — where the value sits across.
+    alignment: int = 0
     checked: bool = False
     font_size: float = 10.0
     text_color: Color = BLACK
@@ -116,6 +118,7 @@ class FormFieldObject(PageObject):
             "read_only": self.read_only,
             "required": self.required,
             "multiline": self.multiline,
+            "alignment": self.alignment,
             "checked": self.checked,
             "font_size": self.font_size,
             "text_color": list(self.text_color),
@@ -139,6 +142,7 @@ class FormFieldObject(PageObject):
             read_only=bool(data.get("read_only", False)),
             required=bool(data.get("required", False)),
             multiline=bool(data.get("multiline", False)),
+            alignment=int(data.get("alignment", 0)),
             checked=bool(data.get("checked", False)),
             font_size=float(data.get("font_size", 10.0)),
             text_color=tuple(data.get("text_color", BLACK)),  # type: ignore[arg-type]
