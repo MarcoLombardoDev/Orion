@@ -403,7 +403,12 @@ def _draw_static(pdf, item: XfaDraw, page_height: float) -> None:
         font_name,
         item.align,
         item.valign,
-        item.margins,
+        XfaInsets(
+            item.margins.left,
+            item.margins.top + item.space_above,
+            item.margins.right,
+            item.margins.bottom + item.space_below,
+        ),
     )
     pdf.restoreState()
 
@@ -982,7 +987,7 @@ def _look_of(field: XfaField, text: str, *, single_line: bool = False) -> _Look:
         wrap=field.multiline and not single_line,
         left=left_inset + field.text_indent + 1.5,
         right=field.margins.right + 1.5,
-        top=field.margins.top,
+        top=field.margins.top + field.space_above,
         bottom=field.margins.bottom,
     )
 

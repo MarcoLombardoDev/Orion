@@ -61,6 +61,7 @@ import re
 from dataclasses import dataclass, field
 
 from orion.xfa.model import (
+    XfaBreak,
     XfaButton,
     XfaDocument,
     XfaDraw,
@@ -90,9 +91,11 @@ MAX_INSTANCES = 100
 #: Layouts whose children flow rather than sit where they say.
 _FLOWED = ("tb", "lr-tb", "rl-tb", "table")
 
-#: Slack allowed when deciding whether a block fits, so that a rounding error
-#: of a hundredth of a point does not start a page.
-_FIT_TOLERANCE = 0.5
+#: Slack allowed when deciding whether a block fits. Half a millimetre: the
+#: sizes here are Orion's measurements of the designer's objects, and a form
+#: drawn to fill its content area exactly comes out a fraction of a point
+#: over — enough, without this, to send its last row onto a page of its own.
+_FIT_TOLERANCE = 1.5
 
 _INDEX_SUFFIX = re.compile(r"\[\d+\]$")
 
@@ -142,8 +145,9 @@ class _Block:
     is_leader: bool = False
     #: The heading row this block's table repeats, if it has one.
     leader: int | None = None
-    break_before: bool = False
-    break_after: bool = False
+    #: Where the block asks to start, from its subform's break or the one
+    #: before it.
+    break_before: XfaBreak | None = None
 
     def extent(self) -> tuple[float, float] | None:
         """Top and bottom of the block's visible elements, or None."""
@@ -184,13 +188,33 @@ def _default_page(pages: list[XfaPageArea], index: int) -> XfaPageArea:
     return pages[min(index, len(pages) - 1)]
 
 
-def _content_box(area: XfaPageArea) -> tuple[float, float, float]:
-    """Left, top and bottom of the area's content region, in points."""
+def _content_boxes(area: XfaPageArea) -> list[tuple[float, float, float]]:
+    """Left, top and bottom of each of the area's content regions, in points."""
+    regions = [
+        (region.x, region.y, region.y + region.height)
+        for region in area.content_areas
+        if region.height > 0
+    ]
+    if regions:
+        return regions
     top = area.margin_top
     height = area.content_height
     if height <= 0:
         height = max(area.height - 2 * top, area.height * 0.5)
-    return area.margin_left, top, top + height
+    return [(area.margin_left, top, top + height)]
+
+
+def _content_box(area: XfaPageArea) -> tuple[float, float, float]:
+    """The first content region: where a page's content starts."""
+    return _content_boxes(area)[0]
+
+
+def _region_named(area: XfaPageArea, target: str) -> int | None:
+    """The index of the content region called *target*, by name or id."""
+    for index, region in enumerate(area.content_areas):
+        if target and target in (region.name, region.identifier):
+            return index
+    return None
 
 
 def _instance_count(subform: XfaSubform) -> int:
@@ -231,14 +255,14 @@ class _Layout:
         self.result = LaidOutForm()
         self._blocks: list[_Block] = []
         self._sink: list[Element] | None = None
-        self._pending_break = False
+        self._pending_break: XfaBreak | None = None
         #: ``id()`` of a subform -> the block(s) it became, one per instance.
         self._blocks_of: dict[int, list[_Block]] = {}
 
     # -- blocks ------------------------------------------------------------
     def _new_block(self) -> _Block:
         block = _Block(id=len(self._blocks), break_before=self._pending_break)
-        self._pending_break = False
+        self._pending_break = None
         self._blocks.append(block)
         return block
 
@@ -343,8 +367,8 @@ class _Layout:
         """
         hidden = hidden or subform.hidden
         mode = subform.layout.lower()
-        if subform.page_break_before and block is None:
-            self._pending_break = True
+        if subform.break_before is not None and block is None:
+            self._pending_break = subform.break_before
         if block is None and mode not in _FLOWED and self._sink is None:
             block = self._new_block()
             self._blocks_of.setdefault(id(subform), []).append(block)
@@ -376,8 +400,8 @@ class _Layout:
         used = max(used, subform.rect.height)
         if box is not None:
             box.rect = XfaRect(dx, dy, own_width, used)
-        if subform.page_break_after:
-            self._pending_break = True
+        if subform.break_after is not None and block is None:
+            self._pending_break = subform.break_after
         return used
 
     def _place(
@@ -436,11 +460,10 @@ class _Layout:
                         line_x += wide
                         line_height = max(line_height, height)
                         continue
-                    cursor += child.space_above
                     height = self._walk(
                         child, dx, dy + cursor, who, columns, child_hidden, block, own_width
                     )
-                    cursor += max(height, 0.0) + child.space_below
+                    cursor += max(height, 0.0)
                 continue
 
             if across:
@@ -452,12 +475,12 @@ class _Layout:
                 line_x += placed.rect.width
                 line_height = max(line_height, placed.rect.height)
                 continue
-            # A flowed parent leaves the room the element asks for before
-            # and after itself. Without it every row butts against the next
-            # and a section comes out tighter than the form was drawn.
-            cursor += getattr(child, "space_above", 0.0)
+            # ``<para spaceAbove>`` is not a gap between objects: it is room
+            # above the element's own text, inside its box. Read as flow
+            # spacing it made every row of a form taller than it was drawn,
+            # which pushed the last row of a one-page request off the page.
             placed = self._place(child, dx, dy + cursor, 0.0, instance, hidden, block)
-            cursor += placed.rect.height + getattr(child, "space_below", 0.0)
+            cursor += placed.rect.height
 
         return cursor + line_height
 
@@ -519,13 +542,52 @@ class _Layout:
                 for row_block in self._blocks_of.get(id(row), []):
                     row_block.leader = heading.id
 
+    def _regions(self, page: int) -> list[tuple[float, float, float]]:
+        return _content_boxes(_default_page(self._areas, page))
+
+    def _next_region(self, page: int, region: int) -> tuple[int, int]:
+        """The content region after this one: further down the page, or the next page."""
+        if region + 1 < len(self._regions(page)):
+            return page, region + 1
+        return page + 1, 0
+
+    def _honour(
+        self, request: XfaBreak, page: int, region: int, occupied: bool
+    ) -> tuple[int, int]:
+        """Where a block that asks for *request* goes, from (*page*, *region*).
+
+        A break to a content area the layout is already in does nothing
+        unless it says ``startNew`` — which is what lets a form mark every
+        section "in the body area" without each one starting a page, and
+        still send its signature block to the strip at the foot of the page.
+        """
+        area = _default_page(self._areas, page)
+        if request.target_type == "contentArea":
+            wanted = _region_named(area, request.target)
+            if wanted is None:
+                # "Any content area": staying in this one satisfies it.
+                if not request.start_new or not occupied:
+                    return page, region
+                return self._next_region(page, region)
+            if wanted == region and (not request.start_new or not occupied):
+                return page, region
+            if wanted > region:
+                return page, wanted
+            return page + 1, wanted
+        named = request.target and request.target in (area.name, area.identifier)
+        if not occupied or (named and not request.start_new):
+            return page, region
+        return page + 1, 0
+
     def _paginate(self) -> None:
-        """Cut the galley into pages, keeping each block whole."""
-        page = 0
+        """Cut the galley into content regions and pages, keeping each block whole."""
+        galley_left = _content_box(_default_page(self._areas, 0))[0]
+        page, region = 0, 0
         shift = 0.0
-        on_page = False  # has the current page any content yet
-        force = False
-        assignments: list[tuple[_Block, int, float]] = []
+        dx = 0.0
+        occupied = False  # has the current region any content yet
+        # (block, page, vertical shift, horizontal shift)
+        assignments: list[tuple[_Block, int, float, float]] = []
         leader_copies: list[tuple[int, list[Element]]] = []
         pages_of: dict[int, int] = {}
 
@@ -533,34 +595,41 @@ class _Layout:
         for position, block in enumerate(blocks):
             extent = block.extent()
             if extent is None:
-                assignments.append((block, page, shift))
+                assignments.append((block, page, shift, dx))
                 continue
             top, bottom = extent
-            _, content_top, content_bottom = _content_box(_default_page(self._areas, page))
 
-            breaking = on_page and (force or block.break_before)
-            if not breaking and on_page and bottom - shift > content_bottom + _FIT_TOLERANCE:
-                breaking = True
-            if not breaking and on_page and block.is_leader:
-                # A heading row alone at the foot of a page, with its first
-                # row on the next, reads as a mistake: keep it with the row.
-                following = next(
-                    (b for b in blocks[position + 1 :] if b.extent() is not None), None
-                )
-                if following is not None and following.leader == block.id:
-                    _, next_bottom = following.extent()
-                    breaking = next_bottom - shift > content_bottom + _FIT_TOLERANCE
-            force = False
+            target = (page, region)
+            if block.break_before is not None:
+                target = self._honour(block.break_before, page, region, occupied)
+            overflow = False
+            if target == (page, region) and occupied:
+                content_bottom = self._regions(page)[region][2]
+                if bottom - shift > content_bottom + _FIT_TOLERANCE:
+                    overflow = True
+                elif block.is_leader:
+                    # A heading row alone at the foot of a page, with its
+                    # first row on the next, reads as a mistake: keep it
+                    # with the row.
+                    following = next(
+                        (b for b in blocks[position + 1 :] if b.extent() is not None), None
+                    )
+                    if following is not None and following.leader == block.id:
+                        overflow = following.extent()[1] - shift > content_bottom + _FIT_TOLERANCE
+                if overflow:
+                    target = self._next_region(page, region)
 
-            if breaking:
-                if page + 1 >= MAX_PAGES:
+            if target != (page, region):
+                if target[0] >= MAX_PAGES:
                     self.result.warnings.append(
                         f"The form is longer than {MAX_PAGES} pages; the rest was left off."
                     )
                     break
-                page += 1
-                _, content_top, content_bottom = _content_box(_default_page(self._areas, page))
-                carried = self._headings_before(assignments, page - 1)
+                left_behind = page
+                page, region = target
+                left, content_top, _ = self._regions(page)[region]
+                dx = left - galley_left
+                carried = self._headings_before(assignments, left_behind) if overflow else []
                 if carried:
                     # A section's heading goes over with the section.
                     first = carried[0][0].extent()
@@ -568,7 +637,7 @@ class _Layout:
                 shift = top - content_top
                 for entry in carried:
                     index = assignments.index(entry)
-                    assignments[index] = (entry[0], page, shift)
+                    assignments[index] = (entry[0], page, shift, dx)
                     pages_of[entry[0].id] = page
                 leader = blocks[block.leader] if block.leader is not None else None
                 if leader is not None and pages_of.get(leader.id, page) < page:
@@ -577,7 +646,7 @@ class _Layout:
                         copies = [
                             _copy(
                                 item,
-                                item.rect.translated(0.0, content_top - heading[0]),
+                                item.rect.translated(dx, content_top - heading[0]),
                                 item.instance,
                                 False,
                             )
@@ -585,14 +654,16 @@ class _Layout:
                         ]
                         leader_copies.append((page, copies))
                         shift -= heading[1] - heading[0]
-            if bottom - top > content_bottom - content_top + _FIT_TOLERANCE:
+                occupied = False
+
+            _, region_top, region_bottom = self._regions(page)[region]
+            if bottom - top > region_bottom - region_top + _FIT_TOLERANCE:
                 self.result.warnings.append(
-                    "A section of the form is taller than a page and was cut at the bottom."
+                    "A section of the form is taller than its area and was cut at the bottom."
                 )
-            assignments.append((block, page, shift))
+            assignments.append((block, page, shift, dx))
             pages_of[block.id] = page
-            on_page = True
-            force = block.break_after
+            occupied = True
 
         total = page + 1
         for index in range(total):
@@ -600,9 +671,9 @@ class _Layout:
             self.result.pages.append(PlacedPage(width=area.width, height=area.height))
             self._furnish(index, area, total)
 
-        for block, number, offset in assignments:
+        for block, number, offset, across in assignments:
             for item in block.items:
-                item.rect = item.rect.translated(0.0, -offset)
+                item.rect = item.rect.translated(across, -offset)
                 self._put(item, number)
         for number, copies in leader_copies:
             for item in copies:
@@ -613,8 +684,8 @@ class _Layout:
 
     @staticmethod
     def _headings_before(
-        assignments: list[tuple[_Block, int, float]], page: int
-    ) -> list[tuple[_Block, int, float]]:
+        assignments: list[tuple[_Block, int, float, float]], page: int
+    ) -> list[tuple[_Block, int, float, float]]:
         """The heading blocks at the foot of *page*, which should not stay behind.
 
         A section title and the add/remove buttons under it carry no fields;
@@ -622,9 +693,9 @@ class _Layout:
         they read as a section with nothing in it. Up to three of them move with
         what follows — never so many that the page is left empty.
         """
-        carried: list[tuple[_Block, int, float]] = []
+        carried: list[tuple[_Block, int, float, float]] = []
         for entry in reversed(assignments):
-            block, number, _ = entry
+            block, number = entry[0], entry[1]
             if number != page:
                 break
             if block.extent() is None:

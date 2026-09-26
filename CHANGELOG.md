@@ -5,6 +5,32 @@ All notable changes to Orion are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.1] — 2026-09-26
+
+### Fixed
+
+- **A one-page XFA request converts to one page again.** 1.10.0 laid a real
+  payment request out on five pages, where 1.9 had managed one. Three
+  causes, all in how the layout read the template:
+  - **A break to a content area is a place, not a page break.** LiveCycle
+    writes `<break before="contentArea" beforeTarget="Page1.#contentArea">`
+    on section after section. It means "be in a content area of this page",
+    which a section already in one satisfies — the XFA specification's
+    `startNew="0"`. Reading each as a new page gave every section a page of
+    its own.
+  - **A page can have more than one content area.** The request keeps its
+    signatures in a strip at the foot of the page, and its signature block
+    names that strip. Both areas are read now: the body flows into the first,
+    a block that names the second goes there — on the same page — and content
+    that overflows an area moves to the next one, then to the next page.
+  - **`<para spaceAbove>` is space above a field's own text**, inside its box.
+    It had been read as a gap between objects, which made every row taller
+    than drawn and pushed the last row off the page. A block that runs past
+    its area by less than half a millimetre is also no longer moved.
+- **`<area>` groups are laid out.** Two of the request's three signatures sit
+  in `<area>` containers, which the parser skipped: their labels and fields
+  were missing from the converted page.
+
 ## [1.10.0] — 2026-09-26
 
 A filled-in XFA form now converts into the document that was filled in, not

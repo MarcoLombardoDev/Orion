@@ -363,7 +363,8 @@ check; nothing in V1 depends on it.
    walk lays everything out on one galley and records which elements go
    together (a row, a positioned block); pagination then cuts the galley into
    content areas without splitting a block, repeating a table's overflow
-   leader. A saved form's `form` packet decides how many rows exist and what
+   leader. A page may have several content areas; a break naming one is a
+   destination, satisfied without moving when the layout is already there. A saved form's `form` packet decides how many rows exist and what
    was hidden (`xfa/merge.py`), before any of this runs. Each of those is a
    rule in one module, and
    each has a test built from the shape that broke it (`TestTheShapesARealForm

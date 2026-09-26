@@ -29,7 +29,9 @@ __all__ = [
     "XfaBinding",
     "XfaButton",
     "XfaButtonKind",
+    "XfaBreak",
     "XfaChoiceList",
+    "XfaContentArea",
     "XfaDocument",
     "XfaEdge",
     "XfaField",
@@ -319,8 +321,8 @@ class XfaField:
     caption_font: XfaFont | None = None
     #: ``<para marginLeft>`` on the field's text, on top of the insets.
     text_indent: float = 0.0
-    #: ``<para spaceAbove/spaceBelow>``: room before and after this element
-    #: when its parent flows its children.
+    #: ``<para spaceAbove/spaceBelow>``: room above and below the element's
+    #: own text, inside its box — paragraph spacing, not a gap between objects.
     space_above: float = 0.0
     space_below: float = 0.0
     #: The four sides of ``<border>``, in XFA's order: top, right, bottom,
@@ -436,12 +438,12 @@ class XfaSubform:
     #: fields, draws and nested subforms all take their turn in that queue.
     content: list[object] = field(default_factory=list)
     scripts: tuple[XfaScript, ...] = ()
-    #: True when this subform begins a new page in the template: a
-    #: ``breakBefore`` that names a page or content area, not merely one that
-    #: carries a leader or trailer.
-    page_break_before: bool = False
-    #: The same after it.
-    page_break_after: bool = False
+    #: Where the subform asks to start: a ``breakBefore`` (or legacy
+    #: ``break before``) that names a page or content area — not merely one
+    #: that carries a leader or trailer. None when it asks nothing.
+    break_before: XfaBreak | None = None
+    #: Where what follows it has to go.
+    break_after: XfaBreak | None = None
     #: ``<overflow leader="…">``: the row a table repeats at the top of every
     #: page it continues onto — its column headings.
     overflow_leader: str = ""
@@ -462,8 +464,8 @@ class XfaSubform:
     #: The template hides this subform, and everything in it, until something
     #: reveals it.
     hidden: bool = False
-    #: ``<para spaceAbove/spaceBelow>``: the room a flowed parent leaves
-    #: around this subform.
+    #: ``<para spaceAbove/spaceBelow>`` on the subform: the default paragraph
+    #: spacing of its text. Kept for completeness; it moves nothing.
     space_above: float = 0.0
     space_below: float = 0.0
 
@@ -527,11 +529,48 @@ class XfaDraw:
     circular: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class XfaContentArea:
+    """One region of a page that the form's content flows into.
+
+    A page area usually has one. A form that keeps its signatures at the foot
+    of the page has two — the body, and a short strip at the bottom that a
+    subform is sent to by name — and treating the page as one region put the
+    signatures wherever the body happened to end.
+    """
+
+    name: str = ""
+    identifier: str = ""
+    x: float = 0.0
+    y: float = 0.0
+    width: float = 0.0
+    height: float = 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class XfaBreak:
+    """Where a subform asks to be placed: a ``breakBefore``/``breakAfter``.
+
+    LiveCycle also writes the older ``<break before="contentArea"
+    beforeTarget="Page1.A2">``, which says the same thing and is read into
+    this too. ``target`` is the bare name of a content or page area, empty
+    when the break names none in particular.
+    """
+
+    #: ``contentArea`` or ``pageArea``.
+    target_type: str = "pageArea"
+    target: str = ""
+    #: ``startNew="1"``: break even when already in the target. Without it,
+    #: a subform sent to the content area it is already in stays where it is.
+    start_new: bool = False
+
+
 @dataclass(slots=True)
 class XfaPageArea:
     """A page as the template describes it, in points."""
 
     name: str = ""
+    identifier: str = ""
     width: float = 595.276  # A4, which is what an unmarked template means here
     height: float = 841.89
     margin_left: float = 0.0
@@ -540,6 +579,9 @@ class XfaPageArea:
     #: leaves the page's remainder, less a bottom margin like the top one.
     content_width: float = 0.0
     content_height: float = 0.0
+    #: Every content area in the order the template declares them; the fields
+    #: above describe the first. Empty for an area built by hand.
+    content_areas: list[XfaContentArea] = field(default_factory=list)
     #: What the page itself carries rather than the form: the header band, the
     #: logo, the page number. XFA calls a page area's own children furniture,
     #: and it repeats on every page the area is used for. Positioned against

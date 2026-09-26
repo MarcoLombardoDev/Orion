@@ -40,6 +40,7 @@ __all__ = [
     "build_plain_pdf",
     "build_reference_form",
     "build_saved_form",
+    "content_areas_template",
     "build_xfa_pdf",
     "dynamic_template",
     "saved_form_template",
@@ -644,3 +645,63 @@ def build_saved_form(path: Path, rows: int = 40) -> Path:
     return build_xfa_pdf(
         path, saved_form_template(), datasets=datasets, form_state=form, dynamic=True
     )
+
+
+def content_areas_template(*, start_new: bool = False, sections: int = 6) -> str:
+    """A one-page request whose signatures live in a strip at the foot of the page.
+
+    Modelled on a real payment request: the page area has two content areas,
+    the body (``A1``) and a short strip at the bottom (``A2``); every section
+    carries LiveCycle's legacy ``<break before="contentArea">`` naming the body
+    or "any content area", and the signature block names ``A2``. Its three
+    signatures are ``<area>`` groups. Each field has paragraph spacing above
+    its text. With *start_new*, the second section insists on a fresh area.
+    """
+    rows = []
+    for index in range(sections):
+        insist = ' startNew="1"' if start_new and index == 1 else ""
+        rows.append(
+            f"""
+      <subform name="Section{index}" layout="tb" w="500pt">
+        <break before="contentArea" beforeTarget="Page1.#contentArea"{insist}/>
+        <field name="Line{index}" minH="18pt" w="500pt">
+          <ui><textEdit multiLine="1"/></ui>
+          <para spaceAbove="2pt"/>
+          <caption reserve="120pt"><value><text>LINE {index}</text></value></caption>
+        </field>
+      </subform>"""
+        )
+    signatures = "".join(
+        f"""
+      <area x="{index * 170}pt" y="30pt">
+        <draw name="Role" w="160pt" h="18pt"><value><text>{role}</text></value></draw>
+        <field name="Sign" minH="18pt" minW="160pt" y="24pt">
+          <ui><textEdit/></ui>
+        </field>
+      </area>"""
+        for index, role in enumerate(("Associate", "Manager", "Head of unit"))
+    )
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<template xmlns="{XFA_TEMPLATE_NS}">
+  <subform name="request" layout="tb">
+    <pageSet>
+      <pageArea name="Page1" id="Page1">
+        <contentArea name="A1" x="48pt" y="72pt" w="500pt" h="600pt"/>
+        <medium stock="a4" short="595.28pt" long="841.89pt"/>
+        <contentArea name="A2" x="48pt" y="690pt" w="500pt" h="90pt"/>
+      </pageArea>
+    </pageSet>
+    <subform name="Body" layout="tb" w="500pt">
+      <break before="contentArea" beforeTarget="Page1.A1"/>
+      {"".join(rows)}
+    </subform>
+    <subform name="Signatures" w="500pt" h="90pt">
+      <break before="contentArea" beforeTarget="Page1.A2"/>
+      <field name="SignedOn" minH="18pt" w="150pt">
+        <ui><dateTimeEdit/></ui>
+        <caption reserve="40pt"><value><text>DATE:</text></value></caption>
+      </field>
+      {signatures}
+    </subform>
+  </subform>
+</template>"""

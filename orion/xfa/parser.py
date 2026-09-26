@@ -39,9 +39,11 @@ from orion.xfa.merge import apply_form_state, merge_data
 from orion.xfa.model import (
     NO_EDGES,
     XfaBinding,
+    XfaBreak,
     XfaButton,
     XfaButtonKind,
     XfaChoiceList,
+    XfaContentArea,
     XfaDocument,
     XfaDraw,
     XfaEdge,
@@ -190,8 +192,20 @@ def _col_span_of(node: Element) -> int:
     return span if span == -1 or span >= 1 else 1
 
 
-def _breaks_of(node: Element) -> tuple[bool, bool]:
-    """Does this subform start a new page before it, or force one after it?
+def _target_name(reference: str | None) -> str:
+    """``Page1.A2`` -> ``A2``; ``Page1.#contentArea`` (any of them) -> ``""``."""
+    if not reference:
+        return ""
+    last = reference.strip().split(".")[-1].strip()
+    if last.startswith("#"):
+        last = last[1:]
+        if last in ("contentArea", "pageArea"):
+            return ""
+    return last.split("[")[0]
+
+
+def _breaks_of(node: Element) -> tuple[XfaBreak | None, XfaBreak | None]:
+    """Where this subform asks to start, and where what follows it must go.
 
     Only a break that targets a page or content area moves anything. A
     ``breakBefore`` that carries nothing but a ``leader`` or ``trailer`` — the
@@ -199,24 +213,28 @@ def _breaks_of(node: Element) -> tuple[bool, bool]:
     instruction to make one, and reading it as a break put every table on a
     page of its own.
     """
-    before = after = False
+    found: dict[bool, XfaBreak] = {}
     for tag, is_before in (("breakBefore", True), ("breakAfter", False)):
         for item in _children(node, tag):
-            if item.get("targetType") in ("pageArea", "contentArea"):
-                if is_before:
-                    before = True
-                else:
-                    after = True
+            kind = item.get("targetType")
+            if kind in ("pageArea", "contentArea"):
+                found[is_before] = XfaBreak(
+                    target_type=kind,
+                    target=_target_name(item.get("target")),
+                    start_new=item.get("startNew") == "1",
+                )
     legacy = _child(node, "break")
     if legacy is not None:
-        before = before or legacy.get("before") in (
-            "pageArea",
-            "contentArea",
-            "pageEven",
-            "pageOdd",
-        )
-        after = after or legacy.get("after") in ("pageArea", "contentArea", "pageEven", "pageOdd")
-    return before, after
+        pages = ("pageArea", "contentArea", "pageEven", "pageOdd")
+        for side, is_before in (("before", True), ("after", False)):
+            kind = legacy.get(side)
+            if kind in pages and is_before not in found:
+                found[is_before] = XfaBreak(
+                    target_type="contentArea" if kind == "contentArea" else "pageArea",
+                    target=_target_name(legacy.get(f"{side}Target")),
+                    start_new=legacy.get("startNew") == "1",
+                )
+    return found.get(True), found.get(False)
 
 
 def _page_counter(scripts: tuple[XfaScript, ...]) -> str:
@@ -273,11 +291,11 @@ def _indent_of(node: Element | None) -> float:
 
 
 def _space_of(node: Element | None) -> tuple[float, float]:
-    """``<para spaceAbove/spaceBelow>``: the gap a flowed parent leaves.
+    """``<para spaceAbove/spaceBelow>``: paragraph spacing of the element's text.
 
-    LiveCycle Designer offers these as an object's spacing, and a flowed form
-    is built out of them: without them every row in a section butts against
-    the next one and the document comes out tighter than it was drawn.
+    It is room above and below the text *inside* the element's box — the
+    XFA specification's "space before the paragraph" — not a gap a flowed
+    parent leaves between objects.
     """
     if node is None:
         return 0.0, 0.0
@@ -770,8 +788,8 @@ def _parse_subform(node: Element, parent_som: str, font: XfaFont, depth: int = 0
         column_widths=_column_widths_of(node),
         occur=_occur_of(node),
         scripts=_scripts_of(node, som),
-        page_break_before=_breaks_of(node)[0],
-        page_break_after=_breaks_of(node)[1],
+        break_before=_breaks_of(node)[0],
+        break_after=_breaks_of(node)[1],
         overflow_leader=(
             _child(node, "overflow").get("leader", "")
             if _child(node, "overflow") is not None
@@ -790,6 +808,14 @@ def _parse_subform(node: Element, parent_som: str, font: XfaFont, depth: int = 0
         tag = local_name(child.tag)
         if tag == "subform":
             nested = _parse_subform(child, som, own_font, depth + 1)
+            subform.children.append(nested)
+            subform.content.append(nested)
+        elif tag == "area":
+            # A positioned group with no data of its own: its fields bind as
+            # if they sat directly in the subform around it.
+            nested = _parse_subform(child, som, own_font, depth + 1)
+            nested.layout = "position"
+            nested.binding = XfaBinding(match="none")
             subform.children.append(nested)
             subform.content.append(nested)
         elif tag == "subformSet":
@@ -880,12 +906,24 @@ def _parse_page_areas(template_root: Element) -> list[XfaPageArea]:
                 area.height = height
             if medium.get("orientation") == "landscape":
                 area.width, area.height = area.height, area.width
-        content = _child(page_set, "contentArea")
-        if content is not None:
-            area.margin_left = parse_measurement(content.get("x"), 0.0)
-            area.margin_top = parse_measurement(content.get("y"), 0.0)
-            area.content_width = parse_measurement(content.get("w"), 0.0)
-            area.content_height = parse_measurement(content.get("h"), 0.0)
+        area.identifier = page_set.get("id", "")
+        for content in _children(page_set, "contentArea"):
+            area.content_areas.append(
+                XfaContentArea(
+                    name=content.get("name", ""),
+                    identifier=content.get("id", ""),
+                    x=parse_measurement(content.get("x"), 0.0),
+                    y=parse_measurement(content.get("y"), 0.0),
+                    width=parse_measurement(content.get("w"), 0.0),
+                    height=parse_measurement(content.get("h"), 0.0),
+                )
+            )
+        if area.content_areas:
+            first = area.content_areas[0]
+            area.margin_left = first.x
+            area.margin_top = first.y
+            area.content_width = first.width
+            area.content_height = first.height
         area.furniture = _parse_furniture(page_set, area.name)
         pages.append(area)
     return pages

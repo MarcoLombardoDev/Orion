@@ -861,14 +861,20 @@ class TestLookingLikeTheFormItCameFrom:
         assert all(edge.draws for edge in cell.edges)
         assert cell.edges[0].width == pytest.approx(0.5)
 
-    def test_a_flowed_form_leaves_the_room_the_template_asks_for(self, awkward):
-        """``spaceAbove``/``spaceBelow``: why a section is not one solid block."""
+    def test_paragraph_spacing_is_inside_the_box_not_between_boxes(self, awkward):
+        """``<para spaceAbove>`` is room above a field's own text.
+
+        It was once read as a gap a flowed parent leaves between objects,
+        which made every row of a real one-page request taller than it was
+        drawn and sent its last row, and its signatures, onto a second page.
+        """
         form = resolve_layout(parse_xfa(inspect_form(awkward).packets))
         placed = {f.name: f for f in form.fields}
         spaced = placed["spacedField"]
         above = placed["alsoHidden"]
         gap = spaced.rect.y - (above.rect.y + above.rect.height)
-        assert gap == pytest.approx(10.0, abs=0.5)
+        assert gap == pytest.approx(0.0, abs=0.01)
+        assert spaced.space_above == pytest.approx(10.0)
 
     def test_the_widget_carries_no_border_the_form_did_not_ask_for(
         self, awkward, tmp_path
